@@ -30,24 +30,14 @@ import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONObject
 
 internal object XiaoAiHooks {
-    const val SUPPORTED_VERSION_CODE = 507013032L
-
     private const val OPERATION_MANAGER_CLASS =
         "com.xiaomi.voiceassistant.instruction.base.OperationManager"
     private const val APPLICATION_CLASS = "com.xiaomi.voiceassistant.VAApplication"
     private const val EVENT_CLASS = "com.xiaomi.ai.api.common.Event"
     private const val INSTRUCTION_CLASS = "com.xiaomi.ai.api.common.Instruction"
-    private const val ENGINE_CLASS = "y00.r0"
-    private const val ASR_PROCESSOR_CLASS = "z10.a"
-    private const val AGENT_ACTION_MANAGER_CLASS = "kh0.s0"
     private const val ASR_RESULT_FULL_NAME = "SpeechRecognizer.RecognizeResult"
-    private const val IMAGE_ID_STORE_CLASS = "k00.y0"
-    private const val FLOAT_MANAGER_CLASS = "com.xiaomi.voiceassistant.widget.d"
     private const val CARD_BASE_CLASS = "com.xiaomi.voiceassistant.card.a"
-    internal const val FLOW_TOAST_CARD_CLASS =
-        "com.xiaomi.voiceassistant.instruction.card.stream.FlowTemplateToastCard"
     private const val UI_MANAGER_CLASS = "com.xiaomi.voiceassistant.UiManager"
-    internal const val TTS_PLAYER_CLASS = "la0.n1"
     private const val EXTRA_IMAGE_FILE_ID = "extra_image_file_id"
     private val DOCUMENT_EXTRA_KEYS = setOf("file_path", "file_name", "file_desc", "query_type")
     private const val BRIDGE_QUEUE_CAPACITY = 4
@@ -119,11 +109,13 @@ internal object XiaoAiHooks {
         ) { chain ->
             val context = chain.thisObject as? Context
             val versionCode = context?.let(::packageVersionCode) ?: -1L
-            if (XiaoAiTakeoverPolicy.isSupportedVersion(versionCode)) {
+            val targets = XiaoAiTargets.forVersion(versionCode)
+            if (targets != null) {
                 installBusinessHooksOnce(
                     module = module,
                     rootLogger = rootLogger,
                     classLoader = classLoader,
+                    targets = targets,
                 )
             } else {
                 hooks.logger.warnThrottled("xiaoai_unsupported_version") {
@@ -138,17 +130,18 @@ internal object XiaoAiHooks {
         module: XposedModule,
         rootLogger: ModuleLogger,
         classLoader: ClassLoader,
+        targets: XiaoAiTargets,
     ) {
         if (!businessHooksInstalled.compareAndSet(false, true)) return
         val hooks = HookRegistrar(module, rootLogger, "XiaoAi")
         val installation = hooks.install {
             hookQueryCapture(this, classLoader)
-            hookAsrFinalResult(this, classLoader)
-            hookFloatManagerCapture(this, classLoader)
-            hookAgentActions(this, classLoader)
-            hookOutboundRequest(this, classLoader)
-            hookSessionClear(this, classLoader)
-            schedulePendingResultDrains(logger, classLoader)
+            hookAsrFinalResult(this, classLoader, targets)
+            hookFloatManagerCapture(this, classLoader, targets)
+            hookAgentActions(this, classLoader, targets)
+            hookOutboundRequest(this, classLoader, targets)
+            hookSessionClear(this, classLoader, targets)
+            schedulePendingResultDrains(logger, classLoader, targets)
         }
         deferredHookHandles += installation.handles
         rootLogger.scoped("XiaoAi").info(installation.report.summary())
@@ -226,8 +219,9 @@ internal object XiaoAiHooks {
     private fun hookAsrFinalResult(
         hooks: HookRegistrar,
         classLoader: ClassLoader,
+        targets: XiaoAiTargets,
     ) {
-        val processorClass = HookSupport.findClassOrNull(classLoader, ASR_PROCESSOR_CLASS)
+        val processorClass = HookSupport.findClassOrNull(classLoader, targets.asrProcessorClass)
         val instructionClass = HookSupport.findClassOrNull(classLoader, INSTRUCTION_CLASS)
         if (processorClass == null || instructionClass == null) {
             hooks.missing(
@@ -242,7 +236,7 @@ internal object XiaoAiHooks {
             hooks.missing(
                 id = "xiaoai.asr-final",
                 description = "ASR final result",
-                detail = "未找到 z10.a.processed(Instruction): boolean",
+                detail = "未找到 ${targets.asrProcessorClass}.processed(Instruction): boolean",
             )
             return
         }
@@ -282,8 +276,9 @@ internal object XiaoAiHooks {
     private fun hookFloatManagerCapture(
         hooks: HookRegistrar,
         classLoader: ClassLoader,
+        targets: XiaoAiTargets,
     ) {
-        val floatManagerClass = HookSupport.findClassOrNull(classLoader, FLOAT_MANAGER_CLASS)
+        val floatManagerClass = HookSupport.findClassOrNull(classLoader, targets.floatManagerClass)
         val cardClass = HookSupport.findClassOrNull(classLoader, CARD_BASE_CLASS)
         if (floatManagerClass == null || cardClass == null) {
             hooks.missing(
@@ -315,34 +310,36 @@ internal object XiaoAiHooks {
     private fun hookOutboundRequest(
         hooks: HookRegistrar,
         classLoader: ClassLoader,
+        targets: XiaoAiTargets,
     ) {
-        val engineClass = HookSupport.findClassOrNull(classLoader, ENGINE_CLASS)
+        val sendMethodName = targets.engineSendMethod
+        val engineClass = HookSupport.findClassOrNull(classLoader, targets.engineClass)
         val eventClass = HookSupport.findClassOrNull(classLoader, EVENT_CLASS)
         if (engineClass == null || eventClass == null) {
             hooks.missing(
                 id = "xiaoai.outbound",
-                description = "MiSpeechEngine.C0",
+                description = "MiSpeechEngine.$sendMethodName",
                 detail = "未找到小爱出站事件边界",
             )
             return
         }
-        val method = HookSupport.findMethod(engineClass, "C0", eventClass)
+        val method = HookSupport.findMethod(engineClass, sendMethodName, eventClass)
         if (method == null || method.returnType != Boolean::class.javaPrimitiveType) {
             hooks.missing(
                 id = "xiaoai.outbound",
-                description = "MiSpeechEngine.C0",
-                detail = "未找到 C0(Event): boolean",
+                description = "MiSpeechEngine.$sendMethodName",
+                detail = "未找到 $sendMethodName(Event): boolean",
             )
             return
         }
         hooks.intercept(
             id = "xiaoai.outbound",
             executable = method,
-            description = "XiaoAi MiSpeechEngine.C0",
+            description = "XiaoAi MiSpeechEngine.$sendMethodName",
         ) { chain ->
             val event = chain.args.getOrNull(0)
             val claimed = try {
-                event != null && maybeClaimRequest(hooks.logger, classLoader, event)
+                event != null && maybeClaimRequest(hooks.logger, classLoader, targets, event)
             } catch (exception: Exception) {
                 hooks.logger.warnThrottled("xiaoai_claim_failed") {
                     "小爱请求认领失败，保持原生行为: type=${exception.safeLogType()}"
@@ -356,8 +353,9 @@ internal object XiaoAiHooks {
     private fun hookAgentActions(
         hooks: HookRegistrar,
         classLoader: ClassLoader,
+        targets: XiaoAiTargets,
     ) {
-        val managerClass = HookSupport.findClassOrNull(classLoader, AGENT_ACTION_MANAGER_CLASS)
+        val managerClass = HookSupport.findClassOrNull(classLoader, targets.agentActionManagerClass)
         if (managerClass == null) {
             hooks.missing(
                 id = "xiaoai.agent-action",
@@ -398,9 +396,10 @@ internal object XiaoAiHooks {
     private fun hookSessionClear(
         hooks: HookRegistrar,
         classLoader: ClassLoader,
+        targets: XiaoAiTargets,
     ) {
-        val engineClass = HookSupport.findClassOrNull(classLoader, ENGINE_CLASS)
-        val method = engineClass?.let { HookSupport.findMethod(it, "V") }
+        val engineClass = HookSupport.findClassOrNull(classLoader, targets.engineClass)
+        val method = engineClass?.let { HookSupport.findMethod(it, targets.engineClearMethod) }
         if (method == null || method.parameterCount != 0) {
             hooks.missing(
                 id = "xiaoai.session-clear",
@@ -426,6 +425,7 @@ internal object XiaoAiHooks {
     private fun maybeClaimRequest(
         logger: ModuleLogger,
         classLoader: ClassLoader,
+        targets: XiaoAiTargets,
         event: Any,
     ): Boolean {
         val fullName = invokeString(event, "getFullName")
@@ -479,6 +479,7 @@ internal object XiaoAiHooks {
         val imageResolution = resolveImage(
             logger = logger,
             classLoader = classLoader,
+            imageIdStoreClass = targets.imageIdStoreClass,
             imageFileId = queryInfo?.imageFileId,
         )
         if (imageResolution is XiaoAiImages.Resolution.Failure) {
@@ -504,6 +505,7 @@ internal object XiaoAiHooks {
             context = context,
             logger = logger,
             classLoader = classLoader,
+            targets = targets,
             dialogId = dialogId,
             floatManagerProvider = {
                 latestFloatManager.get() ?: resolveFloatManager(classLoader, context)
@@ -594,11 +596,12 @@ internal object XiaoAiHooks {
     private fun resolveImage(
         logger: ModuleLogger,
         classLoader: ClassLoader,
+        imageIdStoreClass: String,
         imageFileId: String?,
     ): XiaoAiImages.Resolution {
         val normalizedId = imageFileId?.trim().orEmpty()
         if (normalizedId.isBlank()) return XiaoAiImages.Resolution.NoImage
-        val storeClass = HookSupport.findClassOrNull(classLoader, IMAGE_ID_STORE_CLASS)
+        val storeClass = HookSupport.findClassOrNull(classLoader, imageIdStoreClass)
             ?: return XiaoAiImages.missingPath()
         val getString = HookSupport.findMethod(
             storeClass,
@@ -621,6 +624,7 @@ internal object XiaoAiHooks {
     private fun schedulePendingResultDrains(
         logger: ModuleLogger,
         classLoader: ClassLoader,
+        targets: XiaoAiTargets,
     ) {
         val handler = Handler(Looper.getMainLooper())
         longArrayOf(1_000L, 5_000L, 15_000L).forEach { delay ->
@@ -628,7 +632,7 @@ internal object XiaoAiHooks {
                 val context = AgentAppContext.resolve() ?: return@postDelayed
                 try {
                     executor.execute {
-                        drainPendingResults(logger, classLoader, context)
+                        drainPendingResults(logger, classLoader, targets, context)
                     }
                 } catch (_: RejectedExecutionException) {
                     logger.warnThrottled("xiaoai_drain_rejected") {
@@ -642,6 +646,7 @@ internal object XiaoAiHooks {
     private fun drainPendingResults(
         logger: ModuleLogger,
         classLoader: ClassLoader,
+        targets: XiaoAiTargets,
         context: Context,
     ) {
         val client = AgentRuntimeClient(context, logger)
@@ -660,6 +665,7 @@ internal object XiaoAiHooks {
                         context = context,
                         logger = logger,
                         classLoader = classLoader,
+                        targets = targets,
                         dialogId = dialogId,
                         floatManagerProvider = {
                             latestFloatManager.get() ?: resolveFloatManager(classLoader, context)

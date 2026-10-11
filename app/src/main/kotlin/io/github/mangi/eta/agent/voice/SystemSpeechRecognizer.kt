@@ -63,18 +63,38 @@ internal object SystemSpeechRecognizer {
             }
             .filter {
                 val component = ComponentName(it.packageName, it.name)
+                // 识别服务由 system_server 代为绑定，厂商自定义的服务权限（如小米 mibrain 的 signature
+                // 权限）不影响调用；预置服务因此不要求平台权限名，第三方服务仍需声明。
                 component == configured ||
-                    it.permission == "android.permission.BIND_SPEECH_RECOGNITION_SERVICE"
+                    it.permission == "android.permission.BIND_SPEECH_RECOGNITION_SERVICE" ||
+                    it.applicationInfo.isPreinstalled()
             }
             .sortedWith(
                 compareByDescending<android.content.pm.ServiceInfo> {
                     ComponentName(it.packageName, it.name) == configured
                 }.thenByDescending {
-                    (it.applicationInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0
+                    it.applicationInfo.isPreinstalled()
                 },
             )
             .map { ComponentName(it.packageName, it.name) }
             .firstOrNull()
 
+    /** 系统应用或厂商预置在只读分区的应用；小米等 ROM 的可卸载预置应用不带 FLAG_SYSTEM。 */
+    private fun ApplicationInfo?.isPreinstalled(): Boolean {
+        if (this == null) return false
+        if (flags and (ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) {
+            return true
+        }
+        val source = sourceDir ?: return false
+        return PREINSTALLED_PARTITIONS.any(source::startsWith)
+    }
+
     private const val VOICE_RECOGNITION_SERVICE = "voice_recognition_service"
+    private val PREINSTALLED_PARTITIONS = listOf(
+        "/system/",
+        "/system_ext/",
+        "/product/",
+        "/vendor/",
+        "/odm/",
+    )
 }

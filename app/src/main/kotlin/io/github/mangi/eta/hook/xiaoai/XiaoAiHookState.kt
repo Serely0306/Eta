@@ -14,7 +14,7 @@ internal object XiaoAiTakeoverPolicy {
     )
 
     fun isSupportedVersion(versionCode: Long): Boolean =
-        versionCode == XiaoAiHooks.SUPPORTED_VERSION_CODE
+        XiaoAiTargets.forVersion(versionCode) != null
 
     fun matchesOutboundEvent(fullName: String): Boolean =
         fullName == "Nlp.Request"
@@ -49,6 +49,51 @@ internal object XiaoAiTakeoverPolicy {
             }
         }
         return prompt.takeIf(String::isNotBlank)?.let(::Decision)
+    }
+}
+
+/** 超级小爱的混淆目标随版本变化；只收录逐项核对过签名的版本，未知版本不安装业务 Hook。 */
+internal data class XiaoAiTargets(
+    val engineClass: String,
+    val engineSendMethod: String,
+    val engineClearMethod: String,
+    val asrProcessorClass: String,
+    val agentActionManagerClass: String,
+    val imageIdStoreClass: String,
+    val floatManagerClass: String,
+    val flowToastCardClass: String,
+    val ttsPlayerClass: String,
+) {
+    companion object {
+        private val BY_VERSION = mapOf(
+            // 7.13.32.0016：已通过小米真机验证。
+            507013032L to XiaoAiTargets(
+                engineClass = "y00.r0",
+                engineSendMethod = "C0",
+                engineClearMethod = "V",
+                asrProcessorClass = "z10.a",
+                agentActionManagerClass = "kh0.s0",
+                imageIdStoreClass = "k00.y0",
+                floatManagerClass = "com.xiaomi.voiceassistant.widget.d",
+                flowToastCardClass =
+                    "com.xiaomi.voiceassistant.instruction.card.stream.FlowTemplateToastCard",
+                ttsPlayerClass = "la0.n1",
+            ),
+            // 8.2.65.4714（HyperOS 4）：按 DEX 核对签名与语义；新版 V() 只是 forceInterrupt，会话清理为 W()。
+            508002065L to XiaoAiTargets(
+                engineClass = "p31.o0",
+                engineSendMethod = "D0",
+                engineClearMethod = "W",
+                asrProcessorClass = "s41.c",
+                agentActionManagerClass = "fo1.x0",
+                imageIdStoreClass = "com.xiaomi.voiceassist.baselibrary.utils.i1",
+                floatManagerClass = "com.xiaomi.voiceassistant.widget.s1",
+                flowToastCardClass = "com.xiaomi.voiceassistant.instruction.card.stream.b",
+                ttsPlayerClass = "xf1.v1",
+            ),
+        )
+
+        fun forVersion(versionCode: Long): XiaoAiTargets? = BY_VERSION[versionCode]
     }
 }
 

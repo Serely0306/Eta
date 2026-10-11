@@ -19,6 +19,7 @@ internal class XiaoAiStreamRenderer(
     private val context: Context,
     private val logger: ModuleLogger,
     private val classLoader: ClassLoader,
+    private val targets: XiaoAiTargets,
     private val dialogId: String,
     private val floatManagerProvider: () -> Any?,
 ) {
@@ -135,7 +136,7 @@ internal class XiaoAiStreamRenderer(
         if (cancelled.get()) return null
         return try {
             val cardClass = Class.forName(
-                XiaoAiHooks.FLOW_TOAST_CARD_CLASS,
+                targets.flowToastCardClass,
                 false,
                 classLoader,
             )
@@ -172,7 +173,7 @@ internal class XiaoAiStreamRenderer(
     }
 
     private fun ttsPlayer(loader: ClassLoader): Any? {
-        val playerClass = Class.forName(XiaoAiHooks.TTS_PLAYER_CLASS, false, loader)
+        val playerClass = Class.forName(targets.ttsPlayerClass, false, loader)
         val singletonField = playerClass.declaredFields.firstOrNull { field ->
             Modifier.isStatic(field.modifiers) && field.type == playerClass
         } ?: return null

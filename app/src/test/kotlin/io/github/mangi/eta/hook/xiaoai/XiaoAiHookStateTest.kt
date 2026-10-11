@@ -11,8 +11,23 @@ class XiaoAiHookStateTest {
     @Test
     fun versionGateOnlyAcceptsTheAnalyzedApk() {
         assertTrue(XiaoAiTakeoverPolicy.isSupportedVersion(507013032L))
+        assertTrue(XiaoAiTakeoverPolicy.isSupportedVersion(508002065L))
         assertFalse(XiaoAiTakeoverPolicy.isSupportedVersion(507013031L))
+        // HyperOS 4 系统镜像自带的版本未做 DEX 核对，不能沿用 8.2.65 的目标。
+        assertFalse(XiaoAiTakeoverPolicy.isSupportedVersion(508002053L))
         assertFalse(XiaoAiTakeoverPolicy.isSupportedVersion(-1L))
+    }
+
+    @Test
+    fun targetsAreResolvedPerVersion() {
+        val legacy = XiaoAiTargets.forVersion(507013032L)!!
+        val hyperOs4 = XiaoAiTargets.forVersion(508002065L)!!
+        assertEquals("y00.r0", legacy.engineClass)
+        assertEquals("V", legacy.engineClearMethod)
+        assertEquals("p31.o0", hyperOs4.engineClass)
+        assertEquals("D0", hyperOs4.engineSendMethod)
+        assertEquals("W", hyperOs4.engineClearMethod)
+        assertNull(XiaoAiTargets.forVersion(508002053L))
     }
 
     @Test

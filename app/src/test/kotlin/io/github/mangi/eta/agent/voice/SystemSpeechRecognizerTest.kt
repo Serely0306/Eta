@@ -20,6 +20,7 @@ class SystemSpeechRecognizerTest {
         name: String,
         permission: String? = null,
         exported: Boolean = true,
+        sourceDir: String? = null,
     ) = ResolveInfo().apply {
         serviceInfo = ServiceInfo().apply {
             this.packageName = packageName
@@ -27,8 +28,53 @@ class SystemSpeechRecognizerTest {
             this.permission = permission
             this.exported = exported
             this.enabled = true
-            applicationInfo = ApplicationInfo().apply { enabled = true }
+            applicationInfo = ApplicationInfo().apply {
+                enabled = true
+                this.sourceDir = sourceDir
+            }
         }
+    }
+
+    @Test fun preinstalledServiceWithVendorPermissionIsSelected() {
+        val vendor = ComponentName("com.xiaomi.mibrain.speech", "com.xiaomi.mibrain.speech.asr.AsrService")
+        assertEquals(
+            vendor,
+            SystemSpeechRecognizer.selectExternalService(
+                listOf(
+                    service(
+                        "com.anthropic.claude",
+                        "ClaudeRecognitionService",
+                        permission = "android.permission.BIND_RECOGNITION_SERVICE",
+                        sourceDir = "/data/app/com.anthropic.claude/base.apk",
+                    ),
+                    service(
+                        vendor.packageName,
+                        vendor.className,
+                        permission = "com.xiaomi.mibrain.speech.permission.BIND_SPEECH_RECOGNITION_SERVICE",
+                        sourceDir = "/product/data-app/MIUIXiaoAiSpeechEngine/MIUIXiaoAiSpeechEngine.apk",
+                    ),
+                ),
+                "io.github.mangi.eta",
+                null,
+            ),
+        )
+    }
+
+    @Test fun userInstalledServiceWithVendorPermissionIsNotSelected() {
+        assertNull(
+            SystemSpeechRecognizer.selectExternalService(
+                listOf(
+                    service(
+                        "third.party",
+                        "Recognizer",
+                        permission = "third.party.permission.BIND",
+                        sourceDir = "/data/app/third.party/base.apk",
+                    ),
+                ),
+                "io.github.mangi.eta",
+                null,
+            ),
+        )
     }
 
     @Test fun configuredRecognitionServiceCanOmitBindPermission() {
