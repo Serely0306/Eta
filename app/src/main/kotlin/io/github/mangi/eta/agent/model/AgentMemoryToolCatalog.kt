@@ -72,7 +72,7 @@ internal object AgentMemoryToolCatalog {
                                         .put("type", "string")
                                         .put("minLength", 64)
                                         .put("maxLength", 64)
-                                        .put("description", "Exact SHA-256 revision from the run-start memory context or latest memory_get result."),
+                                        .put("description", "Exact SHA-256 revision from the latest memory_get or memory_write result, or the session memory snapshot when neither was called."),
                                 )
                                 .put(
                                     "start_line",

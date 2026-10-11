@@ -6,6 +6,7 @@ import io.github.mangi.eta.data.datastore.SettingsDataStore
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.Flow
 
 internal data class AgentMemorySnapshot(
@@ -305,6 +306,11 @@ internal class AgentMemoryStore(
 internal object AgentMemoryRepository {
     @Volatile
     private lateinit var store: AgentMemoryStore
+    private val externalEdits = AtomicLong()
+
+    /** 设置页编辑、清空和备份导入等非模型写入的次数；会话内冻结的记忆快照据此失效。 */
+    val externalEditGeneration: Long
+        get() = externalEdits.get()
 
     fun init(context: Context) {
         if (!::store.isInitialized) {
@@ -333,7 +339,7 @@ internal object AgentMemoryRepository {
 
     fun replaceAll(content: String): AgentMemorySnapshot {
         ensureInitialized()
-        return store.replaceAll(content)
+        return store.replaceAll(content).also { externalEdits.incrementAndGet() }
     }
 
     fun enabledFlow(): Flow<Boolean> = SettingsDataStore.memoryEnabledFlow()

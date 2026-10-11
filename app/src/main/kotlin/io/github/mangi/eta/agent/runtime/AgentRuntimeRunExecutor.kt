@@ -12,6 +12,7 @@ import io.github.mangi.eta.agent.model.AgentModelFailure
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
+import io.github.mangi.eta.agent.memory.AgentMemorySessionSnapshots
 import io.github.mangi.eta.agent.roleplay.CharacterMemoryTools
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.agent.mcp.McpRunSnapshot
@@ -121,10 +122,17 @@ internal class AgentRuntimeRunExecutor(
             }
             val memoryContext = if (memoryEnabled) {
                 runCatching {
-                    AgentMemoryContextBuilder.build(
-                        snapshot = AgentMemoryRepository.snapshot(),
+                    AgentMemorySessionSnapshots.resolve(
+                        sessionId = request.effectiveModelSessionId,
                         contextWindow = request.config.contextWindow,
-                    )
+                        externalEditGeneration = AgentMemoryRepository.externalEditGeneration,
+                        history = request.history,
+                    ) {
+                        AgentMemoryContextBuilder.build(
+                            snapshot = AgentMemoryRepository.snapshot(),
+                            contextWindow = request.config.contextWindow,
+                        )
+                    }
                 }.getOrElse { throwable ->
                     AndroidAgentLogger.warnThrottled("agent_memory_context_failed") {
                         "Agent memory context unavailable: type=${throwable.safeLogType()}"
