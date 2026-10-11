@@ -14,6 +14,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
     private const val ADAPTIVE_MODEL_DEFAULT_MAX_TOKENS = 16_384
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     private val TOP_LEVEL_COMBINATORS = listOf("oneOf", "anyOf", "allOf")
+    private val CACHEABLE_ROLES = setOf("user", "assistant", "tool")
 
     override val id: String = "anthropic_messages"
 
@@ -90,9 +91,12 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         val latestAssistantIndex = (messages.length() - 1 downTo 0).firstOrNull { index ->
             messages.optJSONObject(index)?.optString("role") == "assistant"
         }
+        // 观察截图只在当轮使用，下一轮会被移除；滚动缓存点必须落在它之前，后续请求才能命中同一前缀。
+        var cacheAnchor: JSONObject? = null
         for (index in 0 until messages.length()) {
             val message = messages.optJSONObject(index) ?: continue
-            when (message.optString("role")) {
+            val role = message.optString("role")
+            when (role) {
                 "system" -> providerMessageText(message.opt("content"))
                     .takeIf { it.isNotBlank() }
                     ?.let(systemParts::add)
@@ -113,7 +117,11 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                     ),
                 )
             }
+            if (role in CACHEABLE_ROLES && !message.optBoolean("_eta_observation")) {
+                lastCacheableBlock(anthropicMessages)?.let { cacheAnchor = it }
+            }
         }
+        cacheAnchor?.put("cache_control", ephemeralCacheControl())
 
         return JSONObject()
             .put("model", config.model)
@@ -122,8 +130,18 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
             .put("messages", anthropicMessages)
             .also { request ->
                 val system = systemParts.joinToString("\n\n").trim()
-                if (system.isNotBlank()) request.put("system", system)
-                convertTools(tools)?.let { request.put("tools", it) }
+                if (system.isNotBlank()) {
+                    request.put("system", JSONArray().put(
+                        JSONObject()
+                            .put("type", "text")
+                            .put("text", system)
+                            .put("cache_control", ephemeralCacheControl())
+                    ))
+                }
+                convertTools(tools)?.let { converted ->
+                    converted.optJSONObject(converted.length() - 1)?.put("cache_control", ephemeralCacheControl())
+                    request.put("tools", converted)
+                }
                 RequestBodyMerge.mergeCustomBody(request, config.customBody)
                 val explicitMaxTokens = request.opt("max_tokens")
                     .takeIf { config.customBody.any { body -> body.key == "max_tokens" } }
@@ -145,6 +163,21 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         val merged = previous.getJSONArray("content")
         for (index in 0 until content.length()) merged.put(content.get(index))
     }
+
+    /** 思考块不能携带 cache_control，空文本块会被拒绝；从最后一条消息末尾向前找可标记的块。 */
+    private fun lastCacheableBlock(target: JSONArray): JSONObject? {
+        val content = target.optJSONObject(target.length() - 1)?.optJSONArray("content") ?: return null
+        for (index in content.length() - 1 downTo 0) {
+            val block = content.optJSONObject(index) ?: continue
+            when (block.optString("type")) {
+                "text" -> if (block.optString("text").isNotBlank()) return block
+                "tool_result", "tool_use", "image" -> return block
+            }
+        }
+        return null
+    }
+
+    private fun ephemeralCacheControl(): JSONObject = JSONObject().put("type", "ephemeral")
 
     private fun defaultMaxTokens(model: String): Int =
         if (model.trim().lowercase() in setOf("claude-fable-5-1", "claude-opus-5-5")) {

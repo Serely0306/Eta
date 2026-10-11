@@ -183,6 +183,53 @@ class AnthropicMessagesProviderTest {
     }
 
     @Test
+    fun cacheBreakpointsCoverToolsSystemAndStablePrefixBeforeObservation() {
+        val assistant = JSONObject()
+            .put("role", "assistant")
+            .put("content", "")
+            .put("tool_calls", JSONArray()
+                .put(JSONObject().put("id", "toolu_a").put("type", "function")
+                    .put("function", JSONObject().put("name", "observe_screen").put("arguments", "{}"))))
+        val observation = JSONObject()
+            .put("role", "user")
+            .put("content", JSONArray()
+                .put(JSONObject().put("type", "text").put("text", "Latest observation image(s)"))
+                .put(JSONObject().put("type", "image_url")
+                    .put("image_url", JSONObject().put("url", "data:image/png;base64,AAAA"))))
+            .put("_eta_observation", true)
+        val messages = JSONArray()
+            .put(JSONObject().put("role", "system").put("content", "规则"))
+            .put(AgentConversationCodec.userTextMessage("开始"))
+            .put(assistant)
+            .put(JSONObject().put("role", "tool").put("tool_call_id", "toolu_a").put("content", "A"))
+            .put(observation)
+        val tools = JSONArray().also { AgentWebToolCatalog.appendTo(it) }
+        val requestBody = AtomicReference<String>()
+        withAnthropicServer(event("message_stop", JSONObject()), onRequest = requestBody::set) { baseUrl ->
+            AnthropicMessagesProvider.complete(
+                providerRequest(baseUrl).copy(messages = messages, tools = tools),
+                AgentRunController(),
+            )
+        }
+
+        val body = JSONObject(requestBody.get())
+        val system = body.getJSONArray("system")
+        assertEquals("规则", system.getJSONObject(0).getString("text"))
+        assertTrue(system.getJSONObject(0).has("cache_control"))
+        val sentTools = body.getJSONArray("tools")
+        assertEquals(
+            listOf(sentTools.length() - 1),
+            (0 until sentTools.length()).filter { sentTools.getJSONObject(it).has("cache_control") },
+        )
+        val turn = body.getJSONArray("messages").getJSONObject(2).getJSONArray("content")
+        assertEquals(listOf("tool_result", "text", "image"), (0 until turn.length()).map { turn.getJSONObject(it).getString("type") })
+        assertEquals("ephemeral", turn.getJSONObject(0).getJSONObject("cache_control").getString("type"))
+        assertFalse(turn.getJSONObject(1).has("cache_control"))
+        assertFalse(turn.getJSONObject(2).has("cache_control"))
+        assertEquals(3, Regex("\"cache_control\"").findAll(requestBody.get()).count())
+    }
+
+    @Test
     fun usageReportsContextOccupancyAndKeepsInputWhenDeltaOnlyCarriesOutput() {
         val body = event("message_start", JSONObject().put("message", JSONObject().put("usage", JSONObject()
             .put("input_tokens", 100).put("cache_read_input_tokens", 900).put("cache_creation_input_tokens", 50)

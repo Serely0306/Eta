@@ -55,6 +55,7 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
                 remove("tools")
                 remove("tool_choice")
             }
+            ProviderRequestHeaders.applyPromptCacheKey(this, config.baseUrl, request.sessionId)
         }
         val existingToolCallIds = ChatToolCallHistory.referencedIds(request.messages) +
             requestJson.optJSONArray("messages")?.let(ChatToolCallHistory::referencedIds).orEmpty()

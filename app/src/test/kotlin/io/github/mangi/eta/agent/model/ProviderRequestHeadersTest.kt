@@ -2,13 +2,35 @@ package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.data.model.CustomHeader
 import okhttp3.Headers
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ProviderRequestHeadersTest {
+    @Test
+    fun promptCacheKeyIsStablePerConversationAndOnlySentToOfficialOpenAi() {
+        fun key(baseUrl: String, session: String) = JSONObject()
+            .also { ProviderRequestHeaders.applyPromptCacheKey(it, baseUrl, session) }
+            .optString("prompt_cache_key")
+        val first = key("https://api.openai.com/v1", "conversation-1")
+        assertTrue(first.isNotBlank())
+        assertEquals(first, key("https://api.openai.com/v1", "conversation-1"))
+        assertNotEquals(first, key("https://api.openai.com/v1", "conversation-2"))
+        listOf("https://api.deepseek.com/v1", "https://api.openai.com.example.com/v1").forEach {
+            assertEquals("", key(it, "conversation-1"))
+        }
+        val explicit = JSONObject().put("prompt_cache_key", "user-value")
+        ProviderRequestHeaders.applyPromptCacheKey(explicit, "https://api.openai.com/v1", "conversation-1")
+        assertEquals("user-value", explicit.getString("prompt_cache_key"))
+        assertFalse(JSONObject().also {
+            ProviderRequestHeaders.applyPromptCacheKey(it, "not a url", "conversation-1")
+        }.has("prompt_cache_key"))
+    }
+
     @Test
     fun openCodeSessionIsStableAndIsolatedFromOtherConversations() {
         val first = headers("https://opencode.ai/zen/go/v1", "conversation-1")
