@@ -190,7 +190,10 @@ class AgentContextRecoveryTest {
 
     @Test
     fun onlySummaryRequestsHaveAnOverallTimeout() {
-        assertEquals(300_000, AgentHttpClient.modelClient(ProviderRequestPurpose.COMPACTION).callTimeoutMillis)
+        assertEquals(
+            AgentHttpClient.COMPACTION_CALL_TIMEOUT_MS.toInt(),
+            AgentHttpClient.modelClient(ProviderRequestPurpose.COMPACTION).callTimeoutMillis,
+        )
         assertEquals(0, AgentHttpClient.modelClient(ProviderRequestPurpose.CHAT).callTimeoutMillis)
     }
 
