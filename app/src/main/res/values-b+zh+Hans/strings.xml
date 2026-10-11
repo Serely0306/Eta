@@ -210,6 +210,8 @@
   <string name="overlay_result_open_eta">回到 Eta</string>
   <string name="overlay_pause">暂停</string>
   <string name="overlay_resume">继续</string>
+  <string name="overlay_minimize">最小化</string>
+  <string name="overlay_restore_capsule">显示 Eta 状态</string>
   <string name="tool_observe_screen">观察屏幕</string>
   <string name="tool_tap">点击</string>
   <string name="tool_tap_element">点击元素</string>
@@ -889,6 +891,9 @@
   <string name="skill_enabled_message">“%1$s”已启用，将从下一轮对话开始可用。</string>
   <string name="settings_open_assistant_failed">无法打开默认助理设置</string>
   <string name="settings_model_not_selected">未选择模型</string>
+  <string name="settings_vendor_assistant_model">厂商助手模型</string>
+  <string name="settings_vendor_assistant_model_summary">接管小爱或小布请求时使用的模型</string>
+  <string name="settings_vendor_assistant_model_follow_default">跟随默认模型</string>
   <string name="settings_not_configured">未配置</string>
   <string name="status_authorized">已授权</string>
   <string name="status_unauthorized">未授权</string>
@@ -1108,7 +1113,8 @@
   <string name="permission_status_disabled">未启用</string>
   <string name="chat_edit_replace_later">发送后将替换此消息及之后内容</string>
   <string name="chat_edit_replace_message">发送后将替换此消息</string>
-  <string name="chat_eta_working">Eta 正在执行…</string>
+  <string name="chat_eta_working">Eta 正在执行…可输入补充要求</string>
+  <string name="chat_follow_up_queued">将在当前回复结束后作为新消息发送</string>
   <string name="chat_input_hint">交给 Eta 去完成</string>
   <string name="chat_stop">停止</string>
   <string name="chat_send">发送</string>

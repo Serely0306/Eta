@@ -1,5 +1,8 @@
+@file:OptIn(ExperimentalComposeUiApi::class)
+
 package io.github.mangi.eta.agent.overlay
 
+import android.view.MotionEvent
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -28,12 +31,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CloseFullscreen
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -46,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -55,16 +62,20 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
+import kotlin.math.hypot
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Icon
@@ -73,22 +84,41 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
- * 顶部状态胶囊：收起时只显示一句当前步骤，点击展开补充、暂停与停止。
- * 位置固定在状态栏下方居中，不随 Agent 的点击位置移动，避免和目标控件重叠。
+ * 顶部状态胶囊：收起时只显示一句当前步骤，点击展开补充、暂停、最小化与停止。
+ * 默认在状态栏下方居中，不随 Agent 的点击位置移动；用户可以拖动换位，或最小化为小圆点。
  * 状态文字只在语义变化时以上滑淡入切换，流式正文不进入胶囊。
  */
 @Composable
 internal fun AgentOverlayCapsule(
     state: AgentOverlayState,
     expanded: Boolean,
+    minimized: Boolean,
     onToggleExpanded: () -> Unit,
     onCollapsedSettled: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
+    onMinimize: () -> Unit,
+    onRestore: () -> Unit,
+    onDragStart: () -> Unit,
+    onDragBy: (Float, Float) -> Unit,
     onSupplementModeChange: (Boolean) -> Unit,
     onSupplement: (String) -> Unit,
 ) {
+    val touchSlop = LocalViewConfiguration.current.touchSlop
+    if (minimized) {
+        MinimizedCapsule(
+            state = state,
+            touchSlop = touchSlop,
+            onRestore = onRestore,
+            onDragStart = onDragStart,
+            onDragBy = onDragBy,
+        )
+        return
+    }
+    val headerTracker = remember(touchSlop) {
+        CapsuleTouchTracker(touchSlop, onTap = { onToggleExpanded() }, onDragStart = { onDragStart() }, onDragBy = { dx, dy -> onDragBy(dx, dy) })
+    }
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
     var supplementMode by remember { mutableStateOf(false) }
@@ -153,12 +183,11 @@ internal fun AgentOverlayCapsule(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onToggleExpanded,
-                        )
-                        .semantics { contentDescription = expandDescription }
+                        .pointerInteropFilter(onTouchEvent = headerTracker::onTouch)
+                        .semantics {
+                            contentDescription = expandDescription
+                            onClick { onToggleExpanded(); true }
+                        }
                         .padding(start = 12.dp, end = 16.dp, top = 9.dp, bottom = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -235,6 +264,12 @@ internal fun AgentOverlayCapsule(
                                         onClick = onResume,
                                     )
                                 }
+                                CapsuleAction(
+                                    icon = Icons.Rounded.CloseFullscreen,
+                                    label = stringResource(R.string.overlay_minimize),
+                                    tint = MiuixTheme.colorScheme.onSurface,
+                                    onClick = onMinimize,
+                                )
                                 CapsuleAction(
                                     icon = Icons.Rounded.Stop,
                                     label = stringResource(R.string.action_stop),
@@ -339,5 +374,79 @@ private fun CapsuleAction(icon: ImageVector, label: String, tint: Color, onClick
     }
 }
 
+/** 最小化后只保留阶段指示圆点：点击恢复胶囊，拖动换位，不遮挡下层应用。 */
+@Composable
+private fun MinimizedCapsule(
+    state: AgentOverlayState,
+    touchSlop: Float,
+    onRestore: () -> Unit,
+    onDragStart: () -> Unit,
+    onDragBy: (Float, Float) -> Unit,
+) {
+    val accent by animateColorAsState(overlayPhaseAccent(state.phase), tween(240), label = "capsule_dot_accent")
+    val restoreDescription = stringResource(R.string.overlay_restore_capsule)
+    val tracker = remember(touchSlop) {
+        CapsuleTouchTracker(touchSlop, onTap = { onRestore() }, onDragStart = { onDragStart() }, onDragBy = { dx, dy -> onDragBy(dx, dy) })
+    }
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier
+                .size(MinimizedCapsuleSize)
+                .shadow(8.dp, CircleShape, ambientColor = accent, spotColor = accent)
+                .clip(CircleShape)
+                .background(MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.94f))
+                .pointerInteropFilter(onTouchEvent = tracker::onTouch)
+                .semantics {
+                    contentDescription = restoreDescription
+                    onClick { onRestore(); true }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            PhaseIndicator(phase = state.phase, accent = accent)
+        }
+    }
+}
+
+/**
+ * 胶囊所在窗口会随拖动移动，窗口内坐标随之改变，因此用屏幕坐标计算位移；
+ * 超过触摸阈值才算拖动，否则抬手时按点击处理。
+ */
+private class CapsuleTouchTracker(
+    private val touchSlop: Float,
+    private val onTap: () -> Unit,
+    private val onDragStart: () -> Unit,
+    private val onDragBy: (Float, Float) -> Unit,
+) {
+    private var downX = 0f
+    private var downY = 0f
+    private var dragging = false
+
+    fun onTouch(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = event.rawX
+                downY = event.rawY
+                dragging = false
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = event.rawX - downX
+                val dy = event.rawY - downY
+                if (!dragging && hypot(dx, dy) > touchSlop) {
+                    dragging = true
+                    onDragStart()
+                }
+                if (dragging) onDragBy(dx, dy)
+            }
+            MotionEvent.ACTION_UP -> {
+                if (!dragging) onTap()
+                dragging = false
+            }
+            MotionEvent.ACTION_CANCEL -> dragging = false
+        }
+        return true
+    }
+}
+
 private val CapsuleCorner = 22.dp
 private val CapsuleWidth = 248.dp
+private val MinimizedCapsuleSize = 44.dp

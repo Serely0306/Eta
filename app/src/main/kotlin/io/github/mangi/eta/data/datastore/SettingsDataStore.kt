@@ -48,6 +48,7 @@ internal object SettingsDataStore {
 
     private val SELECTED_PROVIDER_ID = stringPreferencesKey("selected_provider_id")
     private val SELECTED_MODEL_ID = stringPreferencesKey("selected_model_id")
+    private val VENDOR_ASSISTANT_MODEL_ID = stringPreferencesKey("vendor_assistant_model_id")
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
@@ -188,6 +189,27 @@ internal object SettingsDataStore {
                 prefs[selectedModelByProviderKey(providerId)] = modelId
             }
         }
+    }
+
+    /** 厂商助手入口（小爱、小布）单独选择的模型；为空时跟随默认模型。 */
+    fun vendorAssistantModelIdFlow(): Flow<String?> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw cause
+                }
+            }
+            .map { prefs -> prefs[VENDOR_ASSISTANT_MODEL_ID] }
+    }
+
+    suspend fun vendorAssistantModelId(): String? = vendorAssistantModelIdFlow().first()
+
+    suspend fun setVendorAssistantModelId(modelId: String?) {
+        ensureInitialized()
+        dataStore.edit { prefs -> prefs.putOrRemove(VENDOR_ASSISTANT_MODEL_ID, modelId) }
     }
 
     suspend fun clearSelectedModelIdForProvider(providerId: String) {

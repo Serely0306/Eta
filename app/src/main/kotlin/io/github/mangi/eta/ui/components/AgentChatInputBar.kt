@@ -346,8 +346,10 @@ internal fun AgentChatInputBar(
                             onModelSelected = onModelSelected,
                         )
 
+                        // 运行中有文字时作为补充要求发送（由 Runtime steering 在下一轮处理）；空输入仍是停止。
+                        val showStop = isStreaming && (isCompacting || textFieldState.text.isBlank())
                         IconButton(
-                            onClick = if (isStreaming) {
+                            onClick = if (showStop) {
                                 onStop
                             } else {
                                 {
@@ -366,7 +368,7 @@ internal fun AgentChatInputBar(
                             // 保留统一的点击区域，仅让可见圆形与相邻操作图标保持同一尺寸。
                             val sendButtonColor by animateColorAsState(
                                 targetValue = when {
-                                    isStreaming -> MiuixTheme.colorScheme.onSurface
+                                    showStop -> MiuixTheme.colorScheme.onSurface
                                     canSend -> MiuixTheme.colorScheme.primary
                                     else -> MiuixTheme.colorScheme.surfaceContainerHigh
                                 },
@@ -381,7 +383,7 @@ internal fun AgentChatInputBar(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 AnimatedContent(
-                                    targetState = isStreaming,
+                                    targetState = showStop,
                                     transitionSpec = {
                                         (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f))
                                             .togetherWith(

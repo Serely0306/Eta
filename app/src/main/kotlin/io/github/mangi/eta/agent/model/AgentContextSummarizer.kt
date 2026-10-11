@@ -29,21 +29,29 @@ internal class AgentContextSummarizer(
         ) { event ->
             if (event is ProviderEvent.HostedToolStarted ||
                 event is ProviderEvent.BlockStart && event.kind == AssistantBlockKind.TOOL_CALL) {
-                throw invalidSummary()
+                throw invalidSummary("模型尝试调用工具")
             }
         }
         controller.throwIfCancelled()
-        val summary = response.assistantMessage.optString("content").trim()
-        if (response.stopReason != AssistantStopReason.END_TURN ||
-            AgentConversationCodec.parseToolCalls(response.assistantMessage).isNotEmpty() ||
-            summary.isBlank() || summary == "null" || summary.length > MAX_SUMMARY_CHARS) {
-            throw invalidSummary()
+        val message = response.assistantMessage
+        val summary = message.optString("content").trim()
+        val reason = when {
+            AgentConversationCodec.parseToolCalls(message).isNotEmpty() -> "模型尝试调用工具"
+            response.stopReason == AssistantStopReason.OUTPUT_LIMIT -> "输出达到长度上限"
+            response.stopReason == AssistantStopReason.CONTENT_FILTER -> "被内容过滤拦截"
+            response.stopReason != AssistantStopReason.END_TURN ->
+                "结束原因为 ${message.optString("finish_reason").ifBlank { "空" }}"
+            summary.isBlank() || summary == "null" ->
+                if (message.optString("reasoning_content").isNotBlank()) "只返回了思考内容" else "摘要为空"
+            summary.length > MAX_SUMMARY_CHARS -> "摘要 ${summary.length} 字符，超过 $MAX_SUMMARY_CHARS"
+            else -> null
         }
+        if (reason != null) throw invalidSummary(reason)
         return summary
     }
 
-    private fun invalidSummary() = AgentModelFailure(
-        "CONTEXT_SUMMARY_INVALID", false, "模型未返回完整且有界的摘要，原始上下文已保留。",
+    private fun invalidSummary(reason: String) = AgentModelFailure(
+        "CONTEXT_SUMMARY_INVALID", false, "模型未返回完整且有界的摘要（$reason），原始上下文已保留。",
     )
 
     private companion object {

@@ -17,12 +17,17 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.Process
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.view.View
 import android.window.OnBackInvokedDispatcher
 import android.window.OnBackInvokedCallback
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +61,7 @@ import io.github.mangi.eta.core.ModuleConfig
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import kotlin.concurrent.thread
+import kotlin.math.roundToInt
 import kotlinx.coroutines.runBlocking
 import top.yukonga.miuix.kmp.squircle.LocalSquircleEnabled
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -114,6 +120,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
     }
     private val capsuleExpanded = mutableStateOf(false)
+    private val capsuleMinimized = mutableStateOf(false)
+    private var capsuleDragOrigin: Pair<Int, Int>? = null
+    /** 边缘流光只在读取或操作前台界面的工具执行期间显示，空闲片刻后淡出；胶囊保持可见。 */
+    private val glowActive = mutableStateOf(false)
+    private val glowHideToken = Any()
     private var hasExecutedForegroundTool = false
     /** 结果卡片"回到 Eta"打开的会话；只有 App 内发起的 run 才有，系统助手入口为 null。 */
     private var resultConversationId: String? = null
@@ -224,6 +235,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 AgentRuntimeWire.MSG_CANCEL -> {
                     val runId = msg.data?.let(AgentRuntimeWire::runIdFromBundle).orEmpty()
                     if (runId.isNotBlank()) cancelRun(runId)
+                }
+
+                AgentRuntimeWire.MSG_STEER -> {
+                    val data = msg.data ?: return
+                    steerRun(
+                        runId = AgentRuntimeWire.runIdFromBundle(data),
+                        text = AgentRuntimeWire.steerTextFromBundle(data),
+                        replyTo = msg.replyTo,
+                    )
                 }
 
                 AgentRuntimeWire.MSG_ACK_RESULT -> {
@@ -362,9 +382,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             }
         }
         mainHandler.removeCallbacksAndMessages(hideToken)
+        mainHandler.removeCallbacksAndMessages(glowHideToken)
         state.value = AgentOverlayState.Initial
         capsuleExpanded.value = false
-        setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
+        capsuleMinimized.value = false
+        glowActive.value = false
+        setCapsuleWindowSize(CAPSULE_WINDOW_WIDTH_DP, CAPSULE_COLLAPSED_HEIGHT_DP)
         hasExecutedForegroundTool = false
         resultConversationId = request.handoff
             ?.takeIf { it.source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE }
@@ -446,6 +469,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             if (session.isTerminal) return@post
             runCatching {
                 state.value = state.value.applyEvent(event)
+                updateGlowFor(event)
                 if (revealsForegroundOperation && entrySurfaceReady) {
                     if (capsuleView == null) {
                         AgentHapticFeedback.perform(
@@ -808,6 +832,32 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         startRun(continuationRequest)
     }
 
+    /** 聊天页在运行中追加的要求；与状态胶囊的补充共用同一条 steering 与补充记录路径。 */
+    private fun steerRun(runId: String, text: String, replyTo: Messenger?) {
+        val supplementText = text.trim()
+        val session = activeSession
+        val event = if (supplementText.isBlank() || session == null || session.runId != runId) {
+            null
+        } else {
+            session.steer(supplementText) { recordSupplementEvent(supplementText) }
+        }
+        if (event != null) {
+            AndroidAgentLogger.info(
+                "Agent runtime supplement received from chat: index=${event.index}, chars=${event.text.length}"
+            )
+            state.value = state.value.applyEvent(event)
+        }
+        runCatching {
+            replyTo?.send(Message.obtain(null, AgentRuntimeWire.MSG_STEER_RESPONSE).apply {
+                data = AgentRuntimeWire.steerResponseBundle(runId, accepted = event != null)
+            })
+        }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_steer_response_failed") {
+                "Agent runtime steer response failed: type=${throwable.safeLogType()}"
+            }
+        }
+    }
+
     private fun recordSupplementEvent(text: String): AgentEvent.UserSupplementReceived {
         val supplement = synchronized(supplementsLock) {
             AgentUiHandoffPayload.Supplement(
@@ -835,7 +885,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
         // ── 氛围光窗口：全屏触摸穿透，彩虹光圈，截图时被 takeScreenshotOfWindow 过滤 ─
         val glow = createOverlayComposeView {
-            AgentOverlayGlow(state = state.value, corners = screenCornerRadii())
+            AnimatedVisibility(
+                visible = glowActive.value,
+                enter = fadeIn(tween(GLOW_FADE_IN_MS)),
+                exit = fadeOut(tween(GLOW_FADE_OUT_MS)),
+            ) {
+                AgentOverlayGlow(state = state.value, corners = screenCornerRadii())
+            }
         }
         val glowLp = glowLayoutParams()
         runCatching { wm.addView(glow, glowLp) }.onFailure { throwable ->
@@ -851,11 +907,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             AgentOverlayCapsule(
                 state = state.value,
                 expanded = capsuleExpanded.value,
+                minimized = capsuleMinimized.value,
                 onToggleExpanded = ::toggleCapsule,
                 onCollapsedSettled = ::onCapsuleCollapsedSettled,
                 onPause = ::requestPause,
                 onResume = ::requestResume,
                 onStop = ::requestStop,
+                onMinimize = ::minimizeCapsule,
+                onRestore = ::restoreCapsule,
+                onDragStart = ::startCapsuleDrag,
+                onDragBy = ::dragCapsuleBy,
                 onSupplementModeChange = ::setCapsuleInputMode,
                 onSupplement = ::requestSupplement,
             )
@@ -883,16 +944,83 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun setCapsuleWindowHeight(heightDp: Int) {
+        // 最小化时窗口只保留圆点大小；收起动画结束等回调不能把窗口撑回胶囊宽度。
+        if (capsuleMinimized.value) return
+        setCapsuleWindowSize(CAPSULE_WINDOW_WIDTH_DP, heightDp)
+    }
+
+    private fun setCapsuleWindowSize(widthDp: Int, heightDp: Int) {
         val wm = windowManager ?: return
         val capsule = capsuleView ?: return
         val lp = capsuleParams ?: return
+        val width = dpToPx(widthDp)
         val height = dpToPx(heightDp)
-        if (lp.height == height) return
+        if (lp.width == width && lp.height == height) return
+        lp.width = width
         lp.height = height
+        clampCapsulePosition(lp)
+        updateCapsuleLayout(wm, capsule, lp)
+    }
+
+    private fun minimizeCapsule() {
+        capsuleExpanded.value = false
+        setCapsuleInputMode(focusable = false)
+        capsuleMinimized.value = true
+        setCapsuleWindowSize(CAPSULE_MINIMIZED_SIZE_DP, CAPSULE_MINIMIZED_SIZE_DP)
+    }
+
+    private fun restoreCapsule() {
+        capsuleMinimized.value = false
+        setCapsuleWindowSize(CAPSULE_WINDOW_WIDTH_DP, CAPSULE_COLLAPSED_HEIGHT_DP)
+    }
+
+    private fun startCapsuleDrag() {
+        val lp = capsuleParams ?: return
+        capsuleDragOrigin = lp.x to lp.y
+    }
+
+    /** 位移相对拖动起点计算，避免逐帧取整累积误差；窗口以顶部居中为锚点。 */
+    private fun dragCapsuleBy(dx: Float, dy: Float) {
+        val wm = windowManager ?: return
+        val capsule = capsuleView ?: return
+        val lp = capsuleParams ?: return
+        val (originX, originY) = capsuleDragOrigin ?: (lp.x to lp.y)
+        lp.x = originX + dx.roundToInt()
+        lp.y = originY + dy.roundToInt()
+        clampCapsulePosition(lp)
+        updateCapsuleLayout(wm, capsule, lp)
+    }
+
+    private fun clampCapsulePosition(lp: WindowManager.LayoutParams) {
+        val metrics = resources.displayMetrics
+        val maxX = ((metrics.widthPixels - lp.width) / 2).coerceAtLeast(0)
+        lp.x = lp.x.coerceIn(-maxX, maxX)
+        lp.y = lp.y.coerceIn(0, (metrics.heightPixels - lp.height).coerceAtLeast(0))
+    }
+
+    private fun updateCapsuleLayout(wm: WindowManager, capsule: View, lp: WindowManager.LayoutParams) {
         runCatching { wm.updateViewLayout(capsule, lp) }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_capsule_resize_failed") {
-                "Agent runtime capsule resize failed: type=${throwable.safeLogType()}"
+                "Agent runtime capsule layout update failed: type=${throwable.safeLogType()}"
             }
+        }
+    }
+
+    private fun updateGlowFor(event: AgentEvent) {
+        when (event) {
+            is AgentEvent.ToolStarted -> if (AgentOverlayVisibilityPolicy.isForegroundOperationTool(event.name)) {
+                mainHandler.removeCallbacksAndMessages(glowHideToken)
+                glowActive.value = true
+            }
+            is AgentEvent.ToolFinished -> if (AgentOverlayVisibilityPolicy.isForegroundOperationTool(event.name)) {
+                mainHandler.removeCallbacksAndMessages(glowHideToken)
+                mainHandler.postAtTime(
+                    { glowActive.value = false },
+                    glowHideToken,
+                    SystemClock.uptimeMillis() + GLOW_IDLE_HIDE_MS,
+                )
+            }
+            else -> Unit
         }
     }
 
@@ -1210,6 +1338,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         private const val CAPSULE_COLLAPSED_HEIGHT_DP = 68
         private const val CAPSULE_CONTROLS_HEIGHT_DP = 124
         private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 260
+        private const val CAPSULE_MINIMIZED_SIZE_DP = 56
+        /** 连续操作之间的间隙较短，留出余量避免流光在步骤之间闪烁。 */
+        private const val GLOW_IDLE_HIDE_MS = 1_500L
+        private const val GLOW_FADE_IN_MS = 180
+        private const val GLOW_FADE_OUT_MS = 420
         private const val FALLBACK_SCREEN_CORNER_DP = 28
         const val MAX_ARCHIVED_USER_IMAGE_PREVIEWS = 4
     }

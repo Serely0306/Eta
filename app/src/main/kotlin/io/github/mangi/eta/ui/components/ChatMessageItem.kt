@@ -471,6 +471,10 @@ private fun ContextCompactionMarker(
     modifier: Modifier = Modifier,
 ) {
     val pulseAlpha = rememberActivePulse(active = message.running, label = "compaction_pulse")
+    // 失败原因可能较长（服务商错误最多 600 字符）；结束后点击展开全文，默认仍保持单行胶囊。
+    var expanded by remember(message.id) { mutableStateOf(false) }
+    val showFull = expanded && !message.running
+    val shape = if (showFull) RoundedCornerShape(12.dp) else RoundedCornerShape(percent = 50)
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -479,13 +483,14 @@ private fun ContextCompactionMarker(
     ) {
         Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(percent = 50))
+                .clip(shape)
                 .background(MiuixTheme.colorScheme.surface)
                 .border(
                     0.5.dp,
                     MiuixTheme.colorScheme.outline.copy(alpha = 0.5f),
-                    RoundedCornerShape(percent = 50),
+                    shape,
                 )
+                .clickable(enabled = !message.running) { expanded = !expanded }
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -507,7 +512,7 @@ private fun ContextCompactionMarker(
                     ?: stringResource(R.string.context_compaction),
                 style = MiuixTheme.textStyles.footnote1,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                maxLines = 1,
+                maxLines = if (showFull) Int.MAX_VALUE else 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }

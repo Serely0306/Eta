@@ -16,6 +16,12 @@ internal object AgentHttpClient {
 
     const val MODEL_READ_TIMEOUT_MS = 300_000L
 
+    /**
+     * 压缩请求整体耗时上限。输入接近整个上下文窗口，推理模型摘要时可能持续输出数分钟；
+     * 过短的整体上限会在仍有数据返回时把压缩判为超时，正常对话只受读取间隔限制。
+     */
+    const val COMPACTION_CALL_TIMEOUT_MS = 900_000L
+
     val modelClient: OkHttpClient by lazy {
         client.newBuilder()
             .readTimeout(MODEL_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -25,7 +31,7 @@ internal object AgentHttpClient {
 
     private val compactionClient: OkHttpClient by lazy {
         modelClient.newBuilder()
-            .callTimeout(MODEL_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .callTimeout(COMPACTION_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .build()
     }
 

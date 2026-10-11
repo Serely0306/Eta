@@ -198,6 +198,8 @@
   <string name="overlay_result_open_eta">回到 Eta</string>
   <string name="overlay_pause">暫停</string>
   <string name="overlay_resume">繼續</string>
+  <string name="overlay_minimize">最小化</string>
+  <string name="overlay_restore_capsule">顯示 Eta 狀態</string>
   <string name="tool_observe_screen">查看畫面</string>
   <string name="tool_tap">點按</string>
   <string name="tool_tap_element">點按元素</string>
@@ -877,6 +879,9 @@
   <string name="skill_enabled_message">「%1$s」已啟用，將從下一輪對話開始可用。</string>
   <string name="settings_open_assistant_failed">無法開啟預設助理設定</string>
   <string name="settings_model_not_selected">尚未選擇模型</string>
+  <string name="settings_vendor_assistant_model">廠商助手模型</string>
+  <string name="settings_vendor_assistant_model_summary">接管小愛或小布請求時使用的模型</string>
+  <string name="settings_vendor_assistant_model_follow_default">跟隨預設模型</string>
   <string name="settings_not_configured">尚未設定</string>
   <string name="status_authorized">已授權</string>
   <string name="status_unauthorized">未授權</string>
@@ -1096,7 +1101,8 @@
   <string name="permission_status_disabled">未啟用</string>
   <string name="chat_edit_replace_later">傳送後將取代此訊息及其後的內容</string>
   <string name="chat_edit_replace_message">傳送後將取代此訊息</string>
-  <string name="chat_eta_working">Eta 正在執行…</string>
+  <string name="chat_eta_working">Eta 正在執行…可輸入補充要求</string>
+  <string name="chat_follow_up_queued">將在目前回覆結束後作為新訊息傳送</string>
   <string name="chat_input_hint">交給 Eta 完成</string>
   <string name="chat_stop">停止</string>
   <string name="chat_send">傳送</string>

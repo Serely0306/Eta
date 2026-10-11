@@ -83,6 +83,12 @@ internal object AgentRuntimeWire {
     /** service -> client：返回是否成功重新订阅指定 run。 */
     const val MSG_ATTACH_RUN_RESPONSE = 12
 
+    /** client -> service：向指定 run 追加补充要求，在当前轮次结束后进入下一轮。 */
+    const val MSG_STEER = 16
+
+    /** service -> client：返回补充要求是否已被指定 run 接收。 */
+    const val MSG_STEER_RESPONSE = 17
+
     private const val MODULE_PACKAGE = "io.github.mangi.eta"
     private const val SERVICE_CLASS = "io.github.mangi.eta.agent.runtime.AgentRuntimeService"
 
@@ -601,6 +607,22 @@ internal object AgentRuntimeWire {
     }
 
     fun attachRunSucceeded(bundle: Bundle): Boolean = bundle.getBoolean(KEY_OK)
+
+    fun steerBundle(runId: String, text: String): Bundle = Bundle().apply {
+        putString(KEY_RUN_ID, runId)
+        putString(KEY_PROMPT, text.boundedText(MAX_STEER_CHARS))
+    }
+
+    fun steerTextFromBundle(bundle: Bundle): String = bundle.getString(KEY_PROMPT).orEmpty()
+
+    fun steerResponseBundle(runId: String, accepted: Boolean): Bundle = Bundle().apply {
+        putString(KEY_RUN_ID, runId)
+        putBoolean(KEY_OK, accepted)
+    }
+
+    fun steerAccepted(bundle: Bundle): Boolean = bundle.getBoolean(KEY_OK)
+
+    private const val MAX_STEER_CHARS = 16_000
 
     fun runIdFromBundle(bundle: Bundle): String =
         bundle.getString(KEY_RUN_ID).orEmpty()

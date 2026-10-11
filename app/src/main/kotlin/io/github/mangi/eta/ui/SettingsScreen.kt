@@ -202,6 +202,26 @@ private fun SettingsPageContent(
     val selectedModel = remember(selectedProvider, selectedModelId) {
         selectedProvider?.models?.find { it.id == selectedModelId }
     }
+    // 厂商助手模型：第一项为跟随默认模型，其余为已启用服务商下的已启用模型。
+    val vendorModelId by RuntimeConfigRepository.vendorAssistantModelIdFlow()
+        .collectAsState(initial = null)
+    val vendorModelOptions = remember(providers) {
+        listOf<Pair<String?, String>?>(null) + providers
+            .filter { it.isEnabled }
+            .flatMap { provider ->
+                provider.models
+                    .filter { it.isEnabled }
+                    .sortedBy { it.sortOrder }
+                    .map { model -> model.id to "${provider.name} / ${model.displayName}" }
+            }
+    }
+    val followDefaultModelLabel = stringResource(R.string.settings_vendor_assistant_model_follow_default)
+    val vendorModelItems = vendorModelOptions.map { option ->
+        DropdownItem(text = option?.second ?: followDefaultModelLabel)
+    }
+    val vendorModelIndex = vendorModelOptions
+        .indexOfFirst { it?.first == vendorModelId }
+        .coerceAtLeast(0)
     val providerSummary = selectedProvider?.let { provider ->
         "${provider.name} / ${selectedModel?.displayName ?: stringResource(R.string.settings_model_not_selected)}"
     } ?: stringResource(R.string.settings_not_configured)
@@ -501,6 +521,38 @@ private fun SettingsPageContent(
                             key = Prefs.Keys.AGENT_CUSTOM_MODEL,
                             icon = Icons.Rounded.Cloud,
                             iconTint = EtaPreferenceColors.Blue,
+                        )
+
+                        EtaPreferenceDivider()
+                        EtaDropdownPreference(
+                            title = stringResource(R.string.settings_vendor_assistant_model),
+                            summary = stringResource(R.string.settings_vendor_assistant_model_summary),
+                            items = vendorModelItems,
+                            selectedIndex = vendorModelIndex,
+                            onSelectedIndexChange = { index ->
+                                val modelId = vendorModelOptions.getOrNull(index)?.first
+                                coroutineScope.launch {
+                                    val synced = RuntimeConfigRepository.setVendorAssistantModelId(
+                                        modelId,
+                                        EtaApp.serviceInstance,
+                                    )
+                                    if (!synced) {
+                                        Toast.makeText(
+                                            context.applicationContext,
+                                            context.getString(R.string.settings_write_failed),
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                            },
+                            startAction = {
+                                EtaPreferenceIcon(
+                                    icon = Icons.Rounded.Psychology,
+                                    tint = EtaPreferenceColors.Blue,
+                                    enabled = prefs != null,
+                                )
+                            },
+                            enabled = prefs != null,
                         )
 
                         EtaPreferenceDivider()

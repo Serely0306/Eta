@@ -818,10 +818,13 @@ internal class AgentAppState(
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages
         val pendingFileReferences = homeState.pendingFileReferences
-        if (
-            (prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()) ||
-            homeState.isStreaming
-        ) {
+        if (homeState.isStreaming) {
+            if (prompt.isNotBlank()) {
+                steerCurrentRun(prompt, hasAttachments = pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty())
+            }
+            return
+        }
+        if (prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()) {
             return
         }
         homeState.messageEdit?.takeIf { it.preserveFollowingMessages }?.let { edit ->
@@ -1455,6 +1458,58 @@ internal class AgentAppState(
 
     private val stopRequestedRunIds = mutableSetOf<String>()
 
+    private data class QueuedFollowUp(val conversationId: String?, val prompt: String)
+
+    private var queuedFollowUp: QueuedFollowUp? = null
+
+    /**
+     * 运行中追加的文字交给 Runtime steering，在当前轮次结束后进入下一轮，补充消息由
+     * UserSupplementReceived 事件插入会话。带附件的消息或 run 已在提交终态而被拒绝的补充，
+     * 改为排队，本轮结束后作为新消息发送。
+     */
+    private fun steerCurrentRun(prompt: String, hasAttachments: Boolean) {
+        val runId = currentRunId
+        val steerable = runId != null && !hasAttachments && !isReplyRewrite(runId) &&
+            runId !in stopRequestedRunIds && conversationIdForRun(runId) == selectedConversationId
+        if (runId == null || !steerable) {
+            queueFollowUp(prompt)
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger).steer(runId, prompt)
+            if (!accepted) withContext(Dispatchers.Main) { queueFollowUp(prompt) }
+        }
+    }
+
+    private fun queueFollowUp(prompt: String) {
+        val conversationId = selectedConversationId
+        val previous = queuedFollowUp?.takeIf { it.conversationId == conversationId }?.prompt
+        queuedFollowUp = QueuedFollowUp(
+            conversationId = conversationId,
+            prompt = previous?.let { "$it\n$prompt" } ?: prompt,
+        )
+        Toast.makeText(
+            appContext,
+            appContext.getString(R.string.chat_follow_up_queued),
+            Toast.LENGTH_SHORT,
+        ).show()
+    }
+
+    /** 只在用户仍停留在同一会话且没有新任务时发送排队消息，否则放回该会话的输入草稿。 */
+    private fun dispatchQueuedFollowUp(conversationId: String?) {
+        val queued = queuedFollowUp?.takeIf { it.conversationId == conversationId } ?: return
+        queuedFollowUp = null
+        scope.launch {
+            if (selectedConversationId == conversationId && currentRunId == null && !homeState.isStreaming) {
+                sendCurrentMessage(queued.prompt)
+            } else if (conversationId != null) {
+                conversationsById[conversationId]?.let { conversation ->
+                    updateConversation(conversationId, conversation.copy(input = queued.prompt))
+                }
+            }
+        }
+    }
+
     fun stopCurrentRun() {
         val runId = currentRunId ?: return
         if (!stopRequestedRunIds.add(runId)) return
@@ -1601,7 +1656,8 @@ internal class AgentAppState(
             }
         }
         setConversationStreaming(runId, false)
-        conversationIdForRun(runId)?.let { id -> conversationsById[id]?.let {
+        val finishedConversationId = conversationIdForRun(runId)
+        finishedConversationId?.let { id -> conversationsById[id]?.let {
             updateConversation(id, RoleplayConversationReducer.linkRun(it, runId))
         } }
         runMessageProjector.clearRun(runId)
@@ -1616,6 +1672,7 @@ internal class AgentAppState(
                 null
             }
         )
+        dispatchQueuedFollowUp(finishedConversationId)
     }
 
     private fun updateRunTrace(

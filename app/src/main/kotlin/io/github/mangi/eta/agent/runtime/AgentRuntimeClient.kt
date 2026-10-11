@@ -120,6 +120,26 @@ internal class AgentRuntimeClient(
         }
     }
 
+    /** 向运行中的 run 追加补充要求；返回 Runtime 是否接收，run 已结束或正在提交终态时为 false。 */
+    fun steer(runId: String, text: String): Boolean {
+        if (runId.isBlank() || text.isBlank()) return false
+        val responseLatch = CountDownLatch(1)
+        val acceptedRef = AtomicReference(false)
+        val clientMessenger = Messenger(
+            SteerHandler { accepted ->
+                acceptedRef.set(accepted)
+                responseLatch.countDown()
+            }
+        )
+        return withRuntimeMessenger(false) { serviceMessenger ->
+            val msg = Message.obtain(null, AgentRuntimeWire.MSG_STEER)
+            msg.replyTo = clientMessenger
+            msg.data = AgentRuntimeWire.steerBundle(runId, text)
+            serviceMessenger.send(msg)
+            responseLatch.await(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS) && acceptedRef.get()
+        }
+    }
+
     fun ackResult(runId: String): Boolean {
         if (runId.isBlank()) return false
         return withRuntimeMessenger(false) { serviceMessenger ->
@@ -315,6 +335,16 @@ internal class AgentRuntimeClient(
         override fun handleMessage(msg: Message) {
             if (msg.what == AgentRuntimeWire.MSG_DRAIN_RESULTS_RESPONSE) {
                 onResults(AgentRuntimeWire.completedRunsFromBundle(msg.data ?: return))
+            }
+        }
+    }
+
+    private class SteerHandler(
+        private val onResponse: (Boolean) -> Unit,
+    ) : Handler(Looper.getMainLooper()) {
+        override fun handleMessage(msg: Message) {
+            if (msg.what == AgentRuntimeWire.MSG_STEER_RESPONSE) {
+                onResponse(AgentRuntimeWire.steerAccepted(msg.data ?: return))
             }
         }
     }

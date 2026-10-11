@@ -84,9 +84,23 @@ internal object RuntimeConfigRepository {
         return currentRuntimeConfig()
     }
 
+    fun vendorAssistantModelIdFlow() = SettingsDataStore.vendorAssistantModelIdFlow()
+
+    suspend fun setVendorAssistantModelId(modelId: String?, service: XposedService?): Boolean {
+        SettingsDataStore.setVendorAssistantModelId(modelId)
+        return syncToRemotePreferences(service)
+    }
+
+    /**
+     * RemotePreferences 中的模型快照只由厂商助手入口（小爱、小布）读取；Eta 自有入口在 Runtime
+     * 侧使用默认模型。单独选择的模型停用或删除时回落到默认模型。
+     */
+    suspend fun vendorAssistantRuntimeConfig(): AgentModelClient.ModelConfig? =
+        runtimeConfigFor(SettingsDataStore.vendorAssistantModelId())
+
     suspend fun syncToRemotePreferences(service: XposedService?): Boolean {
         val prefs = Prefs.remotePreferencesForUi(service) ?: return false
-        val config = currentRuntimeConfig() ?: return clearRuntimeConfig(prefs)
+        val config = vendorAssistantRuntimeConfig() ?: return clearRuntimeConfig(prefs)
         return writeRuntimeConfig(prefs, config)
     }
 

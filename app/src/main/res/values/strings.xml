@@ -222,6 +222,8 @@
   <string name="overlay_result_open_eta">Open Eta</string>
   <string name="overlay_pause">Pause</string>
   <string name="overlay_resume">Resume</string>
+  <string name="overlay_minimize">Minimize</string>
+  <string name="overlay_restore_capsule">Show Eta status</string>
   <string name="overlay_supplement">Add input</string>
   <string name="overlay_capsule_toggle">%1$s. Tap to show controls</string>
   <string name="overlay_supplement_hint">Add instructions; Eta continues the current task</string>
@@ -901,6 +903,9 @@
   <string name="skill_enabled_message">“%1$s” is enabled and will be available from the next conversation turn.</string>
   <string name="settings_open_assistant_failed">Couldn\'t open default assistant settings</string>
   <string name="settings_model_not_selected">No model selected</string>
+  <string name="settings_vendor_assistant_model">Vendor assistant model</string>
+  <string name="settings_vendor_assistant_model_summary">Model used when XiaoAi or Breeno requests are taken over</string>
+  <string name="settings_vendor_assistant_model_follow_default">Follow default model</string>
   <string name="settings_not_configured">Not configured</string>
   <string name="status_authorized">Authorized</string>
   <string name="status_unauthorized">Not authorized</string>
@@ -1125,7 +1130,8 @@
   <string name="permission_status_disabled">Not enabled</string>
   <string name="chat_edit_replace_later">Sending will replace this message and everything after it</string>
   <string name="chat_edit_replace_message">Sending will replace this message</string>
-  <string name="chat_eta_working">Eta is working…</string>
+  <string name="chat_eta_working">Eta is working… type to add a request</string>
+  <string name="chat_follow_up_queued">Will be sent as a new message when the current reply finishes</string>
   <string name="chat_input_hint">Ask Eta to do something</string>
   <string name="chat_stop">Stop</string>
   <string name="chat_send">Send</string>
