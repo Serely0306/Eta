@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import androidx.compose.material.icons.rounded.Info
@@ -15,14 +16,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
+import io.github.mangi.eta.agent.tool.AgentToolToggles
 import io.github.mangi.eta.agent.tool.RootRequirement
 import io.github.mangi.eta.ui.components.EtaFeatureCard
 import io.github.mangi.eta.ui.components.EtaPreferenceColors
 import io.github.mangi.eta.ui.components.EtaPreferenceIcon
+import io.github.mangi.eta.ui.components.EtaSwitch
 import io.github.mangi.eta.ui.components.ItemDescriptionDialog
 import io.github.mangi.eta.ui.components.iconForTool
 import io.github.mangi.eta.ui.model.AgentToolsAction
@@ -35,6 +41,8 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+private const val DISABLED_CARD_ALPHA = 0.6f
+
 @Composable
 internal fun ToolCard(
     tool: ToolItemUi,
@@ -42,6 +50,8 @@ internal fun ToolCard(
     capabilities: AgentToolCapabilities,
     onAction: (AgentToolsAction) -> Unit,
     modifier: Modifier = Modifier,
+    disabledTools: Set<String> = emptySet(),
+    titleOf: (String) -> String? = { null },
 ) {
     var showDescription by remember(tool.id) { mutableStateOf(false) }
     val description = if (!rootGranted && tool.id == "terminal") {
@@ -49,7 +59,25 @@ internal fun ToolCard(
     } else {
         tool.summary
     }
-    val requirementText = toolRequirementText(tool.id, rootGranted, capabilities)
+    val toolName = actualToolName(tool.id)
+    // 浏览器的说明卡共享 browser_use，只在主卡上提供开关。
+    val toggleable = toolName == tool.id
+    val blockingDependency = AgentToolToggles.dependencyOf(toolName)?.takeIf { it in disabledTools }
+    val userDisabled = toolName in disabledTools
+    val toggleText = when {
+        blockingDependency != null -> stringResource(
+            R.string.tools_disabled_by_dependency,
+            titleOf(blockingDependency) ?: blockingDependency,
+        )
+        userDisabled && toggleable -> stringResource(R.string.tools_disabled_by_user)
+        userDisabled -> stringResource(R.string.tools_disabled_with_browser)
+        else -> null
+    }
+    val toggleLabel = stringResource(R.string.tools_toggle_named, tool.title)
+    val requirementText = listOfNotNull(
+        toggleText,
+        toolRequirementText(tool.id, rootGranted, capabilities),
+    ).joinToString("\n").ifBlank { null }
     val action = toolCardAction(tool.id, capabilities)
     val actionText = when (action) {
         AgentToolsAction.OpenBrowser -> stringResource(R.string.action_open_browser)
@@ -60,7 +88,7 @@ internal fun ToolCard(
     EtaFeatureCard(
         title = tool.title,
         summary = description,
-        modifier = modifier,
+        modifier = modifier.alpha(if (toggleText != null) DISABLED_CARD_ALPHA else 1f),
         onClick = { if (action != null) onAction(action) else showDescription = true },
         icon = { EtaPreferenceIcon(icon = iconForTool(tool.id), tint = EtaPreferenceColors.Green) },
         action = if (action != null) {
@@ -99,6 +127,17 @@ internal fun ToolCard(
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                     tint = MiuixTheme.colorScheme.primary,
+                )
+            }
+            if (toggleable) {
+                Spacer(modifier = Modifier.width(8.dp))
+                EtaSwitch(
+                    checked = toggleText == null,
+                    onCheckedChange = { enabled -> onAction(AgentToolsAction.SetToolEnabled(tool.id, enabled)) },
+                    enabled = blockingDependency == null,
+                    modifier = Modifier.semantics {
+                        contentDescription = toggleLabel
+                    },
                 )
             }
         }

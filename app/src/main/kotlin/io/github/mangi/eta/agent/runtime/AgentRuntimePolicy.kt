@@ -19,6 +19,8 @@ internal object AgentRuntimePolicy {
         val deviceSensitiveActionTools: Boolean = false,
         val thinking: Boolean,
         val autoCompaction: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+        /** 用户单独关闭的工具名，尚未展开依赖。 */
+        val disabledTools: Set<String> = emptySet(),
     )
 
     fun permissions(preferences: SharedPreferences?): Permissions =
@@ -32,6 +34,7 @@ internal object AgentRuntimePolicy {
                 preferences.allowed(Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS),
             thinking = preferences.allowed(Prefs.Keys.AGENT_THINKING_ENABLED),
             autoCompaction = preferences.allowed(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+            disabledTools = Prefs.disabledTools(preferences),
         )
 
     fun constrain(

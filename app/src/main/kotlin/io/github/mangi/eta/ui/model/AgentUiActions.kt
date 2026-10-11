@@ -38,6 +38,7 @@ sealed interface AgentToolsAction {
     data object OpenPermissions : AgentToolsAction
     data object NavigateBack : AgentToolsAction
     data object OpenBrowser : AgentToolsAction
+    data class SetToolEnabled(val toolId: String, val enabled: Boolean) : AgentToolsAction
 }
 
 sealed interface AgentSkillsAction {

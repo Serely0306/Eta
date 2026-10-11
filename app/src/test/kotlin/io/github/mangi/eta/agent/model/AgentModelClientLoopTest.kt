@@ -3,6 +3,7 @@ package io.github.mangi.eta.agent.model
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
+import io.github.mangi.eta.agent.tool.AgentToolToggles
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ProviderTypes
 import java.util.concurrent.atomic.AtomicInteger
@@ -757,6 +758,42 @@ class AgentModelClientLoopTest {
         assertEquals(2, events.filterIsInstance<AgentEvent.ModelRetryScheduled>().single().round)
         assertEquals(1, events.filterIsInstance<AgentEvent.ToolStarted>().size)
     }
+
+    @Test
+    fun disabledToolsLeaveDeclarationsAndPromptAndCanChangeBetweenRounds() {
+        var disabled = emptySet<String>()
+        val provider = ScriptedProvider(listOf(
+            { request, _ ->
+                assertTrue("observe_screen" in request.tools.toolNames())
+                assertTrue(request.messages.toString().contains("include_screenshot"))
+                assertFalse(request.messages.toString().contains("用户已在工具设置中关闭部分工具"))
+                disabled = AgentToolToggles.effective(setOf("observe_screen", "get_current_context"))
+                assistant(finishReason = "tool_calls", toolCalls = listOf(toolCall("first", "get_current_context", "{}")))
+            },
+            { request, _ ->
+                val names = request.tools.toolNames()
+                listOf("observe_screen", "tap_element", "type_text", "get_current_context").forEach {
+                    assertFalse(it, it in names)
+                }
+                assertTrue("press_key" in names)
+                val prompt = request.messages.toString()
+                assertFalse(prompt.contains("include_screenshot"))
+                assertFalse(prompt.contains("先调用 get_current_context"))
+                assertTrue(prompt.contains("用户已在工具设置中关闭部分工具"))
+                assistant(content = "完成", finishReason = "stop")
+            },
+        ))
+        AgentModelClient.complete(
+            config = modelConfig(),
+            prompt = "开始",
+            provider = provider,
+            disabledToolsProvider = { disabled },
+            toolExecutor = AgentModelClient.ToolExecutor { AgentModelClient.ToolResult("{\"ok\":true}") },
+        )
+    }
+
+    private fun JSONArray.toolNames(): List<String> =
+        (0 until length()).map { getJSONObject(it).getJSONObject("function").getString("name") }
 
     private class ScriptedProvider(
         private val responses: List<(ProviderRequest, AgentRunController) -> JSONObject>,

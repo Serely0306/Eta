@@ -51,6 +51,7 @@ fun AgentToolsScreen(
     val currentListState = rememberLazyListState()
     val allListState = rememberLazyListState()
     val groups = projectToolGroups(state.groups, showAll, capabilities.root.isGranted, capabilities.tools.colorOs)
+    val titles = state.groups.flatMap { it.tools }.associate { it.id to it.title }
     MiuixScaffoldPage(
         title = stringResource(R.string.ui_tool_ability_9f0f80),
         onBack = { onAction(AgentToolsAction.NavigateBack) },
@@ -87,6 +88,8 @@ fun AgentToolsScreen(
                     rootGranted = capabilities.root.isGranted,
                     capabilities = capabilities.tools,
                     onAction = onAction,
+                    disabledTools = state.disabledTools,
+                    titleOf = titles::get,
                 )
             }
         }
@@ -99,6 +102,8 @@ private fun ToolGridRow(
     rootGranted: Boolean,
     capabilities: AgentToolCapabilities,
     onAction: (AgentToolsAction) -> Unit,
+    disabledTools: Set<String>,
+    titleOf: (String) -> String?,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -116,6 +121,8 @@ private fun ToolGridRow(
                         capabilities = capabilities,
                         onAction = onAction,
                         modifier = Modifier.fillMaxWidth(),
+                        disabledTools = disabledTools,
+                        titleOf = titleOf,
                     )
                 }
             }
@@ -135,6 +142,8 @@ private fun ToolGridRow(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight(),
+                        disabledTools = disabledTools,
+                        titleOf = titleOf,
                     )
                 }
                 if (tools.size == 1) {

@@ -43,6 +43,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.agent.tool.AgentToolToggles
+import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceLocationProvider
@@ -392,14 +394,19 @@ fun AgentAppRoot(
                 }
             }
             entry<AppRoute.Tools>(swipeDismiss = swipeDismiss) {
+                var disabledTools by remember { mutableStateOf(Prefs.disabledTools()) }
                 AgentToolsScreen(
-                    state = toolsState,
+                    state = toolsState.copy(disabledTools = disabledTools),
                     onAction = { action ->
                         when (action) {
                             AgentToolsAction.NavigateBack -> popRoute()
                             AgentToolsAction.OpenBrowser -> pushRoute(AppRoute.Browser)
                             AgentToolsAction.OpenEnhancements -> pushRoute(AppRoute.SystemEnhance)
                             AgentToolsAction.OpenPermissions -> pushRoute(AppRoute.Permissions)
+                            is AgentToolsAction.SetToolEnabled -> {
+                                Prefs.setToolsEnabled(AgentToolToggles.family(action.toolId), action.enabled)
+                                disabledTools = Prefs.disabledTools()
+                            }
                         }
                     },
                 )

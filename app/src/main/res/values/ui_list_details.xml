@@ -5,4 +5,8 @@
     <string name="skills_more_named">More actions for %1$s</string>
     <string name="tools_manage_permissions">Manage permissions</string>
     <string name="tools_view_enhancements">View system enhancements</string>
+    <string name="tools_toggle_named">Allow Eta to use %1$s</string>
+    <string name="tools_disabled_by_user">Turned off; the model cannot see or call this tool.</string>
+    <string name="tools_disabled_by_dependency">Turned off together with %1$s, which this tool depends on.</string>
+    <string name="tools_disabled_with_browser">Turned off together with the agent browser.</string>
 </resources>

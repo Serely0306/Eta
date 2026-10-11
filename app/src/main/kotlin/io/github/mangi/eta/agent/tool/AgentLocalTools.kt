@@ -81,6 +81,10 @@ internal class AgentLocalTools(
         runBlocking { AgentMemoryRepository.isEnabled() }
     },
     private val memoryWritable: Boolean = true,
+    /** 已展开依赖的停用工具集合，每次执行前重新读取。 */
+    private val disabledTools: () -> Set<String> = {
+        AgentToolToggles.effective(Prefs.disabledTools())
+    },
     private val screenshotExcludedPackages: () -> Set<String> = { emptySet() },
     private val screenObservationProvider: (
         (AgentScreenObservationContract.Options) -> RootShellDeviceController.Observation
@@ -160,6 +164,9 @@ internal class AgentLocalTools(
     override fun execute(toolCall: AgentModelClient.ToolCall): AgentModelClient.ToolResult =
         runCatching {
             val args = JSONObject(toolCall.argumentsJson.ifBlank { "{}" })
+            if (toolCall.name in disabledTools()) {
+                return@runCatching textResult(errorResult("TOOL_DISABLED", "该工具已在工具设置中关闭，本次未执行"))
+            }
             if (AgentToolRequirements.find(toolCall.name) != null &&
                 AgentToolRequirements.rootDenied(toolCall.name, args, rootAvailable())
             ) {

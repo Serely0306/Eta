@@ -45,6 +45,8 @@ internal object Prefs {
         const val AGENT_THINKING_ENABLED = "agent_thinking_enabled"
         const val AGENT_AUTO_COMPACTION_ENABLED = "agent_auto_compaction_enabled"
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
+        /** 用户单独关闭的工具名集合，仅 Runtime 消费，不同步到 RemotePreferences。 */
+        const val AGENT_DISABLED_TOOLS = "agent_disabled_tools"
 
         /** 全部布尔开关及其默认值。 */
         val BOOLEAN_DEFAULTS: Map<String, Boolean> = mapOf(
@@ -149,6 +151,21 @@ internal object Prefs {
 
     /** Eta 设置页与 Runtime 使用的本地 Agent 配置，不依赖 LSPosed。 */
     fun localAgentPreferences(): SharedPreferences? = localAgent
+
+    fun disabledTools(preferences: SharedPreferences? = localAgent): Set<String> =
+        runCatching { preferences?.getStringSet(Keys.AGENT_DISABLED_TOOLS, null)?.toSet() }
+            .getOrNull()
+            .orEmpty()
+
+    /** 同进程的 Runtime 读取内存中的最新值，下一轮模型请求即生效；落盘异步进行。 */
+    fun setToolsEnabled(tools: Set<String>, enabled: Boolean) {
+        val preferences = localAgent ?: return
+        synchronized(this) {
+            val current = disabledTools(preferences)
+            val next = if (enabled) current - tools else current + tools
+            preferences.edit().putStringSet(Keys.AGENT_DISABLED_TOOLS, next).apply()
+        }
+    }
 
     /**
      * 首次升级优先把已有 RemotePreferences 值迁入本地；之后本地值是事实源，并在框架

@@ -26,6 +26,7 @@ import io.github.mangi.eta.agent.skill.PublicGitHubSkillSource
 import io.github.mangi.eta.agent.tool.AgentLocalTools
 import io.github.mangi.eta.agent.tool.AgentToolRequirements
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
+import io.github.mangi.eta.agent.tool.AgentToolToggles
 import io.github.mangi.eta.agent.tool.PendingSkillConflictCapabilityParser
 import io.github.mangi.eta.agent.tool.ToolExecutionDecision
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
@@ -152,6 +153,7 @@ internal class AgentRuntimeRunExecutor(
                 }
             }
             val mcpTools = JSONArray().also(mcpSnapshot::appendModelTools)
+            val disabledTools = { AgentToolToggles.effective(currentPermissions().disabledTools) }
             val executor = AgentLocalTools(
                 context = appContext,
                 logger = AndroidAgentLogger,
@@ -177,6 +179,7 @@ internal class AgentRuntimeRunExecutor(
                     runBlocking { AgentMemoryRepository.isEnabled() }
                 },
                 memoryWritable = roleplayContext == null,
+                disabledTools = disabledTools,
                 screenshotExcludedPackages = {
                     entrySurfaceGuard?.consumeScreenshotExcludedPackages().orEmpty()
                 },
@@ -262,6 +265,7 @@ internal class AgentRuntimeRunExecutor(
                     session.updateTranscript(transcript)
                 },
                 capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
+                disabledToolsProvider = disabledTools,
                 prompt = request.prompt,
                 assistantScreenContext = request.assistantScreenContext,
                 toolExecutor = runToolExecutor,

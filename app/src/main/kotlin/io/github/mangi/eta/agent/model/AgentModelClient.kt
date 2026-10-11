@@ -95,6 +95,8 @@ internal object AgentModelClient {
         memoryContext: AgentMemoryContext = AgentMemoryContext.DISABLED,
         additionalTools: JSONArray = JSONArray(),
         capabilitiesProvider: () -> AgentToolCapabilities = { AgentToolCapabilities(rootAvailable = false) },
+        /** 已展开依赖的停用工具集合；每轮重新读取，变化时同步重建系统提示。 */
+        disabledToolsProvider: () -> Set<String> = { emptySet() },
         sessionId: String = java.util.UUID.randomUUID().toString(),
         compactOnly: Boolean = false,
         operationId: String = sessionId,
@@ -109,6 +111,7 @@ internal object AgentModelClient {
     ): ModelResponse.Text {
         config.validate()
         val initialCapabilities = capabilitiesProvider()
+        val initialDisabledTools = if (rewriteReply) emptySet() else disabledToolsProvider()
         val messages = AgentPromptBuilder.buildInitialMessages(
             config,
             prompt,
@@ -118,6 +121,7 @@ internal object AgentModelClient {
             memoryContext,
             rootAvailable = initialCapabilities.rootAvailable,
             roleplayContext = roleplayContext,
+            disabledTools = initialDisabledTools,
         )
         if (rewriteReply) {
             messages.put(messages.length() - 1, AgentConversationCodec.userTextMessage(
@@ -134,8 +138,9 @@ internal object AgentModelClient {
         // 旧 history 中的无效消息可能在组装时被跳过，系统边界不能由 history 条数倒推。
         val systemCount = AgentPromptBuilder.buildSystemMessages(
             config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext,
+            initialDisabledTools,
         ).length()
-        fun toolsFor(capabilities: AgentToolCapabilities): JSONArray {
+        fun toolsFor(capabilities: AgentToolCapabilities, disabledTools: Set<String>): JSONArray {
             if (rewriteReply) return JSONArray()
             val tools = AgentToolCatalog.build(
                 terminalTools = config.terminalTools,
@@ -153,9 +158,16 @@ internal object AgentModelClient {
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
             }
-            return tools
+            if (disabledTools.isEmpty()) return tools
+            return JSONArray().also { visible ->
+                for (index in 0 until tools.length()) {
+                    val tool = tools.optJSONObject(index) ?: continue
+                    val name = tool.optJSONObject("function")?.optString("name")
+                    if (name !in disabledTools) visible.put(tool)
+                }
+            }
         }
-        val tools = toolsFor(initialCapabilities)
+        val tools = toolsFor(initialCapabilities, initialDisabledTools)
         onEvent(
             AgentEvent.RunStarted(
                 initialImages = images.size,
@@ -165,6 +177,7 @@ internal object AgentModelClient {
             )
         )
         var promptRootAvailable = initialCapabilities.rootAvailable
+        var promptDisabledTools = initialDisabledTools
         val loop = AgentLoop(
             transcript = transcript,
             systemCount = systemCount,
@@ -185,16 +198,19 @@ internal object AgentModelClient {
             initialSupplementIndex = initialSupplementIndex,
             toolsForRound = {
                 val capabilities = capabilitiesProvider()
-                if (capabilities.rootAvailable != promptRootAvailable) {
+                val disabledTools = if (rewriteReply) emptySet() else disabledToolsProvider()
+                if (capabilities.rootAvailable != promptRootAvailable || disabledTools != promptDisabledTools) {
                     val systemMessages = AgentPromptBuilder.buildSystemMessages(
                         config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
+                        disabledTools,
                     )
                     for (index in 0 until systemMessages.length()) {
                         messages.put(index, systemMessages.getJSONObject(index))
                     }
                     promptRootAvailable = capabilities.rootAvailable
+                    promptDisabledTools = disabledTools
                 }
-                toolsFor(capabilities)
+                toolsFor(capabilities, disabledTools)
             },
         )
         val result = try {

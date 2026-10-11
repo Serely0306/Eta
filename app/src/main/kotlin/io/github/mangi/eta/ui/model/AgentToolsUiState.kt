@@ -5,6 +5,8 @@ import androidx.compose.runtime.Immutable
 @Immutable
 data class AgentToolsUiState(
     val groups: List<ToolGroupUi>,
+    /** 用户单独关闭的工具名（未展开依赖）。 */
+    val disabledTools: Set<String> = emptySet(),
 )
 
 @Immutable
