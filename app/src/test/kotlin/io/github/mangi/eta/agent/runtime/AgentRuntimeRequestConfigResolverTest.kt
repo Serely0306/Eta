@@ -50,6 +50,37 @@ class AgentRuntimeRequestConfigResolverTest {
     }
 
     @Test
+    fun xiaoAiRequestUsesVendorAssistantModelInsteadOfEntrySnapshot() {
+        val entry = modelConfig("stale-snapshot-key", ReasoningEffort.OFF).copy(terminalTools = true)
+        val request = request(source = AgentRuntimeWire.XIAOAI_HANDOFF_SOURCE, config = entry)
+
+        val resolved = AgentRuntimeRequestConfigResolver.applyRuntimeConfig(
+            request,
+            modelConfig("vendor-model-key", ReasoningEffort.HIGH),
+        ).config
+
+        assertEquals(
+            AgentRuntimeRequestConfigResolver.RuntimeConfigSource.VENDOR_ASSISTANT_MODEL,
+            AgentRuntimeRequestConfigResolver.runtimeConfigSource(request),
+        )
+        assertEquals("vendor-model-key", resolved.apiKey)
+        assertTrue(resolved.terminalTools)
+    }
+
+    @Test
+    fun etaVoiceRequestUsesDefaultModelSource() {
+        val request = request(
+            source = AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
+            config = modelConfig("entry-key", ReasoningEffort.OFF),
+        )
+
+        assertEquals(
+            AgentRuntimeRequestConfigResolver.RuntimeConfigSource.DEFAULT_MODEL,
+            AgentRuntimeRequestConfigResolver.runtimeConfigSource(request),
+        )
+    }
+
+    @Test
     fun externalAssistantRequestKeepsEntryConfig() {
         val entryConfig = modelConfig("entry-key", ReasoningEffort.OFF)
         val request = request(source = "breeno", config = entryConfig)

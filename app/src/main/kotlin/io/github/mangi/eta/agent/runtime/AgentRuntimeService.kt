@@ -304,13 +304,20 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         thread(name = "agent-runtime-image-ingest") {
             val prepared = runCatching {
                 val request = AgentRuntimeImageTransfer.materialize(incoming)
-                if (!AgentRuntimeRequestConfigResolver.requiresRuntimeConfig(request)) {
-                    request
-                } else {
-                    val runtimeConfig = runBlocking {
-                        RuntimeConfigRepository.currentRuntimeConfig()
-                    } ?: throw RuntimeConfigUnavailableException()
-                    AgentRuntimeRequestConfigResolver.applyRuntimeConfig(request, runtimeConfig)
+                when (AgentRuntimeRequestConfigResolver.runtimeConfigSource(request)) {
+                    null -> request
+                    AgentRuntimeRequestConfigResolver.RuntimeConfigSource.DEFAULT_MODEL -> {
+                        val runtimeConfig = runBlocking {
+                            RuntimeConfigRepository.currentRuntimeConfig()
+                        } ?: throw RuntimeConfigUnavailableException()
+                        AgentRuntimeRequestConfigResolver.applyRuntimeConfig(request, runtimeConfig)
+                    }
+                    AgentRuntimeRequestConfigResolver.RuntimeConfigSource.VENDOR_ASSISTANT_MODEL -> {
+                        val runtimeConfig = runBlocking {
+                            RuntimeConfigRepository.vendorAssistantRuntimeConfig()
+                        } ?: throw RuntimeConfigUnavailableException()
+                        AgentRuntimeRequestConfigResolver.applyRuntimeConfig(request, runtimeConfig)
+                    }
                 }
             }
             mainHandler.post {

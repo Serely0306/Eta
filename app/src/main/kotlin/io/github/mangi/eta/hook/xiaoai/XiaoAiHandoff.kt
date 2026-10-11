@@ -5,7 +5,7 @@ import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import org.json.JSONObject
 
 internal object XiaoAiHandoff {
-    const val SOURCE = "xiaoai"
+    const val SOURCE = AgentRuntimeWire.XIAOAI_HANDOFF_SOURCE
     private const val ARCHIVE_TITLE_CHARS = 20
 
     fun create(
