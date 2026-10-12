@@ -87,6 +87,9 @@ internal fun iconForTool(toolId: String): ImageVector = when (toolId) {
     "mcp_call", "MCP 工具" -> Icons.Rounded.Extension
     "memory_get", "memory_write", "character_memory_get", "character_memory_write" ->
         Icons.Rounded.Psychology
+    "ask_user" -> Icons.Rounded.ChatBubble
+    "update_plan" -> Icons.Rounded.EditNote
+    "run_subagents" -> Icons.Rounded.Layers
     "press_key" -> Icons.Rounded.KeyboardCommandKey
     "open_system_panel" -> Icons.Rounded.WebAsset
     "read_image" -> Icons.Rounded.Image
