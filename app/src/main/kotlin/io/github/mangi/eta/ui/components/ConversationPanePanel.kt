@@ -33,8 +33,11 @@ import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.ImportContacts
 import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SportsBar
@@ -58,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.ui.model.ConversationEntrySource
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
@@ -133,6 +137,8 @@ internal fun ConversationPanePanel(
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
     val groups = remember(state.conversations) { state.conversations.groupForDrawer() }
+    // 厂商入口分组默认收起，避免每次唤醒新建的会话挤占普通对话；搜索或选中其中的会话时自动展开。
+    var expandedEntrySources by remember { mutableStateOf(emptySet<ConversationEntrySource>()) }
 
     Surface(
         modifier = modifier
@@ -178,11 +184,27 @@ internal fun ConversationPanePanel(
                     }
                 } else {
                     groups.forEach { group ->
+                        val entrySource = (group.section as? ConversationDrawerSection.Entry)?.source
+                        val expanded = entrySource == null || query.isNotBlank() ||
+                            entrySource in expandedEntrySources ||
+                            group.items.any { it.id == state.selectedConversationId }
                         item(key = "section-${group.section}") {
-                            ConversationSectionHeader(group = group)
+                            ConversationSectionHeader(
+                                group = group,
+                                expanded = expanded,
+                                onToggle = entrySource?.let { source ->
+                                    {
+                                        expandedEntrySources = if (source in expandedEntrySources) {
+                                            expandedEntrySources - source
+                                        } else {
+                                            expandedEntrySources + source
+                                        }
+                                    }
+                                },
+                            )
                         }
                         items(
-                            items = group.items,
+                            items = if (expanded) group.items else emptyList(),
                             key = { it.id },
                         ) { conversation ->
                             ConversationTextRow(
@@ -266,10 +288,21 @@ private fun PaneActionBar(
 @Composable
 private fun ConversationSectionHeader(
     group: ConversationDrawerGroup,
+    expanded: Boolean = true,
+    onToggle: (() -> Unit)? = null,
 ) {
+    val label = group.localizedLabel()
+    val toggleDescription = stringResource(R.string.conversation_section_toggle, label)
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .then(
+                if (onToggle != null) {
+                    Modifier
+                        .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
+                        .clickable(onClickLabel = toggleDescription, onClick = onToggle)
+                } else Modifier,
+            )
             .padding(
                 top = ConversationPanelMetrics.SectionTopPadding,
                 bottom = ConversationPanelMetrics.SectionBottomPadding,
@@ -277,14 +310,14 @@ private fun ConversationSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = Icons.Rounded.Schedule,
+            imageVector = if (onToggle != null) Icons.Rounded.Mic else Icons.Rounded.Schedule,
             contentDescription = null,
             modifier = Modifier.size(ConversationPanelMetrics.SectionIconSize),
             tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
         )
         Spacer(modifier = Modifier.width(ConversationPanelMetrics.SectionIconGap))
         Text(
-            text = group.localizedLabel(),
+            text = label,
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
             style = MiuixTheme.textStyles.footnote1,
             fontWeight = FontWeight.SemiBold,
@@ -296,6 +329,15 @@ private fun ConversationSectionHeader(
             style = MiuixTheme.textStyles.footnote1,
             fontWeight = FontWeight.Medium,
         )
+        if (onToggle != null) {
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(
+                imageVector = if (expanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                contentDescription = null,
+                modifier = Modifier.size(ConversationPanelMetrics.SectionIconSize),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+            )
+        }
     }
 }
 
@@ -555,6 +597,7 @@ private data class ConversationDrawerGroup(
 
 private sealed interface ConversationDrawerSection {
     data object Pinned : ConversationDrawerSection
+    data class Entry(val source: ConversationEntrySource) : ConversationDrawerSection
     data object Today : ConversationDrawerSection
     data class Dated(val label: String) : ConversationDrawerSection
 }
@@ -562,14 +605,31 @@ private sealed interface ConversationDrawerSection {
 @Composable
 private fun ConversationDrawerGroup.localizedLabel(): String = when (val value = section) {
     ConversationDrawerSection.Pinned -> stringResource(R.string.conversation_section_pinned)
+    is ConversationDrawerSection.Entry -> when (value.source) {
+        ConversationEntrySource.XiaoAi -> stringResource(R.string.conversation_section_xiaoai)
+        ConversationEntrySource.Breeno -> stringResource(R.string.conversation_section_breeno)
+    }
     ConversationDrawerSection.Today -> stringResource(R.string.conversation_section_today)
     is ConversationDrawerSection.Dated -> value.label
 }
 
+/** 置顶在前，其次是按来源收拢的厂商入口会话，其余普通会话按时间分段。 */
+internal fun List<ConversationSummaryUi>.drawerSectionKeys(): List<String> =
+    groupForDrawer().map { it.section.toString() }
+
 private fun List<ConversationSummaryUi>.groupForDrawer(): List<ConversationDrawerGroup> {
     if (isEmpty()) return emptyList()
+    val pinned = filter { it.isPinned }
+    val entries = filter { !it.isPinned && it.entrySource != null }
     val groups = mutableListOf<ConversationDrawerGroup>()
+    if (pinned.isNotEmpty()) groups += ConversationDrawerGroup(ConversationDrawerSection.Pinned, pinned)
+    ConversationEntrySource.entries.forEach { source ->
+        entries.filter { it.entrySource == source }.takeIf { it.isNotEmpty() }?.let { items ->
+            groups += ConversationDrawerGroup(ConversationDrawerSection.Entry(source), items)
+        }
+    }
     for (conversation in this) {
+        if (conversation.isPinned || conversation.entrySource != null) continue
         val section = conversation.drawerSection()
         val last = groups.lastOrNull()
         if (last?.section == section) {
@@ -582,7 +642,6 @@ private fun List<ConversationSummaryUi>.groupForDrawer(): List<ConversationDrawe
 }
 
 private fun ConversationSummaryUi.drawerSection(): ConversationDrawerSection = when {
-    isPinned -> ConversationDrawerSection.Pinned
     isActiveRun || isUpdatedToday(updatedAtMillis) -> ConversationDrawerSection.Today
     else -> ConversationDrawerSection.Dated(timeLabel)
 }

@@ -270,6 +270,9 @@
   <string name="time_now">現在</string>
   <string name="conversation_section_pinned">已釘選</string>
   <string name="conversation_section_today">今天</string>
+  <string name="conversation_section_xiaoai">超級小愛</string>
+  <string name="conversation_section_breeno">小布助理</string>
+  <string name="conversation_section_toggle">展開或收合%1$s</string>
   <string name="conversation_dock_models">模型</string>
   <string name="conversation_preview_reasoning">Eta 正在思考</string>
   <string name="conversation_preview_tool_call">工具呼叫：%1$s</string>

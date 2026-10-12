@@ -55,6 +55,7 @@ import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.AgentModelPickerProjector
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
+import io.github.mangi.eta.ui.model.ConversationEntrySource
 import io.github.mangi.eta.ui.model.ConversationModeUi
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
@@ -574,7 +575,9 @@ internal class AgentAppState(
         val runId = archivedRun.result.runId.ifBlank { archivedRun.handoff.id }
         if (runId.isBlank()) return null
         val payload = AgentExternalArchivePayload.from(archivedRun.handoff.payload) ?: return null
-        val conversationId = archiveConversationId(
+        // 旧版本按不带来源的编号归档；同一厂商会话已存在时继续写入原会话。
+        val legacyConversationId = legacyArchiveConversationId(archivedRun.handoff.source, payload.conversationKey)
+        val conversationId = legacyConversationId.takeIf { it in conversationsById } ?: archiveConversationId(
             source = archivedRun.handoff.source,
             conversationKey = payload.conversationKey,
         )
@@ -1867,6 +1870,7 @@ internal class AgentAppState(
                     mode = ConversationModeUi.Chat,
                     characterName = state.roleplay?.characterName,
                     isActiveRun = state.isStreaming,
+                    entrySource = conversationEntrySource(id, conversationTitles[id].orEmpty()),
                 )
             }
         val query = conversationPaneState.searchQuery.trim()
@@ -1965,15 +1969,31 @@ private const val EXTERNAL_ARCHIVE_CONVERSATION_PREFIX = "archive-"
 private fun String.isReadOnlyExternalArchiveConversation(): Boolean =
     startsWith(EXTERNAL_ARCHIVE_CONVERSATION_PREFIX)
 
+/** 厂商入口的归档编号带上来源，侧栏据此归组；Eta 语音助手沿用原编号规则。 */
 private fun archiveConversationId(source: String, conversationKey: String): String {
-    val prefix = if (source == AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE) {
-        ASSISTANT_CONVERSATION_PREFIX
-    } else {
-        EXTERNAL_ARCHIVE_CONVERSATION_PREFIX
+    if (source == AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE) {
+        return ASSISTANT_CONVERSATION_PREFIX + stableArchiveId("$source:$conversationKey")
     }
-    return prefix + stableArchiveId("$source:$conversationKey")
+    val sourceTag = source.filter { it.isLetterOrDigit() || it == '_' }.take(MAX_SOURCE_TAG_CHARS)
+    return "$EXTERNAL_ARCHIVE_CONVERSATION_PREFIX$sourceTag-" + stableArchiveId("$source:$conversationKey")
 }
 
+private fun legacyArchiveConversationId(source: String, conversationKey: String): String =
+    EXTERNAL_ARCHIVE_CONVERSATION_PREFIX + stableArchiveId("$source:$conversationKey")
+
+/** 新编号带来源标记；旧编号与被改名前的标题前缀作为兜底识别。 */
+internal fun conversationEntrySource(conversationId: String, title: String): ConversationEntrySource? {
+    if (!conversationId.startsWith(EXTERNAL_ARCHIVE_CONVERSATION_PREFIX)) return null
+    val tagged = conversationId.removePrefix(EXTERNAL_ARCHIVE_CONVERSATION_PREFIX).substringBefore('-', "")
+    return when {
+        tagged == AgentRuntimeWire.XIAOAI_HANDOFF_SOURCE || title.startsWith("超级小爱") -> ConversationEntrySource.XiaoAi
+        tagged == BREENO_SOURCE_TAG || title.startsWith("小布") -> ConversationEntrySource.Breeno
+        else -> null
+    }
+}
+
+private const val BREENO_SOURCE_TAG = "breeno"
+private const val MAX_SOURCE_TAG_CHARS = 16
 private const val ASSISTANT_CONVERSATION_PREFIX = "assistant-"
 
 private fun stableArchiveId(value: String): String =

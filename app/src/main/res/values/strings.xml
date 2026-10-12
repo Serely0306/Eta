@@ -206,6 +206,9 @@
   <string name="time_now">Now</string>
   <string name="conversation_section_pinned">Pinned</string>
   <string name="conversation_section_today">Today</string>
+  <string name="conversation_section_xiaoai">XiaoAi</string>
+  <string name="conversation_section_breeno">Breeno</string>
+  <string name="conversation_section_toggle">Expand or collapse %1$s</string>
   <string name="conversation_dock_models">Models</string>
   <string name="conversation_preview_reasoning">Eta is reasoning</string>
   <string name="conversation_preview_tool_call">Tool call: %1$s</string>
