@@ -9,10 +9,7 @@
 | 一 | 缓存断点与 `prompt_cache_key`、会话内记忆快照、单项工具开关、ask_user |
 | 修复 | 无障碍重绑后结果卡片、小爱/小布会话归组、文件工具默认 Root、终端参数分级校验 |
 | 二 | 多会话并发、屏幕与浏览器租约、浮层归属 |
-
-## 进行中
-
-- **设备端 MCP 服务**：Eta 作为 MCP 服务器供电脑端 Agent（Claude Code、Codex）连接，提供设备工具与委托 Agent 任务，替代 adb 作为主要接口。
+| 三 | 设备端 MCP 服务：电脑端 Agent 经 USB 或局域网直接调用设备工具，或把任务委托给 Eta 的 Agent（见 [MCP_SERVER.md](MCP_SERVER.md)），待真机验证 |
 
 ## 后续阶段
 
