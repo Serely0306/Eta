@@ -63,6 +63,31 @@ class ForegroundResourceLeaseTest {
     }
 
     @Test
+    fun screenTakeoverCoversUseAndIdleWindowAndReportsScreenChangesOnly() {
+        var clock = 1_000L
+        var events = 0
+        ForegroundResourceLease.onScreenLeaseChanged = { events += 1 }
+        try {
+            assertFalse(ForegroundResourceLease.screenTakeoverActive { clock })
+            assertTrue(ForegroundResourceLease.acquire(Resource.SCREEN, "run-a", now = { clock }))
+            assertTrue(ForegroundResourceLease.screenTakeoverActive { clock })
+            ForegroundResourceLease.finish(Resource.SCREEN, "run-a", now = { clock })
+            clock += ForegroundResourceLease.IDLE_RELEASE_MS - 1
+            assertTrue(ForegroundResourceLease.screenTakeoverActive { clock })
+            clock += 2
+            assertFalse(ForegroundResourceLease.screenTakeoverActive { clock })
+
+            assertTrue(ForegroundResourceLease.acquire(Resource.BROWSER, "run-b", now = { clock }))
+            ForegroundResourceLease.releaseAll("run-b")
+            assertEquals(2, events)
+            ForegroundResourceLease.releaseAll("run-a")
+            assertEquals(3, events)
+        } finally {
+            ForegroundResourceLease.onScreenLeaseChanged = null
+        }
+    }
+
+    @Test
     fun cancelledWaiterStopsWaitingImmediately() {
         assertTrue(ForegroundResourceLease.acquire(Resource.BROWSER, "run-a"))
         val started = System.nanoTime()

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.AccessibilityNew
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Alarm
+import androidx.compose.material.icons.rounded.NotificationsPaused
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Dashboard
@@ -476,6 +477,17 @@ private fun SettingsPageContent(
                         title = stringResource(R.string.ui_allow_sensitive_device_operation_3d42ea),
                         key = Prefs.Keys.AGENT_DEVICE_SENSITIVE_ACTION_TOOLS,
                         icon = Icons.Rounded.GppMaybe,
+                        iconTint = EtaPreferenceColors.Orange,
+                    )
+
+                    EtaPreferenceDivider()
+                    SwitchPref(
+                        context = context,
+                        prefs = agentPrefs,
+                        title = stringResource(R.string.settings_suppress_heads_up),
+                        summary = stringResource(R.string.settings_suppress_heads_up_summary),
+                        key = Prefs.Keys.AGENT_SUPPRESS_HEADS_UP,
+                        icon = Icons.Rounded.NotificationsPaused,
                         iconTint = EtaPreferenceColors.Orange,
                     )
 

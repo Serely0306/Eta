@@ -947,6 +947,8 @@
   <string name="settings_open_assistant_failed">無法開啟預設助理設定</string>
   <string name="settings_model_not_selected">尚未選擇模型</string>
   <string name="settings_vendor_assistant_model">廠商助手模型</string>
+  <string name="settings_suppress_heads_up">操作介面時暫停橫幅通知</string>
+  <string name="settings_suppress_heads_up_summary">Eta 操作螢幕期間暫停可能遮擋介面的橫幅，結束後恢復；通知仍進入通知欄。有 Root 時關閉橫幅設定，否則使用勿擾權限</string>
   <string name="settings_model_fallback_slot">備用模型 %1$d</string>
   <string name="settings_model_fallback_summary">目前模型失敗且重試無效時，依序換用備用模型繼續</string>
   <string name="settings_model_fallback_none">不使用</string>

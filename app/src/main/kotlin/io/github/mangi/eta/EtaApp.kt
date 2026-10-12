@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import io.github.mangi.eta.agent.skill.SkillRuntime
 import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.device.ScreenTakeoverNotificationGuard
 import io.github.mangi.eta.agent.terminal.TerminalRuntime
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
@@ -52,6 +53,7 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
         MainUiVisibility.register(this)
         TerminalRuntime.initialize(this)
         RootAccess.initialize(this)
+        ScreenTakeoverNotificationGuard.install(this)
         SettingsDataStore.init(this)
         val predictiveBackEnabled = runBlocking(Dispatchers.IO) {
             AppearanceSettingsRepository.settings().predictiveBackEnabled

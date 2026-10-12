@@ -972,6 +972,8 @@
   <string name="settings_open_assistant_failed">Couldn\'t open default assistant settings</string>
   <string name="settings_model_not_selected">No model selected</string>
   <string name="settings_vendor_assistant_model">Vendor assistant model</string>
+  <string name="settings_suppress_heads_up">Pause banners while Eta uses the screen</string>
+  <string name="settings_suppress_heads_up_summary">Banners that could cover the screen are paused while Eta operates it and restored afterwards; notifications still reach the shade. Uses root, or Do Not Disturb access without root</string>
   <string name="settings_model_fallback_slot">Fallback model %1$d</string>
   <string name="settings_model_fallback_summary">Used in order when the current model keeps failing after retries</string>
   <string name="settings_model_fallback_none">Not used</string>

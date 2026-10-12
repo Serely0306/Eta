@@ -13,12 +13,11 @@
 | 四 | 计划工具 `update_plan` 与子 Agent `run_subagents`（见 [AGENT_RUNTIME.md](AGENT_RUNTIME.md)「计划与子 Agent」），待真机验证 |
 | 五 | 用户配置的模型回退链，最多 3 个备用模型（见 [AGENT_RUNTIME.md](AGENT_RUNTIME.md)「模型回退链」），待真机验证 |
 | 六 | 自动任务：定时、间隔、单次与通知触发，Agent 可用 `manage_automations` 自行创建（见 [AGENT_RUNTIME.md](AGENT_RUNTIME.md)「自动任务」），待真机验证 |
+| 七（部分） | 系统提示优先非界面路径；操作界面时暂停横幅通知。虚拟屏执行完成方案与可行性验证步骤（见 [VIRTUAL_DISPLAY.md](VIRTUAL_DISPLAY.md)） |
 
 ## 后续阶段
 
-顺序未定，按需调整：
-
-- 减少 GUI 路径；虚拟屏执行界面操作，并在接管期间屏蔽通知
+- 虚拟屏执行界面操作：先按 VIRTUAL_DISPLAY.md 在真机上验证，通过后实现
 - 超级小爱语音接管（可行时）
 
 ## 待办

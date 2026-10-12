@@ -45,6 +45,15 @@ internal object ForegroundResourceLease {
         else -> null
     }
 
+    /** 屏幕租约变化后在锁外回调；接管期间的通知屏蔽据此重新判断。 */
+    @Volatile var onScreenLeaseChanged: (() -> Unit)? = null
+
+    /** 有 run 正在操作屏幕，或刚用完、仍在空闲让出窗口内。 */
+    fun screenTakeoverActive(now: () -> Long = ::monotonicMillis): Boolean = lock.withLock {
+        val holder = holders[Resource.SCREEN] ?: return@withLock false
+        holder.inUse > 0 || now() - holder.lastUsedAt < IDLE_RELEASE_MS
+    }
+
     /** 取得资源；同一 run 可重入。返回 false 表示等待超时或已取消。 */
     fun acquire(
         resource: Resource,
@@ -52,6 +61,16 @@ internal object ForegroundResourceLease {
         waitMs: Long = DEFAULT_WAIT_MS,
         isCancelled: () -> Boolean = { false },
         now: () -> Long = ::monotonicMillis,
+    ): Boolean = acquireLocked(resource, runId, waitMs, isCancelled, now).also { acquired ->
+        if (acquired && resource == Resource.SCREEN) notifyScreenChanged()
+    }
+
+    private fun acquireLocked(
+        resource: Resource,
+        runId: String,
+        waitMs: Long,
+        isCancelled: () -> Boolean,
+        now: () -> Long,
     ): Boolean = lock.withLock {
         val deadline = now() + waitMs
         var acquired = false
@@ -78,17 +97,29 @@ internal object ForegroundResourceLease {
     }
 
     /** 一次工具调用结束；资源仍归该 run，空闲计时从此刻开始。 */
-    fun finish(resource: Resource, runId: String, now: () -> Long = ::monotonicMillis) = lock.withLock {
-        holders[resource]?.takeIf { it.runId == runId }?.let { holder ->
-            holder.inUse = (holder.inUse - 1).coerceAtLeast(0)
-            holder.lastUsedAt = now()
+    fun finish(resource: Resource, runId: String, now: () -> Long = ::monotonicMillis) {
+        lock.withLock {
+            holders[resource]?.takeIf { it.runId == runId }?.let { holder ->
+                holder.inUse = (holder.inUse - 1).coerceAtLeast(0)
+                holder.lastUsedAt = now()
+            }
+            changed.signalAll()
         }
-        changed.signalAll()
+        if (resource == Resource.SCREEN) notifyScreenChanged()
     }
 
-    fun releaseAll(runId: String) = lock.withLock {
-        holders.entries.removeAll { it.value.runId == runId }
-        changed.signalAll()
+    fun releaseAll(runId: String) {
+        val releasedScreen = lock.withLock {
+            val screen = holders[Resource.SCREEN]?.runId == runId
+            holders.entries.removeAll { it.value.runId == runId }
+            changed.signalAll()
+            screen
+        }
+        if (releasedScreen) notifyScreenChanged()
+    }
+
+    private fun notifyScreenChanged() {
+        runCatching { onScreenLeaseChanged?.invoke() }
     }
 
     fun holderOf(resource: Resource): String? = lock.withLock { holders[resource]?.runId }

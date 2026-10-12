@@ -243,7 +243,9 @@ internal object AgentPromptBuilder {
 
     /** 屏幕观察与 GUI 操作规则；用户关闭 observe_screen 时依赖它的操作工具随之停用，整段不再下发。 */
     private val screenOperationRules =
-        "唤醒附带的内容不包含可供 GUI 工具使用的 observation_id；界面发生变化或需要操作控件时重新观察。" +
+        "界面操作慢、容易受弹窗干扰，并且会占用用户正在使用的屏幕：能用 open_uri 深链、launch_app、设备直达工具、" +
+            "文件工具或终端（am start、cmd、content、settings 等）可靠完成的步骤优先用它们，只有没有可靠的非界面途径时才观察和操作界面。" +
+            "唤醒附带的内容不包含可供 GUI 工具使用的 observation_id；界面发生变化或需要操作控件时重新观察。" +
             "需要重新看屏幕时先按默认参数调用 observe_screen，只读取 UI 树，不附截图；" +
             "节点为空、目标无法唯一识别、界面以 Canvas、地图、图片或二维码等视觉内容为主，或任务依赖颜色、图像、空间布局时，" +
             "再显式设置 include_screenshot=true；补截图时保持 include_ui_tree=true，让截图、节点与新的 observation_id 来自同一次观察，" +
