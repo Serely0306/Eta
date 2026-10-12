@@ -82,7 +82,7 @@ internal data class AgentUserQuestion(val items: List<Item>) {
                                 .put("items", JSONObject().put("type", "object").put("required", JSONArray().put("label"))
                                     .put("properties", JSONObject()
                                         .put("label", JSONObject().put("type", "string").put("minLength", 1).put("maxLength", 40))
-                                        .put("description", JSONObject().put("type", "string").put("maxLength", 120)))))))))),
+                                        .put("description", JSONObject().put("type", "string").put("maxLength", 120))))))))),
         )
     }
 }
