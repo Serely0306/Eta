@@ -448,6 +448,13 @@
   <string name="tool_set_device_state">设备开关</string>
   <string name="tool_app_state_control">应用状态</string>
   <string name="tool_get_logcat">读取系统日志</string>
+  <string name="tool_update_plan">更新计划</string>
+  <string name="tool_run_subagents">派出子 Agent</string>
+  <string name="state_agent_collaboration">协作与规划</string>
+  <string name="tool_ui_ask_user">向用户提问</string>
+  <string name="tool_ui_ask_user_summary">运行中提问并等待回答</string>
+  <string name="tool_ui_update_plan_summary">跟踪多步任务，当前步骤显示在胶囊上</string>
+  <string name="tool_ui_run_subagents_summary">把独立的检索与分析交给并行的子 Agent，只返回结论</string>
   <string name="tool_status_running">执行中</string>
   <string name="tool_status_success">已完成</string>
   <string name="tool_status_failed">失败</string>

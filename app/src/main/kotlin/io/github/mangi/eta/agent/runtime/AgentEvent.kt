@@ -165,6 +165,36 @@ internal sealed interface AgentEvent {
             "user_question_resolved status=${status.toSafeLogToken()}"
     }
 
+    /** update_plan 提交的完整计划；[planJson] 是 [io.github.mangi.eta.agent.model.AgentTaskPlan] 的规范化 JSON。 */
+    data class PlanUpdated(
+        val toolCallId: String,
+        val planJson: String,
+    ) : AgentEvent {
+        override fun toLogLine(): String = "plan_updated plan_chars=${planJson.length}"
+    }
+
+    /**
+     * run_subagents 派出的子 Agent 进度。子 Agent 的内部事件不进入主 run 的消息流，
+     * 只以此汇总给浮层、通知与电脑端；[index] 从 0 开始。
+     */
+    data class SubagentUpdate(
+        val toolCallId: String,
+        val index: Int,
+        val total: Int,
+        val phase: String,
+        val toolName: String = "",
+    ) : AgentEvent {
+        override fun toLogLine(): String =
+            "subagent_update index=$index, total=$total, phase=${phase.toSafeLogToken()}, tool=${toolName.toSafeLogToken()}"
+
+        companion object {
+            const val PHASE_STARTED = "started"
+            const val PHASE_TOOL = "tool"
+            const val PHASE_FINISHED = "finished"
+            const val PHASE_FAILED = "failed"
+        }
+    }
+
     data class ToolStarted(
         val round: Int,
         val toolCallId: String,

@@ -436,6 +436,13 @@
   <string name="tool_set_device_state">裝置開關</string>
   <string name="tool_app_state_control">應用程式狀態</string>
   <string name="tool_get_logcat">讀取系統記錄</string>
+  <string name="tool_update_plan">更新計畫</string>
+  <string name="tool_run_subagents">派出子 Agent</string>
+  <string name="state_agent_collaboration">協作與規劃</string>
+  <string name="tool_ui_ask_user">向使用者提問</string>
+  <string name="tool_ui_ask_user_summary">執行中提問並等待回答</string>
+  <string name="tool_ui_update_plan_summary">追蹤多步任務，目前步驟顯示在膠囊上</string>
+  <string name="tool_ui_run_subagents_summary">把獨立的檢索與分析交給並行的子 Agent，只回傳結論</string>
   <string name="tool_status_running">執行中</string>
   <string name="tool_status_success">已完成</string>
   <string name="tool_status_failed">失敗</string>

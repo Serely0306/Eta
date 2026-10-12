@@ -52,6 +52,8 @@ class AgentRuntimeWireTest {
         for (event in listOf(
             AgentEvent.UserQuestionAsked("run:call", "call", """{"questions":[]}""", 600_000L),
             AgentEvent.UserQuestionResolved("run:call", "answered"),
+            AgentEvent.PlanUpdated("call", """{"steps":[{"step":"读取日志","status":"in_progress"}]}"""),
+            AgentEvent.SubagentUpdate("call", 1, 3, AgentEvent.SubagentUpdate.PHASE_TOOL, "terminal"),
         )) {
             assertEquals(event, AgentRuntimeWire.eventFromBundle(AgentRuntimeWire.eventToBundle(event)))
             assertEquals(event, AgentEventJsonCodec.decode(AgentEventJsonCodec.encode(event)))

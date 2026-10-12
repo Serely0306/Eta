@@ -10,12 +10,12 @@
 | 修复 | 无障碍重绑后结果卡片、小爱/小布会话归组、文件工具默认 Root、终端参数分级校验 |
 | 二 | 多会话并发、屏幕与浏览器租约、浮层归属 |
 | 三 | 设备端 MCP 服务：电脑端 Agent 经 USB 或局域网直接调用设备工具，或把任务委托给 Eta 的 Agent（见 [MCP_SERVER.md](MCP_SERVER.md)），待真机验证 |
+| 四 | 计划工具 `update_plan` 与子 Agent `run_subagents`（见 [AGENT_RUNTIME.md](AGENT_RUNTIME.md)「计划与子 Agent」），待真机验证 |
 
 ## 后续阶段
 
 顺序未定，按需调整：
 
-- 规划工具与子 Agent
 - 用户可配置的模型回退链（失败后按优先级切换后端模型）
 - 主动触发（定时、事件、通知等触发 Agent 任务）
 - 减少 GUI 路径；虚拟屏执行界面操作，并在接管期间屏蔽通知

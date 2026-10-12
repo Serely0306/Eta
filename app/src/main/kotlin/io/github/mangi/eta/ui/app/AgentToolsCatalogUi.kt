@@ -134,6 +134,15 @@ internal fun buildToolsState(context: Context): AgentToolsUiState =
                 ),
             ),
             ToolGroupUi(
+                id = "collaboration",
+                title = context.getString(R.string.state_agent_collaboration),
+                tools = listOf(
+                    ToolItemUi("ask_user", context.getString(R.string.tool_ui_ask_user), context.getString(R.string.tool_ui_ask_user_summary)),
+                    ToolItemUi("update_plan", context.getString(R.string.tool_update_plan), context.getString(R.string.tool_ui_update_plan_summary)),
+                    ToolItemUi("run_subagents", context.getString(R.string.tool_run_subagents), context.getString(R.string.tool_ui_run_subagents_summary)),
+                ),
+            ),
+            ToolGroupUi(
                 id = "terminal",
                 title = context.getString(R.string.state_terminal_and_files_ae7c54),
                 tools = listOf(

@@ -66,6 +66,9 @@ internal class AgentRunMessageProjector(
         // 待回答问题由会话状态承载，问答结论随 ask_user 的工具结果进入消息流。
         is AgentEvent.UserQuestionAsked,
         is AgentEvent.UserQuestionResolved,
+        // 计划与子 Agent 进度随各自的工具卡片展示，不单独产生消息。
+        is AgentEvent.PlanUpdated,
+        is AgentEvent.SubagentUpdate,
         is AgentEvent.UserSupplementReceived,
         is AgentEvent.RunStarted,
         is AgentEvent.ProviderRequestStarted,

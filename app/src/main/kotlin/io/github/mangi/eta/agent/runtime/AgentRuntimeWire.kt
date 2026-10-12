@@ -786,6 +786,21 @@ internal object AgentRuntimeWire {
                 putString("status", event.status)
             }
 
+            is AgentEvent.PlanUpdated -> {
+                putString(KEY_TYPE, "plan_updated")
+                putString("tool_call_id", event.toolCallId)
+                putString("plan_json", event.planJson)
+            }
+
+            is AgentEvent.SubagentUpdate -> {
+                putString(KEY_TYPE, "subagent_update")
+                putString("tool_call_id", event.toolCallId)
+                putInt("index", event.index)
+                putInt("total", event.total)
+                putString("phase", event.phase)
+                putString("tool_name", event.toolName)
+            }
+
             is AgentEvent.ToolStarted -> {
                 putString(KEY_TYPE, "tool_started")
                 putInt("round", event.round)
@@ -940,6 +955,19 @@ internal object AgentRuntimeWire {
         "user_question_resolved" -> AgentEvent.UserQuestionResolved(
             questionId = bundle.getString("question_id").orEmpty(),
             status = bundle.getString("status").orEmpty(),
+        )
+
+        "plan_updated" -> AgentEvent.PlanUpdated(
+            toolCallId = bundle.getString("tool_call_id").orEmpty(),
+            planJson = bundle.getString("plan_json").orEmpty(),
+        )
+
+        "subagent_update" -> AgentEvent.SubagentUpdate(
+            toolCallId = bundle.getString("tool_call_id").orEmpty(),
+            index = bundle.getInt("index"),
+            total = bundle.getInt("total"),
+            phase = bundle.getString("phase").orEmpty(),
+            toolName = bundle.getString("tool_name").orEmpty(),
         )
 
         "tool_started" -> AgentEvent.ToolStarted(

@@ -27,8 +27,9 @@
 | 真实模型冒烟 | — | H1–H3 | 未执行 |
 | 设备端 MCP 服务：设备工具、令牌鉴权、会话与设置页 | `ee6391e` | I1–I10 | 未执行 |
 | 设备端 MCP 服务：委托任务与“电脑端”会话分组 | `6dd1dc0` | I11–I15 | 未执行 |
+| 计划工具与子 Agent | 待补（本次提交） | J1–J9 | 未执行 |
 
-后续阶段的用例在实现时补充，预留分组：J 规划与子 Agent、K 模型回退链、L 主动触发、M 虚拟屏与通知屏蔽。
+后续阶段的用例在实现时补充，预留分组：K 模型回退链、L 主动触发、M 虚拟屏与通知屏蔽。
 
 ## 设计原则
 
@@ -218,6 +219,22 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | I13 `M` | 同一 `conversation_id` 连续两个任务；第一个执行中再提交第二个 | 第二个任务能引用第一个任务的上下文；执行中重复提交返回 `CONVERSATION_BUSY` |
 | I14 `M` | 两个不同 `conversation_id` 的任务与一个 App 会话任务同时运行；再提交第 4 个 | 三者并行互不替换；第 4 个以并发上限失败（同 A3） |
 | I15 `M` | `eta_task_stop`；任务结束后打开 Eta | 状态为 `stopped`；侧栏“电脑端”分组出现该会话的归档 |
+
+### J. 计划与子 Agent
+
+子 Agent 的模型请求同样发往 Mock 服务：剧本在主 Agent 的 `run_subagents` 参数里给每个子任务写入标记（如 `[E2E:sub-1]`），Mock 据此为子 Agent 选剧本。
+
+| ID | 场景 | 断言 |
+|---|---|---|
+| J1 `M` | 剧本先 `update_plan`（第 1 步进行中）再执行工具，随后把第 1 步标为完成 | 胶囊显示第 1 步标题与“步骤 1/3”，更新后切到第 2 步；`events` 中有两条 `PlanUpdated` |
+| J2 `M` | `update_plan` 提交两个 in_progress 或非法状态 | 工具结果 `INVALID_PLAN`，run 继续，不发 `PlanUpdated` |
+| J3 `M` | 剧本 `run_subagents` 派出 3 个子任务，各自调用 `terminal` 后回复 | 三个子 Agent 的请求并行到达 Mock；主 Agent 收到的结果含 3 条 `ok=true` 的结论；胶囊依次显示“子 Agent n：终端” |
+| J4 `M` | 子 Agent 剧本调用 `observe_screen`、`browser_use`、`ask_user` | Mock 收到的子 Agent 工具列表不含这些工具；强行调用返回 `SUBAGENT_TOOL_UNAVAILABLE` |
+| J5 `M` | 子 Agent 剧本持续调用工具不结束 | 第 40 轮后该子任务停止并报告轮数上限，其余子任务正常返回 |
+| J6 `M` | 子 Agent 执行中停止主 run | 所有子 Agent 的请求中断，主 run 以停止结束 |
+| J7 `M` | 主 Agent 先 `observe_screen` 持有屏幕租约，再派子 Agent，子 Agent 结束后主 Agent 继续操作界面 | 子 Agent 结束不释放主 run 的屏幕租约（`leases.SCREEN` 仍为主 run） |
+| J8 `M` | 工具页关闭 `update_plan` 与 `run_subagents` | Mock 收到的工具列表与系统提示都不再包含它们；从历史强行调用返回 `TOOL_DISABLED` |
+| J9 `M` | 电脑端委托的任务调用 `update_plan` | `eta_task_status` 返回的快照带 `plan` |
 
 ## 执行方式
 

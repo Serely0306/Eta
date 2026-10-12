@@ -49,6 +49,7 @@ internal class EtaMcpTaskManager(
         var stepCount = 0
         var questionId: String? = null
         var question: AgentUserQuestion? = null
+        var planJson: String? = null
         var result: String? = null
         var error: String? = null
         var finishedAt: Long? = null
@@ -108,6 +109,7 @@ internal class EtaMcpTaskManager(
                     .put("summary", event.resultSummary.take(MAX_SUMMARY_CHARS)))
             }
             is AgentEvent.HostedToolFinished -> record(task, JSONObject().put("tool", event.name).put("ok", event.success))
+            is AgentEvent.PlanUpdated -> task.planJson = event.planJson
             is AgentEvent.UserQuestionAsked -> {
                 task.questionId = event.questionId
                 task.question = AgentUserQuestion.parse(event.questionJson)
@@ -236,6 +238,7 @@ internal class EtaMcpTaskManager(
             .put("recent_steps", JSONArray(task.steps.toList()))
             .apply {
                 task.currentTool?.let { put("current_tool", it) }
+                task.planJson?.let { raw -> runCatching { JSONObject(raw) }.getOrNull()?.let { put("plan", it) } }
                 task.questionId?.let { id ->
                     put("question", JSONObject().put("question_id", id).apply {
                         task.question?.let { put("questions", JSONObject(it.toJson()).getJSONArray("questions")) }

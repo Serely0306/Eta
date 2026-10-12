@@ -73,6 +73,17 @@ pending steering
 - 10 分钟无回答按 `timeout` 交回模型；取消 run 会立即结束等待。回答在 `UserQuestionResolved` 前只接受一次，迟到回答被忽略。
 - 用户关闭屏幕观察工具时，系统提示要求模型用 `ask_user` 请用户亲手完成界面步骤并确认后继续。
 
+## 计划与子 Agent
+
+`update_plan` 与 `run_subagents` 同样由 Runtime 执行器直接处理，和 `ask_user` 一起列在工具页“协作与规划”分组，可单独关闭。
+
+- `update_plan`：模型每次提交完整计划（1–20 步，状态 pending / in_progress / completed，同一时刻最多一步进行中）。Runtime 校验后发布 `PlanUpdated`，胶囊第二行显示当前步骤并标注“步骤 n/m”，电脑端的委托任务快照带上计划。工具不改变设备状态；系统提示要求 3 步以上的任务先建计划，简单任务不用。
+- `run_subagents`：一次派出 1–4 个子 Agent 并行处理相互独立的子问题，每个子 Agent 以新上下文运行，使用与主 run 相同的模型和非界面工具，只把结论（每个最多 8000 字）交回主 Agent。
+  - 子 Agent 不开放界面类工具、Agent 浏览器、Skill 管理，也不能提问、建计划或再派子 Agent；需要界面操作或用户决定的步骤写进结论，由主 Agent 处理。
+  - 每个子 Agent 有独立的工具执行器，租约与浏览器归属用 `<runId>-sub-<n>`，关闭时不影响主 run 持有的屏幕租约。
+  - 主 run 取消时子 Agent 一并取消；单个子 Agent 超过 40 轮未完成即停止并报告。
+  - 进度以 `SubagentUpdate` 汇总：胶囊显示“子 Agent n：正在执行的工具”，子 Agent 的内部事件不进入主 run 的消息流。
+
 ## 工具单项开关
 
 类别开关仍是总开关。工具页每张卡片还可单独关闭，关闭的工具名保存在本地 Agent 配置 `agent_disabled_tools`，只由 Runtime 消费。`AgentToolToggles` 定义卡片对应的工具族与调用依赖：关闭 `observe_screen` 时依赖其 `observation_id` 的点击、长按、滑动、滚动与输入一并停用。Runtime 每轮重新读取停用集合，从工具声明中移除并在集合变化时重建系统提示；执行前再次检查，停用工具返回 `TOOL_DISABLED`。

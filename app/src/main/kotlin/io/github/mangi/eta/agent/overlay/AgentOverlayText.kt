@@ -22,6 +22,8 @@ internal sealed interface AgentOverlayStatus {
     data object ContinuationUnavailable : AgentOverlayStatus
     data object Stopped : AgentOverlayStatus
     data class WaitingForAnswer(val question: String) : AgentOverlayStatus
+    /** 第 [number] 个子 Agent 正在执行 [toolName]。 */
+    data class SubagentTool(val number: Int, val toolName: String) : AgentOverlayStatus
 }
 
 @Composable
@@ -48,6 +50,8 @@ internal fun AgentOverlayStatus.localizedText(resources: Resources): String = wh
     } else {
         resources.getString(R.string.overlay_waiting_for_answer, question)
     }
+    is AgentOverlayStatus.SubagentTool ->
+        resources.getString(R.string.overlay_subagent_tool, number, toolDisplayName(resources, toolName))
 }
 
 @Composable
@@ -116,5 +120,7 @@ internal fun toolDisplayNameResource(name: String): Int? = when (name) {
     "set_device_state" -> R.string.tool_set_device_state
     "app_state_control" -> R.string.tool_app_state_control
     "get_logcat" -> R.string.tool_get_logcat
+    "update_plan" -> R.string.tool_update_plan
+    "run_subagents" -> R.string.tool_run_subagents
     else -> null
 }

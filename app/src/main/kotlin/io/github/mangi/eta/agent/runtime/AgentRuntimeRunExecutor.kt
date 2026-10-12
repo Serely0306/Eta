@@ -10,6 +10,7 @@ import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentModelExecutionException
 import io.github.mangi.eta.agent.model.AgentModelFailure
 import io.github.mangi.eta.agent.model.AgentHttpClient
+import io.github.mangi.eta.agent.model.AgentTaskPlan
 import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
@@ -156,10 +157,11 @@ internal class AgentRuntimeRunExecutor(
             }
             val mcpTools = JSONArray().also(mcpSnapshot::appendModelTools)
             val disabledTools = { AgentToolToggles.effective(currentPermissions().disabledTools) }
-            val executor = AgentLocalTools(
+            // 子 Agent 各自持有执行器，租约与浏览器归属用独立 id，关闭时不影响主 run。
+            fun newLocalTools(ownerId: String = request.runId) = AgentLocalTools(
                 context = appContext,
                 logger = AndroidAgentLogger,
-                browserRunId = request.runId,
+                browserRunId = ownerId,
                 browserToolsEnabled = {
                     request.config.browserTools && currentPermissions().browserTools
                 },
@@ -223,7 +225,7 @@ internal class AgentRuntimeRunExecutor(
                 pendingSkillConflict = pendingSkillConflict,
             )
             val routingExecutor = RoutingToolExecutor(
-                local = executor,
+                local = newLocalTools(),
                 mcp = McpToolExecutor(mcpSnapshot),
             )
             toolExecutor = routingExecutor
@@ -241,7 +243,40 @@ internal class AgentRuntimeRunExecutor(
                 if (historyTool != null) tools.put(AgentConversationToolCatalog.schema())
                 if (characterMemoryTools != null && memoryEnabled) CharacterMemoryTools.appendSchemas(tools)
                 tools.put(AgentUserQuestion.schema())
+                tools.put(AgentTaskPlan.schema())
+                tools.put(AgentSubagentTool.schema())
             }
+            fun emitRunEvent(event: AgentEvent) =
+                acceptEvent(session, event, archivedEvents, entrySurfaceGuard, checkpointRecorder)
+            // 计划只是进度声明：校验后推给浮层、通知与电脑端，不改变设备状态。
+            fun updatePlan(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
+                val plan = AgentTaskPlan.parse(call.argumentsJson).getOrElse { failure ->
+                    return AgentModelClient.ToolResult(JSONObject()
+                        .put("ok", false)
+                        .put("code", "INVALID_PLAN")
+                        .put("message", failure.message ?: "计划格式无效")
+                        .toString())
+                }
+                emitRunEvent(AgentEvent.PlanUpdated(call.id, plan.toJson()))
+                return AgentModelClient.ToolResult(JSONObject()
+                    .put("ok", true)
+                    .put("completed", plan.completedCount)
+                    .put("total", plan.steps.size)
+                    .toString())
+            }
+            val subagents = AgentSubagentTool(
+                parentController = runController,
+                config = request.config,
+                parentSessionId = request.effectiveModelSessionId,
+                runId = request.runId,
+                additionalTools = mcpTools,
+                disabledTools = disabledTools,
+                capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
+                newExecutor = { ownerId ->
+                    RoutingToolExecutor(local = newLocalTools(ownerId), mcp = McpToolExecutor(mcpSnapshot))
+                },
+                emit = ::emitRunEvent,
+            )
             // 提问在工具内阻塞等待；问题与结论作为独立事件推给 App、胶囊和恢复日志。
             fun askUser(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
                 val question = AgentUserQuestion.parse(call.argumentsJson)
@@ -269,8 +304,19 @@ internal class AgentRuntimeRunExecutor(
                 return AgentModelClient.ToolResult(answer.toToolResult(question))
             }
             val runToolExecutor = AgentModelClient.ToolExecutor { call ->
-                if (call.name == AgentUserQuestion.TOOL_NAME) {
+                // 执行器级工具不经 AgentLocalTools，停用校验在这里补上。
+                if (call.name in EXECUTOR_TOOLS && call.name in disabledTools()) {
+                    AgentModelClient.ToolResult(JSONObject()
+                        .put("ok", false)
+                        .put("code", "TOOL_DISABLED")
+                        .put("message", "该工具已在工具设置中关闭，本次未执行")
+                        .toString())
+                } else if (call.name == AgentUserQuestion.TOOL_NAME) {
                     askUser(call)
+                } else if (call.name == AgentTaskPlan.TOOL_NAME) {
+                    updatePlan(call)
+                } else if (call.name == AgentSubagentTool.TOOL_NAME) {
+                    subagents.execute(call)
                 } else if (call.name == AgentConversationToolCatalog.READ_HISTORY && historyTool != null) {
                     historyTool.execute(call)
                 } else if (call.name in CharacterMemoryTools.NAMES && characterMemoryTools != null) {
@@ -444,5 +490,9 @@ internal class AgentRuntimeRunExecutor(
                     "Agent runtime event projection failed: type=${throwable.safeLogType()}"
                 }
             }
+    }
+
+    private companion object {
+        val EXECUTOR_TOOLS = setOf(AgentUserQuestion.TOOL_NAME, AgentTaskPlan.TOOL_NAME, AgentSubagentTool.TOOL_NAME)
     }
 }

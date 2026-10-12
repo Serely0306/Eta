@@ -8,6 +8,9 @@ import org.json.JSONObject
 
 /** 组装每次 run 的系统约束、历史与当前用户输入。 */
 internal object AgentPromptBuilder {
+    /** 与 Runtime 的 run_subagents 同名；模型层不依赖 Runtime 包。 */
+    private const val SUBAGENT_TOOL_NAME = "run_subagents"
+
     fun buildInitialMessages(
         config: AgentModelClient.ModelConfig,
         prompt: String,
@@ -93,6 +96,15 @@ internal object AgentPromptBuilder {
                         "当前不允许 Eta 操作屏幕：任务需要在界面上点击、输入或滑动时，调用 ask_user 请用户亲手完成这一步，" +
                             "写清在哪个应用、操作哪里、要达到什么状态，并提供“已完成”等选项，确认后再继续；" +
                             "打开应用或链接等不需要操作控件的步骤仍可用对应工具完成。"
+                    } else "") +
+                    (if (AgentTaskPlan.TOOL_NAME !in disabledTools) {
+                        "需要 3 步以上、跨多个应用或工具才能完成的任务，开始执行前先调用 update_plan 列出步骤，开始或完成一步时及时更新状态；" +
+                            "一两步即可完成的任务不要建计划，也不要在正文里复述计划。"
+                    } else "") +
+                    (if (SUBAGENT_TOOL_NAME !in disabledTools) {
+                        "需要大量读取、检索或分析且中间结果不必留在当前上下文的子问题（如在多个目录、日志或网页中查找归纳、分别调研几个方向），" +
+                            "可以用 run_subagents 交给子 Agent 并行处理，它们只返回结论；子 Agent 不能操作界面、不能提问、看不到当前对话，" +
+                            "界面操作与需要用户决定的步骤由你自己完成。"
                     } else "")
             )
         )

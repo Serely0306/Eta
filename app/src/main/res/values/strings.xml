@@ -458,6 +458,13 @@
   <string name="tool_set_device_state">Device controls</string>
   <string name="tool_app_state_control">App controls</string>
   <string name="tool_get_logcat">Read system logs</string>
+  <string name="tool_update_plan">Update plan</string>
+  <string name="tool_run_subagents">Subagents</string>
+  <string name="state_agent_collaboration">Collaboration</string>
+  <string name="tool_ui_ask_user">Ask the user</string>
+  <string name="tool_ui_ask_user_summary">Ask a question mid-task and wait for the answer</string>
+  <string name="tool_ui_update_plan_summary">Track multi-step tasks; the current step shows on the capsule</string>
+  <string name="tool_ui_run_subagents_summary">Hand independent research to parallel subagents that return only conclusions</string>
   <string name="tool_status_running">Running</string>
   <string name="tool_status_success">Completed</string>
   <string name="tool_status_failed">Failed</string>

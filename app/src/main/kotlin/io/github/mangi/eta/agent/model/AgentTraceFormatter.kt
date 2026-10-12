@@ -53,6 +53,13 @@ internal class AgentTraceFormatter {
                 ?.items?.firstOrNull()?.question
                 ?.let { "询问：${it.take(USER_QUESTION_PREVIEW_CHARS)}" }
                 ?: "询问用户"
+            AgentTaskPlan.TOOL_NAME -> AgentTaskPlan.parse(toolCall.argumentsJson).getOrNull()?.let { plan ->
+                plan.currentIndex?.let { index ->
+                    "计划 ${index + 1}/${plan.steps.size}：${plan.steps[index].title.take(PLAN_STEP_PREVIEW_CHARS)}"
+                } ?: "计划已全部完成（${plan.steps.size} 步）"
+            } ?: "更新计划"
+            "run_subagents" -> runCatching { JSONObject(toolCall.argumentsJson).optJSONArray("tasks")?.length() }
+                .getOrNull()?.let { "派出 $it 个子 Agent" } ?: "派出子 Agent"
             "memory_get", "character_memory_get" -> summarizeMemoryGetArguments(toolCall.argumentsJson)
             "memory_write", "character_memory_write" -> summarizeMemoryWriteArguments(toolCall.argumentsJson)
             "skills_list" -> "查看技能列表"
@@ -281,6 +288,11 @@ internal class AgentTraceFormatter {
             BROWSER_TOOL_NAME -> json?.let(::summarizeBrowserResult) ?: "浏览器操作完成"
             AgentConversationToolCatalog.READ_HISTORY -> "已读取历史分页"
             AgentUserQuestion.TOOL_NAME -> json?.let(::summarizeUserAnswer) ?: "完成"
+            AgentTaskPlan.TOOL_NAME -> json?.let { "已完成 ${it.optInt("completed")}/${it.optInt("total")}" } ?: "计划已更新"
+            "run_subagents" -> json?.optJSONArray("results")?.let { results ->
+                val succeeded = (0 until results.length()).count { results.optJSONObject(it)?.optBoolean("ok") == true }
+                "子 Agent 完成 $succeeded/${results.length()}"
+            } ?: "完成"
             "memory_get", "memory_write", "character_memory_get", "character_memory_write" ->
                 json?.let { summarizeMemoryResult(toolName, it) } ?: "完成"
             "search_apps" -> json?.let(::summarizeSearchAppsResult) ?: "完成"
@@ -600,6 +612,7 @@ internal class AgentTraceFormatter {
     private companion object {
         const val BROWSER_TOOL_NAME = "browser_use"
         const val USER_QUESTION_PREVIEW_CHARS = 60
+        const val PLAN_STEP_PREVIEW_CHARS = 60
         const val MAX_DISPLAY_COMMAND_CHARS = 4_000
         const val MAX_QUERY_SUMMARY_CHARS = 30
         const val MAX_LISTED_APP_NAMES = 3

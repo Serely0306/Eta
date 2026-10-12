@@ -33,6 +33,23 @@ class AgentOverlayStateTest {
     }
 
     @Test
+    fun planUpdatesExposeCurrentStepAndSubagentToolsShowWhoIsWorking() {
+        val planJson = """{"steps":[{"step":"读日志","status":"completed"},{"step":"定位","status":"in_progress"},{"step":"修复","status":"pending"}]}"""
+        var state = AgentOverlayState.Initial.applyEvent(AgentEvent.PlanUpdated("call-1", planJson))
+        assertEquals(AgentOverlayState.PlanStep(number = 2, total = 3, title = "定位"), state.planStep)
+
+        state = state.applyEvent(AgentEvent.PlanUpdated("call-2", """{"steps":[{"step":"读日志","status":"completed"}]}"""))
+        assertEquals(null, state.planStep)
+
+        state = state.applyEvent(AgentEvent.ToolStarted(1, "call-3", "run_subagents", "{}"))
+            .applyEvent(AgentEvent.SubagentUpdate("call-3", 1, 2, AgentEvent.SubagentUpdate.PHASE_TOOL, "terminal"))
+        assertEquals(AgentOverlayStatus.SubagentTool(2, "terminal"), state.status)
+        // 开始与结束事件不改写文字，避免多个子 Agent 来回闪烁。
+        state = state.applyEvent(AgentEvent.SubagentUpdate("call-3", 0, 2, AgentEvent.SubagentUpdate.PHASE_FINISHED))
+        assertEquals(AgentOverlayStatus.SubagentTool(2, "terminal"), state.status)
+    }
+
+    @Test
     fun pausedStateSurvivesInFlightEventsUntilRunEnds() {
         val paused = AgentOverlayState(phase = AgentOverlayPhase.PAUSED, status = AgentOverlayStatus.Paused)
         listOf(

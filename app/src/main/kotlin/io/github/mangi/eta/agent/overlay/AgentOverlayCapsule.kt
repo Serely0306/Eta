@@ -202,6 +202,7 @@ internal fun AgentOverlayCapsule(
                 ) {
                     PhaseIndicator(phase = state.phase, accent = accent)
                     Spacer(Modifier.width(9.dp))
+                    val planStep = state.planStep?.takeIf { state.phase == AgentOverlayPhase.RUNNING }
                     Column(modifier = Modifier.weight(1f)) {
                     AnimatedContent(
                         targetState = statusText,
@@ -221,7 +222,20 @@ internal fun AgentOverlayCapsule(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    ThoughtLine(thought = state.thought.takeIf { state.phase == AgentOverlayPhase.RUNNING }.orEmpty())
+                    // 没有即时推理或参数摘要时，第二行显示计划的当前步骤。
+                    ThoughtLine(
+                        thought = state.thought.takeIf { state.phase == AgentOverlayPhase.RUNNING }.orEmpty()
+                            .ifBlank { planStep?.title.orEmpty() },
+                    )
+                    }
+                    if (planStep != null) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.overlay_plan_progress, planStep.number, planStep.total),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                        )
                     }
                     if (otherRunCount > 0) {
                         Spacer(Modifier.width(8.dp))

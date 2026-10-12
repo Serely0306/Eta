@@ -127,7 +127,10 @@ internal class AgentExecutionService : Service() {
 
     /** 状态栏胶囊约 7 个字符可完整显示；更长时只取动作，工具名留在展开态。 */
     private fun AgentOverlayStatus.shortText(): String = when (this) {
-        is AgentOverlayStatus.RunningTool, is AgentOverlayStatus.HostedToolRunning -> getString(R.string.execution_chip_running)
+        is AgentOverlayStatus.RunningTool,
+        is AgentOverlayStatus.HostedToolRunning,
+        is AgentOverlayStatus.SubagentTool,
+        -> getString(R.string.execution_chip_running)
         AgentOverlayStatus.Paused -> getString(R.string.overlay_paused)
         AgentOverlayStatus.Stopping -> getString(R.string.overlay_stopping)
         AgentOverlayStatus.GeneratingAnswer -> getString(R.string.execution_chip_answering)

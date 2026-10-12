@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.overlay
 
 import androidx.compose.runtime.Immutable
+import io.github.mangi.eta.agent.model.AgentTaskPlan
 import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.runtime.AgentEvent
 
@@ -21,7 +22,11 @@ internal data class AgentOverlayState(
      * 只保留尾部一小段，供用户扫一眼知道 Agent 在想什么；完整推理仍在会话里。
      */
     val thought: String = "",
+    /** update_plan 的当前步骤；没有计划或全部完成时为 null。 */
+    val planStep: PlanStep? = null,
 ) {
+    data class PlanStep(val number: Int, val total: Int, val title: String)
+
     companion object {
         val Initial = AgentOverlayState(status = AgentOverlayStatus.Reasoning)
     }
@@ -82,6 +87,19 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
     )
     is AgentEvent.UserQuestionResolved -> copy(phase = AgentOverlayPhase.RUNNING, status = AgentOverlayStatus.Reasoning)
 
+    is AgentEvent.PlanUpdated -> AgentTaskPlan.parse(event.planJson).getOrNull()?.let { plan ->
+        copy(planStep = plan.currentIndex?.let { index ->
+            AgentOverlayState.PlanStep(number = index + 1, total = plan.steps.size, title = plan.steps[index].title)
+        })
+    } ?: this
+
+    // 子 Agent 只在执行工具时切换文字，开始与结束由 run_subagents 的工具状态覆盖。
+    is AgentEvent.SubagentUpdate -> if (event.phase == AgentEvent.SubagentUpdate.PHASE_TOOL) {
+        running(AgentOverlayStatus.SubagentTool(event.index + 1, event.toolName), round)
+    } else {
+        this
+    }
+
     is AgentEvent.RunFinished -> copy(
         phase = AgentOverlayPhase.FINISHED,
         round = event.round,
@@ -109,6 +127,7 @@ private fun AgentOverlayState.running(status: AgentOverlayStatus, round: Int) =
 private fun AgentOverlayState.thinkingUnlessWorking(): AgentOverlayState = when (status) {
     is AgentOverlayStatus.RunningTool,
     is AgentOverlayStatus.HostedToolRunning,
+    is AgentOverlayStatus.SubagentTool,
     is AgentOverlayStatus.WaitingForAnswer,
     AgentOverlayStatus.GeneratingAnswer,
     AgentOverlayStatus.Paused,
