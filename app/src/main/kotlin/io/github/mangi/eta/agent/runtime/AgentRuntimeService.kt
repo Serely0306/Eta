@@ -1103,20 +1103,29 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun showResultCard(wm: WindowManager) {
         if (resultCardView != null) return
-        val card = createOverlayComposeView {
+        fun createCard(context: Context) = createOverlayComposeView(context) {
             AgentResultCard(
                 state = state.value,
                 onClose = ::dismissAndStop,
                 onOpenEta = ::openEtaFromResult,
             )
         }
-        val lp = resultCardLayoutParams()
-        runCatching { wm.addView(card, lp) }.onFailure { throwable ->
+        var card = createCard(overlayContext())
+        var lp = resultCardLayoutParams()
+        var added = runCatching { wm.addView(card, lp) }.onFailure { throwable ->
             AndroidAgentLogger.warnThrottled("runtime_result_card_add_view_failed") {
                 "Agent runtime result card addView failed: type=${throwable.safeLogType()}"
             }
-            return
+        }.isSuccess
+        // 无障碍窗口令牌不可用时，有悬浮窗权限就退回普通应用浮窗，保证用户能看到结果。
+        if (!added && lp.type == WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY && Settings.canDrawOverlays(this)) {
+            val fallbackWm = getSystemService(Context.WINDOW_SERVICE) as? WindowManager ?: return
+            card = createCard(this)
+            lp = resultCardLayoutParams().apply { type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY }
+            added = runCatching { fallbackWm.addView(card, lp) }.isSuccess
+            if (added) windowManager = fallbackWm
         }
+        if (!added) return
         resultCardView = card
         resultCardParams = lp
         registerResultCardBack(card)
@@ -1180,8 +1189,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         runCatching { dispatcher.unregisterOnBackInvokedCallback(callback) }
     }
 
-    private fun createOverlayComposeView(content: @Composable () -> Unit): ComposeView =
-        ComposeView(overlayContext()).apply {
+    private fun createOverlayComposeView(
+        context: Context = overlayContext(),
+        content: @Composable () -> Unit,
+    ): ComposeView =
+        ComposeView(context).apply {
             setViewTreeLifecycleOwner(this@AgentRuntimeService)
             setViewTreeSavedStateRegistryOwner(this@AgentRuntimeService)
             setContent {
@@ -1342,7 +1354,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             // 撤掉胶囊和边缘光，改显半屏结果卡片，不自动关闭，用户手动关闭
             capsuleExpanded.value = false
             removeAmbientWindows()
-            windowManager?.let(::showResultCard)
+            // 无障碍服务可能在运行中被系统或厂商助手重新绑定，开始时缓存的窗口句柄已失效；
+            // 结果卡片按当前服务重新取句柄，否则 addView 失败会让卡片静默消失。
+            (overlayContext().getSystemService(Context.WINDOW_SERVICE) as? WindowManager)?.let { wm ->
+                windowManager = wm
+                showResultCard(wm)
+            }
             mainHandler.removeCallbacksAndMessages(hideToken)
         } else {
             dismissAndStop()
