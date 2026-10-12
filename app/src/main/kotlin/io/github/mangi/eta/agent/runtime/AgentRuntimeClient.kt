@@ -7,6 +7,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Message
 import android.os.Messenger
+import io.github.mangi.eta.agent.model.AgentUserAnswer
 import io.github.mangi.eta.core.AgentLogger
 import io.github.mangi.eta.core.safeLogType
 import java.util.concurrent.CountDownLatch
@@ -137,6 +138,17 @@ internal class AgentRuntimeClient(
             msg.data = AgentRuntimeWire.steerBundle(runId, text)
             serviceMessenger.send(msg)
             responseLatch.await(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS) && acceptedRef.get()
+        }
+    }
+
+    /** 回答 ask_user 的问题；是否被接受以随后的 UserQuestionResolved 事件为准。 */
+    fun answerQuestion(runId: String, questionId: String, answer: AgentUserAnswer): Boolean {
+        if (runId.isBlank() || questionId.isBlank()) return false
+        return withRuntimeMessenger(false) { serviceMessenger ->
+            val msg = Message.obtain(null, AgentRuntimeWire.MSG_ANSWER_QUESTION)
+            msg.data = AgentRuntimeWire.answerQuestionBundle(runId, questionId, answer)
+            serviceMessenger.send(msg)
+            true
         }
     }
 

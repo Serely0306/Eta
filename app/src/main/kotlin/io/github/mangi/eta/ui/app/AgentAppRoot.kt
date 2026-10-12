@@ -43,6 +43,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.mangi.eta.EtaApp
+import io.github.mangi.eta.agent.model.AgentUserAnswer
 import io.github.mangi.eta.agent.tool.AgentToolToggles
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.R
@@ -342,6 +343,10 @@ fun AgentAppRoot(
                                 is AgentHomeAction.ModelSelected -> agentState.selectModel(action.modelId)
                                 is AgentHomeAction.SubmitMessage -> { requestExecutionNotifications(); agentState.sendCurrentMessage(action.text) }
                                 AgentHomeAction.StopRun -> agentState.stopCurrentRun()
+                                is AgentHomeAction.AnswerQuestion ->
+                                    agentState.answerQuestion(action.questionId, AgentUserAnswer.Selected(action.selections))
+                                is AgentHomeAction.SkipQuestion ->
+                                    agentState.answerQuestion(action.questionId, AgentUserAnswer.Skipped)
                                 is AgentHomeAction.ImageAttached -> agentState.attachImage(action.uri)
                                 is AgentHomeAction.RemoveImage -> agentState.removePendingImage(action.id)
                                 is AgentHomeAction.FilesAttached -> agentState.attachFiles(action.uris)

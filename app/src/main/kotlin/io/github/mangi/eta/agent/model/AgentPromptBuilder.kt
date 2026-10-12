@@ -88,6 +88,11 @@ internal object AgentPromptBuilder {
                     (if (disabledTools.isNotEmpty()) {
                         "用户已在工具设置中关闭部分工具：本轮工具列表中没有的工具不可用，不要尝试调用，" +
                             "也不要改用终端命令或其他工具模拟被关闭工具的效果。"
+                    } else "") +
+                    (if (!screenTools && AgentUserQuestion.TOOL_NAME !in disabledTools) {
+                        "当前不允许 Eta 操作屏幕：任务需要在界面上点击、输入或滑动时，调用 ask_user 请用户亲手完成这一步，" +
+                            "写清在哪个应用、操作哪里、要达到什么状态，并提供“已完成”等选项，确认后再继续；" +
+                            "打开应用或链接等不需要操作控件的步骤仍可用对应工具完成。"
                     } else "")
             )
         )

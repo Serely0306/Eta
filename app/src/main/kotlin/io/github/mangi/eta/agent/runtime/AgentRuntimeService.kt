@@ -45,7 +45,10 @@ import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentUserAnswer
+import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
+import io.github.mangi.eta.agent.overlay.PendingQuestion
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
 import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
 import io.github.mangi.eta.agent.overlay.AgentOverlayCapsule
@@ -57,6 +60,7 @@ import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
 import io.github.mangi.eta.agent.overlay.applyEvent
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
+import io.github.mangi.eta.core.MainUiVisibility
 import io.github.mangi.eta.core.ModuleConfig
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
@@ -121,6 +125,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
     private val capsuleExpanded = mutableStateOf(false)
     private val capsuleMinimized = mutableStateOf(false)
+    /** ask_user 当前等待回答的问题；只在主线程写入，回答、超时或任务结束后清除。 */
+    private val pendingQuestion = mutableStateOf<PendingQuestion?>(null)
     private var capsuleDragOrigin: Pair<Int, Int>? = null
     /** 边缘流光只在读取或操作前台界面的工具执行期间显示，空闲片刻后淡出；胶囊保持可见。 */
     private val glowActive = mutableStateOf(false)
@@ -243,6 +249,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         runId = AgentRuntimeWire.runIdFromBundle(data),
                         text = AgentRuntimeWire.steerTextFromBundle(data),
                         replyTo = msg.replyTo,
+                    )
+                }
+
+                AgentRuntimeWire.MSG_ANSWER_QUESTION -> {
+                    val data = msg.data ?: return
+                    val answer = AgentRuntimeWire.answerFromBundle(data) ?: return
+                    answerQuestion(
+                        runId = AgentRuntimeWire.runIdFromBundle(data),
+                        questionId = AgentRuntimeWire.questionIdFromBundle(data),
+                        answer = answer,
                     )
                 }
 
@@ -391,6 +407,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         mainHandler.removeCallbacksAndMessages(hideToken)
         mainHandler.removeCallbacksAndMessages(glowHideToken)
         state.value = AgentOverlayState.Initial
+        pendingQuestion.value = null
         capsuleExpanded.value = false
         capsuleMinimized.value = false
         glowActive.value = false
@@ -477,6 +494,16 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             runCatching {
                 state.value = state.value.applyEvent(event)
                 updateGlowFor(event)
+                when (event) {
+                    is AgentEvent.UserQuestionAsked -> AgentUserQuestion.parse(event.questionJson)?.let { question ->
+                        pendingQuestion.value = PendingQuestion(session.runId, event.questionId, question)
+                        // App 内发起且主界面可见时由会话面板承接；系统入口或用户在其他应用时用胶囊。
+                        if (resultConversationId == null || !MainUiVisibility.isVisible) presentQuestion()
+                    }
+                    is AgentEvent.UserQuestionResolved ->
+                        if (pendingQuestion.value?.questionId == event.questionId) dismissQuestion()
+                    else -> Unit
+                }
                 if (revealsForegroundOperation && entrySurfaceReady) {
                     if (capsuleView == null) {
                         AgentHapticFeedback.perform(
@@ -519,6 +546,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             if (activeSession !== session) return@post
             lastCompletedRunContext = completedContext
             activeSession = null
+            pendingQuestion.value = null
             runCatching {
                 if (result.ok) {
                     enterFinalState(
@@ -805,6 +833,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val supplementText = text.trim()
         if (supplementText.isBlank()) return
         setCapsuleInputMode(focusable = false)
+        pendingQuestion.value?.let { question ->
+            answerQuestion(question.runId, question.questionId, AgentUserAnswer.text(supplementText))
+            return
+        }
         activeSession?.let { session ->
             val event = session.steer(supplementText) {
                 recordSupplementEvent(supplementText)
@@ -863,6 +895,30 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 "Agent runtime steer response failed: type=${throwable.safeLogType()}"
             }
         }
+    }
+
+    /** 回答由 Runtime 控制器裁决唯一性；问题结束后的迟到回答被忽略，界面以 UserQuestionResolved 收口。 */
+    private fun answerQuestion(runId: String, questionId: String, answer: AgentUserAnswer) {
+        val session = activeSession?.takeIf { it.runId == runId } ?: return
+        if (!session.controller.answerQuestion(questionId, answer)) {
+            AndroidAgentLogger.debug { "Agent runtime ignored stale question answer" }
+        }
+    }
+
+    private fun presentQuestion() {
+        ensureOverlayVisible()
+        if (capsuleView == null) return
+        if (capsuleMinimized.value) restoreCapsule()
+        setCapsuleWindowHeight(CAPSULE_QUESTION_HEIGHT_DP)
+        capsuleExpanded.value = true
+        AgentHapticFeedback.perform(this, AgentHapticFeedback.Type.RUN_STARTED)
+    }
+
+    private fun dismissQuestion() {
+        pendingQuestion.value = null
+        setCapsuleInputMode(focusable = false)
+        // 收起动画结束后由 onCollapsedSettled 把窗口缩回状态行高度。
+        capsuleExpanded.value = false
     }
 
     private fun recordSupplementEvent(text: String): AgentEvent.UserSupplementReceived {
@@ -926,6 +982,17 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 onDragBy = ::dragCapsuleBy,
                 onSupplementModeChange = ::setCapsuleInputMode,
                 onSupplement = ::requestSupplement,
+                question = pendingQuestion.value,
+                onAnswerQuestion = { questionId, selections ->
+                    pendingQuestion.value?.takeIf { it.questionId == questionId }?.let { question ->
+                        answerQuestion(question.runId, questionId, AgentUserAnswer.Selected(selections))
+                    }
+                },
+                onSkipQuestion = { questionId ->
+                    pendingQuestion.value?.takeIf { it.questionId == questionId }?.let { question ->
+                        answerQuestion(question.runId, questionId, AgentUserAnswer.Skipped)
+                    }
+                },
             )
         }
         val capsuleLp = capsuleLayoutParams()
@@ -942,9 +1009,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun toggleCapsule() {
         val expand = !capsuleExpanded.value
         // 先把窗口扩到展开档再开始动画；收起由胶囊在动画结束后回调 onCollapsedSettled 缩窗。
-        if (expand) setCapsuleWindowHeight(CAPSULE_CONTROLS_HEIGHT_DP)
+        if (expand) setCapsuleWindowHeight(expandedCapsuleHeightDp())
         capsuleExpanded.value = expand
     }
+
+    private fun expandedCapsuleHeightDp(): Int =
+        if (pendingQuestion.value != null) CAPSULE_QUESTION_HEIGHT_DP else CAPSULE_CONTROLS_HEIGHT_DP
 
     private fun onCapsuleCollapsedSettled() {
         if (!capsuleExpanded.value) setCapsuleWindowHeight(CAPSULE_COLLAPSED_HEIGHT_DP)
@@ -1239,7 +1309,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private fun setCapsuleInputMode(focusable: Boolean) {
         setCapsuleWindowHeight(
             if (focusable) CAPSULE_SUPPLEMENT_HEIGHT_DP
-            else if (capsuleExpanded.value) CAPSULE_CONTROLS_HEIGHT_DP
+            else if (capsuleExpanded.value) expandedCapsuleHeightDp()
             else CAPSULE_COLLAPSED_HEIGHT_DP,
         )
         val wm = windowManager ?: return
@@ -1345,6 +1415,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         private const val CAPSULE_COLLAPSED_HEIGHT_DP = 68
         private const val CAPSULE_CONTROLS_HEIGHT_DP = 124
         private const val CAPSULE_SUPPLEMENT_HEIGHT_DP = 260
+        private const val CAPSULE_QUESTION_HEIGHT_DP = 380
         private const val CAPSULE_MINIMIZED_SIZE_DP = 56
         /** 连续操作之间的间隙较短，留出余量避免流光在步骤之间闪烁。 */
         private const val GLOW_IDLE_HIDE_MS = 1_500L

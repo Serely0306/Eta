@@ -146,6 +146,25 @@ internal sealed interface AgentEvent {
             "user_supplement_received index=$index, chars=${text.length}"
     }
 
+    /** ask_user 发出的问题；[questionJson] 是 [io.github.mangi.eta.agent.model.AgentUserQuestion] 的规范化 JSON。 */
+    data class UserQuestionAsked(
+        val questionId: String,
+        val toolCallId: String,
+        val questionJson: String,
+        val timeoutMs: Long,
+    ) : AgentEvent {
+        override fun toLogLine(): String =
+            "user_question_asked question_chars=${questionJson.length}, timeout_ms=$timeoutMs"
+    }
+
+    data class UserQuestionResolved(
+        val questionId: String,
+        val status: String,
+    ) : AgentEvent {
+        override fun toLogLine(): String =
+            "user_question_resolved status=${status.toSafeLogToken()}"
+    }
+
     data class ToolStarted(
         val round: Int,
         val toolCallId: String,

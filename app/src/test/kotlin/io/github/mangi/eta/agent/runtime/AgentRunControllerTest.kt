@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
+import io.github.mangi.eta.agent.model.AgentUserAnswer
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -12,6 +13,54 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentRunControllerTest {
+    @Test
+    fun userQuestionAcceptsOneAnswerAndSteeringTextAnswersThePendingQuestion() {
+        val controller = AgentRunController()
+        val answer = AtomicReference<AgentUserAnswer?>()
+        val waiting = CountDownLatch(1)
+        val worker = thread {
+            waiting.countDown()
+            answer.set(controller.awaitUserAnswer("q1", 10_000L))
+        }
+        assertTrue(waiting.await(1, TimeUnit.SECONDS))
+        awaitPendingQuestion(controller)
+        assertFalse(controller.answerQuestion("other", AgentUserAnswer.Skipped))
+        assertTrue(controller.steer("明天下午"))
+        worker.join(1_000)
+        assertEquals(AgentUserAnswer.Text("明天下午"), answer.get())
+        assertNull(controller.pendingQuestion)
+        assertFalse(controller.answerQuestion("q1", AgentUserAnswer.Skipped))
+        // 问题结束后，补充要求恢复为排进下一轮。
+        assertTrue(controller.steer("再补充"))
+        assertEquals("再补充", controller.pollSteeringMessage())
+    }
+
+    @Test
+    fun userQuestionTimesOutAndCancellationInterruptsTheWait() {
+        val controller = AgentRunController()
+        assertEquals(AgentUserAnswer.TimedOut, controller.awaitUserAnswer("q1", 20L))
+        val failure = AtomicReference<Throwable?>()
+        val worker = thread {
+            try {
+                controller.awaitUserAnswer("q2", 60_000L)
+            } catch (error: Throwable) {
+                failure.set(error)
+            }
+        }
+        awaitPendingQuestion(controller)
+        controller.cancel()
+        worker.join(1_000)
+        assertTrue(failure.get() is AgentRunCancelledException)
+    }
+
+    private fun awaitPendingQuestion(controller: AgentRunController) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2)
+        while (controller.pendingQuestion == null) {
+            check(System.nanoTime() < deadline) { "问题没有进入等待状态" }
+            Thread.sleep(5)
+        }
+    }
+
     @Test
     fun cancellationWakesLongRetryWait() {
         val controller = AgentRunController()

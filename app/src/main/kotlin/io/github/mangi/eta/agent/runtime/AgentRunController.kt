@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
+import io.github.mangi.eta.agent.model.AgentUserAnswer
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.ArrayDeque
@@ -19,10 +20,13 @@ internal class AgentRunController {
 
     private val lock = ReentrantLock()
     private val pauseCondition = lock.newCondition()
+    private val questionCondition = lock.newCondition()
     private val steeringMessages = ArrayDeque<String>()
     private var acceptingSteering = true
     @Volatile
     private var paused = false
+    private var pendingQuestionId: String? = null
+    private var pendingAnswer: AgentUserAnswer? = null
 
     fun cancel() {
         lock.withLock {
@@ -31,6 +35,7 @@ internal class AgentRunController {
             steeringMessages.clear()
             paused = false
             pauseCondition.signalAll()
+            questionCondition.signalAll()
         }
         resources.forEach { resource ->
             runCatching { resource.cancel() }
@@ -45,10 +50,56 @@ internal class AgentRunController {
         if (prompt.isBlank()) return false
         lock.withLock {
             if (cancelled || !acceptingSteering) return false
+            // 等待提问回答时，用户直接输入的文字就是对该问题的回答，不再排进下一轮。
+            if (pendingQuestionId != null && pendingAnswer == null) {
+                pendingAnswer = AgentUserAnswer.text(prompt)
+                questionCondition.signalAll()
+                return true
+            }
             steeringMessages.addLast(prompt)
         }
         return true
     }
+
+    /**
+     * 阻塞当前工具直到用户回答、跳过、超时或任务取消。取消时抛出 [AgentRunCancelledException]；
+     * 同一时刻只有一个待回答问题。
+     */
+    fun awaitUserAnswer(questionId: String, timeoutMs: Long): AgentUserAnswer {
+        lock.withLock {
+            if (cancelled) throw AgentRunCancelledException()
+            pendingQuestionId = questionId
+            pendingAnswer = null
+            try {
+                var remaining = TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+                while (pendingAnswer == null && !cancelled && remaining > 0) {
+                    remaining = try {
+                        questionCondition.awaitNanos(remaining)
+                    } catch (_: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        cancelled = true
+                        0L
+                    }
+                }
+                if (cancelled) throw AgentRunCancelledException()
+                return pendingAnswer ?: AgentUserAnswer.TimedOut
+            } finally {
+                pendingQuestionId = null
+                pendingAnswer = null
+            }
+        }
+    }
+
+    /** 回答当前问题；问题已结束、编号不匹配或任务已取消时返回 false。 */
+    fun answerQuestion(questionId: String, answer: AgentUserAnswer): Boolean = lock.withLock {
+        if (cancelled || pendingQuestionId != questionId || pendingAnswer != null) return@withLock false
+        pendingAnswer = answer
+        questionCondition.signalAll()
+        true
+    }
+
+    val pendingQuestion: String?
+        get() = lock.withLock { pendingQuestionId?.takeIf { pendingAnswer == null } }
 
     /** 默认逐条消费，避免后来的补充指令越过前一条的模型回合。 */
     fun pollSteeringMessage(): String? =

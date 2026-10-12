@@ -22,6 +22,9 @@ import io.github.mangi.eta.agent.model.AgentFileReferenceKind
 import io.github.mangi.eta.agent.model.AgentFileReferencePolicy
 import io.github.mangi.eta.agent.model.AgentFileReferencePromptCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentUserAnswer
+import io.github.mangi.eta.agent.model.AgentUserQuestion
+import io.github.mangi.eta.agent.overlay.PendingQuestion
 import io.github.mangi.eta.agent.roleplay.RoleplayBinding
 import io.github.mangi.eta.agent.roleplay.CharacterMacros
 import io.github.mangi.eta.agent.roleplay.CharacterCardCodec
@@ -1475,6 +1478,11 @@ internal class AgentAppState(
             queueFollowUp(prompt)
             return
         }
+        // 有待回答的问题时，输入框里的文字就是回答，而不是排到下一轮的补充要求。
+        conversationStateForRun(runId).pendingQuestion?.takeIf { it.runId == runId }?.let { pending ->
+            answerQuestion(pending.questionId, AgentUserAnswer.text(prompt))
+            return
+        }
         scope.launch(Dispatchers.IO) {
             val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger).steer(runId, prompt)
             if (!accepted) withContext(Dispatchers.Main) { queueFollowUp(prompt) }
@@ -1584,6 +1592,14 @@ internal class AgentAppState(
         when (event) {
             is AgentEvent.UserSupplementReceived ->
                 insertSupplementMessage(runId, event.index, event.text, persist = persistSupplement)
+            is AgentEvent.UserQuestionAsked -> setPendingQuestion(
+                runId,
+                AgentUserQuestion.parse(event.questionJson)?.let { PendingQuestion(runId, event.questionId, it) },
+            )
+            is AgentEvent.UserQuestionResolved ->
+                if (conversationStateForRun(runId).pendingQuestion?.questionId == event.questionId) {
+                    setPendingQuestion(runId, null)
+                }
             is AgentEvent.RunStarted -> if (runId in stopRequestedRunIds) scope.launch(Dispatchers.IO) {
                 AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
             }
@@ -1595,12 +1611,28 @@ internal class AgentAppState(
         }
     }
 
+    private fun setPendingQuestion(runId: String, question: PendingQuestion?) {
+        val conversationId = conversationIdForRun(runId) ?: return
+        val state = conversationsById[conversationId] ?: return
+        if (state.pendingQuestion == question) return
+        updateConversation(conversationId, state.copy(pendingQuestion = question), updateTimestamp = false)
+    }
+
+    /** 选项、跳过与输入框文字都交给 Runtime 裁决；面板随 UserQuestionResolved 事件收起。 */
+    fun answerQuestion(questionId: String, answer: AgentUserAnswer) {
+        val pending = homeState.pendingQuestion?.takeIf { it.questionId == questionId } ?: return
+        scope.launch(Dispatchers.IO) {
+            AgentRuntimeClient(appContext, AndroidAgentLogger).answerQuestion(pending.runId, questionId, answer)
+        }
+    }
+
     private fun applyRunResult(
         runId: String,
         result: AgentRuntimeWire.RunResult,
         acknowledgeRuntimeResult: Boolean = false,
     ) {
         flushPendingRunDelta(runId)
+        setPendingQuestion(runId, null)
         val rewriting = result.operation == AgentRuntimeWire.OP_REWRITE_REPLY || isReplyRewrite(runId)
         stopRequestedRunIds.remove(runId)
         if (runId == currentRunId) {

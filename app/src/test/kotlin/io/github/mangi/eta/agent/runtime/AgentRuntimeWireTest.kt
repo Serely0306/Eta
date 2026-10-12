@@ -6,6 +6,7 @@ import android.os.Parcel
 import android.util.Base64
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentUserAnswer
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ReasoningEffort
 import java.io.File
@@ -43,6 +44,27 @@ class AgentRuntimeWireTest {
             assertEquals(request, AgentRuntimeWire.runRequestFromBundle(bundle))
             bundle.remove("auto_compaction_enabled")
             assertTrue(AgentRuntimeWire.runRequestFromBundle(bundle).config.autoCompactionEnabled)
+        }
+    }
+
+    @Test
+    fun userQuestionEventsAndAnswersSurviveIpcAndJsonReplay() {
+        for (event in listOf(
+            AgentEvent.UserQuestionAsked("run:call", "call", """{"questions":[]}""", 600_000L),
+            AgentEvent.UserQuestionResolved("run:call", "answered"),
+        )) {
+            assertEquals(event, AgentRuntimeWire.eventFromBundle(AgentRuntimeWire.eventToBundle(event)))
+            assertEquals(event, AgentEventJsonCodec.decode(AgentEventJsonCodec.encode(event)))
+        }
+        for (answer in listOf(
+            AgentUserAnswer.Selected(listOf(listOf("今天"), listOf("A", "B"))),
+            AgentUserAnswer.Text("自定义回答"),
+            AgentUserAnswer.Skipped,
+        )) {
+            val bundle = AgentRuntimeWire.answerQuestionBundle("run", "run:call", answer)
+            assertEquals("run", AgentRuntimeWire.runIdFromBundle(bundle))
+            assertEquals("run:call", AgentRuntimeWire.questionIdFromBundle(bundle))
+            assertEquals(answer, AgentRuntimeWire.answerFromBundle(bundle))
         }
     }
 

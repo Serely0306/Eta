@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.overlay
 
 import androidx.compose.runtime.Immutable
+import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.runtime.AgentEvent
 
 /** Agent 浮窗所处的阶段。 */
@@ -72,6 +73,15 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
         detailText = "",
     )
 
+    is AgentEvent.UserQuestionAsked -> copy(
+        phase = AgentOverlayPhase.RUNNING,
+        status = AgentOverlayStatus.WaitingForAnswer(
+            AgentUserQuestion.parse(event.questionJson)?.items?.firstOrNull()?.question.orEmpty(),
+        ),
+        thought = "",
+    )
+    is AgentEvent.UserQuestionResolved -> copy(phase = AgentOverlayPhase.RUNNING, status = AgentOverlayStatus.Reasoning)
+
     is AgentEvent.RunFinished -> copy(
         phase = AgentOverlayPhase.FINISHED,
         round = event.round,
@@ -99,6 +109,7 @@ private fun AgentOverlayState.running(status: AgentOverlayStatus, round: Int) =
 private fun AgentOverlayState.thinkingUnlessWorking(): AgentOverlayState = when (status) {
     is AgentOverlayStatus.RunningTool,
     is AgentOverlayStatus.HostedToolRunning,
+    is AgentOverlayStatus.WaitingForAnswer,
     AgentOverlayStatus.GeneratingAnswer,
     AgentOverlayStatus.Paused,
     AgentOverlayStatus.Stopping,

@@ -63,6 +63,9 @@ internal class AgentRunMessageProjector(
             ensureCompletedThinking(runId, event.round, event.reasoningContent, messages)
         }
         is AgentEvent.RunFinished -> finalizeText(runId, finalizeThinking(runId, messages))
+        // 待回答问题由会话状态承载，问答结论随 ask_user 的工具结果进入消息流。
+        is AgentEvent.UserQuestionAsked,
+        is AgentEvent.UserQuestionResolved,
         is AgentEvent.UserSupplementReceived,
         is AgentEvent.RunStarted,
         is AgentEvent.ProviderRequestStarted,

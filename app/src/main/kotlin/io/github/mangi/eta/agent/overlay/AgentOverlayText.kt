@@ -21,6 +21,7 @@ internal sealed interface AgentOverlayStatus {
     data object Finishing : AgentOverlayStatus
     data object ContinuationUnavailable : AgentOverlayStatus
     data object Stopped : AgentOverlayStatus
+    data class WaitingForAnswer(val question: String) : AgentOverlayStatus
 }
 
 @Composable
@@ -42,6 +43,11 @@ internal fun AgentOverlayStatus.localizedText(resources: Resources): String = wh
     AgentOverlayStatus.Finishing -> resources.getString(R.string.overlay_finishing)
     AgentOverlayStatus.ContinuationUnavailable -> resources.getString(R.string.overlay_continuation_unavailable)
     AgentOverlayStatus.Stopped -> resources.getString(R.string.overlay_stopped)
+    is AgentOverlayStatus.WaitingForAnswer -> if (question.isBlank()) {
+        resources.getString(R.string.overlay_waiting_for_answer_plain)
+    } else {
+        resources.getString(R.string.overlay_waiting_for_answer, question)
+    }
 }
 
 @Composable

@@ -33,11 +33,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CloseFullscreen
 import androidx.compose.material.icons.rounded.Edit
@@ -75,6 +78,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.ui.components.EtaTextButton
 import kotlin.math.hypot
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -104,6 +108,9 @@ internal fun AgentOverlayCapsule(
     onDragBy: (Float, Float) -> Unit,
     onSupplementModeChange: (Boolean) -> Unit,
     onSupplement: (String) -> Unit,
+    question: PendingQuestion? = null,
+    onAnswerQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
+    onSkipQuestion: (String) -> Unit = {},
 ) {
     val touchSlop = LocalViewConfiguration.current.touchSlop
     if (minimized) {
@@ -236,6 +243,26 @@ internal fun AgentOverlayCapsule(
                                 onSend = {
                                     val text = supplementText.trim()
                                     if (text.isNotBlank()) leaveSupplementMode { onSupplement(text) }
+                                },
+                            )
+                        } else if (question != null) {
+                            // 问题面板可能高于窗口，自身滚动；自由回答走补充输入，Runtime 按当前问题的回答处理。
+                            AgentQuestionPanel(
+                                questionId = question.questionId,
+                                question = question.question,
+                                onSubmit = { selections -> onAnswerQuestion(question.questionId, selections) },
+                                onSkip = { onSkipQuestion(question.questionId) },
+                                compact = true,
+                                modifier = Modifier
+                                    .heightIn(max = CapsuleQuestionMaxHeight)
+                                    .verticalScroll(rememberScrollState()),
+                                footer = {
+                                    EtaTextButton(
+                                        text = stringResource(R.string.question_other),
+                                        onClick = { setSupplementMode(true) },
+                                        minHeight = 34.dp,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
                                 },
                             )
                         } else {
@@ -449,4 +476,6 @@ private class CapsuleTouchTracker(
 
 private val CapsuleCorner = 22.dp
 private val CapsuleWidth = 248.dp
+/** 与服务端问答窗口高度配套：减去状态行与边距后留给问题面板的最大高度。 */
+private val CapsuleQuestionMaxHeight = 300.dp
 private val MinimizedCapsuleSize = 44.dp

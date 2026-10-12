@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -36,7 +37,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.DocumentScanner
@@ -75,6 +78,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.overlay.AgentQuestionPanel
+import io.github.mangi.eta.agent.overlay.PendingQuestion
 import io.github.mangi.eta.agent.browser.AgentBrowserSession
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.ui.app.AgentConversationRevisionReducer
@@ -157,6 +162,9 @@ internal fun AgentChatBody(
     onOpenBrowser: () -> Unit,
     characterName: String? = null,
     isDrawerOpen: Boolean = false,
+    pendingQuestion: PendingQuestion? = null,
+    onAnswerQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
+    onSkipQuestion: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberLazyListState()
@@ -258,6 +266,9 @@ internal fun AgentChatBody(
             onRunTraceClick = onRunTraceClick,
             onOpenBrowser = onOpenBrowser,
             currentBrowserMessageId = currentBrowserMessageId,
+            pendingQuestion = pendingQuestion,
+            onAnswerQuestion = onAnswerQuestion,
+            onSkipQuestion = onSkipQuestion,
             modifier = modifier,
         )
     }
@@ -304,6 +315,9 @@ private fun AgentChatScaffold(
     onRunTraceClick: () -> Unit,
     onOpenBrowser: () -> Unit,
     currentBrowserMessageId: String?,
+    pendingQuestion: PendingQuestion?,
+    onAnswerQuestion: (String, List<List<String>>) -> Unit,
+    onSkipQuestion: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val surfaceColor = MiuixTheme.colorScheme.surface
@@ -350,6 +364,9 @@ private fun AgentChatScaffold(
                 onAttachFilePath = onAttachFilePath,
                 onRemoveFileReference = onRemoveFileReference,
                 onCancelMessageEdit = onCancelMessageEdit,
+                pendingQuestion = pendingQuestion,
+                onAnswerQuestion = onAnswerQuestion,
+                onSkipQuestion = onSkipQuestion,
             )
         },
     ) { innerPadding ->
@@ -891,6 +908,9 @@ private fun AgentChatBottomBar(
     onAttachFilePath: (String) -> Unit,
     onRemoveFileReference: (String) -> Unit,
     onCancelMessageEdit: () -> Unit,
+    pendingQuestion: PendingQuestion?,
+    onAnswerQuestion: (String, List<List<String>>) -> Unit,
+    onSkipQuestion: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -950,6 +970,26 @@ private fun AgentChatBottomBar(
                 .navigationBarsPadding()
                 .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
         ) {
+            if (pendingQuestion != null) {
+                AgentQuestionPanel(
+                    questionId = pendingQuestion.questionId,
+                    question = pendingQuestion.question,
+                    onSubmit = { selections -> onAnswerQuestion(pendingQuestion.questionId, selections) },
+                    onSkip = { onSkipQuestion(pendingQuestion.questionId) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = ChatQuestionMaxHeight)
+                        .verticalScroll(rememberScrollState())
+                        .padding(bottom = 10.dp),
+                    footer = {
+                        Text(
+                            text = stringResource(R.string.question_composer_hint),
+                            style = MiuixTheme.textStyles.footnote1,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    },
+                )
+            }
             AgentChatInputBar(
                 input = input,
                 modelPickerState = modelPickerState,
@@ -984,6 +1024,7 @@ private fun AgentChatBottomBar(
 }
 
 private val ChatBottomFrostHeight = 24.dp
+private val ChatQuestionMaxHeight = 360.dp
 
 private const val ChatBottomSentinelKey = "agent-chat-bottom-sentinel"
 private const val BOTTOM_FOLLOW_RESPONSE_SECONDS = 0.085f

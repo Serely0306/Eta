@@ -60,6 +60,11 @@ internal fun AgentHomeScreen(
             onRunTraceClick = { onAction(AgentHomeAction.ExpandRunTrace) },
             onOpenBrowser = { onAction(AgentHomeAction.OpenBrowser) },
             isDrawerOpen = isDrawerOpen,
+            pendingQuestion = state.pendingQuestion,
+            onAnswerQuestion = { questionId, selections ->
+                onAction(AgentHomeAction.AnswerQuestion(questionId, selections))
+            },
+            onSkipQuestion = { questionId -> onAction(AgentHomeAction.SkipQuestion(questionId)) },
             modifier = modifier,
         )
     }

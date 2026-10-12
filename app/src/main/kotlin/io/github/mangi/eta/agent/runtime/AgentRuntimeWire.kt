@@ -10,6 +10,7 @@ import android.os.Parcel
 import android.os.ParcelFileDescriptor
 import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentUserAnswer
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.data.model.CustomBody
 import io.github.mangi.eta.data.model.CustomHeader
@@ -89,6 +90,9 @@ internal object AgentRuntimeWire {
 
     /** service -> client：返回补充要求是否已被指定 run 接收。 */
     const val MSG_STEER_RESPONSE = 17
+
+    /** client -> service：回答指定 run 中 ask_user 发出的问题；结果以 UserQuestionResolved 事件回传。 */
+    const val MSG_ANSWER_QUESTION = 18
 
     private const val MODULE_PACKAGE = "io.github.mangi.eta"
     private const val SERVICE_CLASS = "io.github.mangi.eta.agent.runtime.AgentRuntimeService"
@@ -623,6 +627,20 @@ internal object AgentRuntimeWire {
 
     fun steerAccepted(bundle: Bundle): Boolean = bundle.getBoolean(KEY_OK)
 
+    fun answerQuestionBundle(runId: String, questionId: String, answer: AgentUserAnswer): Bundle = Bundle().apply {
+        putString(KEY_RUN_ID, runId)
+        putString(KEY_QUESTION_ID, questionId)
+        putString(KEY_ANSWER, answer.toWireJson().boundedText(MAX_STEER_CHARS))
+    }
+
+    fun questionIdFromBundle(bundle: Bundle): String = bundle.getString(KEY_QUESTION_ID).orEmpty()
+
+    fun answerFromBundle(bundle: Bundle): AgentUserAnswer? =
+        bundle.getString(KEY_ANSWER)?.let(AgentUserAnswer::fromWireJson)
+
+    private const val KEY_QUESTION_ID = "question_id"
+    private const val KEY_ANSWER = "answer"
+
     private const val MAX_STEER_CHARS = 16_000
 
     fun runIdFromBundle(bundle: Bundle): String =
@@ -737,6 +755,20 @@ internal object AgentRuntimeWire {
                 putString(KEY_TYPE, "user_supplement_received")
                 putInt("index", event.index)
                 putString("text", event.text)
+            }
+
+            is AgentEvent.UserQuestionAsked -> {
+                putString(KEY_TYPE, "user_question_asked")
+                putString("question_id", event.questionId)
+                putString("tool_call_id", event.toolCallId)
+                putString("question_json", event.questionJson)
+                putLong("timeout_ms", event.timeoutMs)
+            }
+
+            is AgentEvent.UserQuestionResolved -> {
+                putString(KEY_TYPE, "user_question_resolved")
+                putString("question_id", event.questionId)
+                putString("status", event.status)
             }
 
             is AgentEvent.ToolStarted -> {
@@ -882,6 +914,19 @@ internal object AgentRuntimeWire {
             text = bundle.getString("text").orEmpty(),
         )
 
+        "user_question_asked" -> AgentEvent.UserQuestionAsked(
+            questionId = bundle.getString("question_id").orEmpty(),
+            toolCallId = bundle.getString("tool_call_id").orEmpty(),
+            questionJson = bundle.getString("question_json").orEmpty(),
+            // JSON 回放时数值可能落成 Int，统一按数值读取。
+            timeoutMs = bundle.optionalLong("timeout_ms") ?: 0L,
+        )
+
+        "user_question_resolved" -> AgentEvent.UserQuestionResolved(
+            questionId = bundle.getString("question_id").orEmpty(),
+            status = bundle.getString("status").orEmpty(),
+        )
+
         "tool_started" -> AgentEvent.ToolStarted(
             round = bundle.getInt("round"),
             toolCallId = bundle.getString("tool_call_id").orEmpty(),
@@ -935,6 +980,9 @@ internal object AgentRuntimeWire {
 
     private fun Bundle.optionalInt(key: String): Int? =
         if (containsKey(key)) getInt(key) else null
+
+    @Suppress("DEPRECATION")
+    private fun Bundle.optionalLong(key: String): Long? = (get(key) as? Number)?.toLong()
 
     private fun Bundle.putTokenUsage(usage: AgentTokenUsage) {
         usage.contextTokens?.let { putInt("usage_context", it) }

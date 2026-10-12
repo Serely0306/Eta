@@ -10,6 +10,7 @@ import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentModelExecutionException
 import io.github.mangi.eta.agent.model.AgentModelFailure
 import io.github.mangi.eta.agent.model.AgentHttpClient
+import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
 import io.github.mangi.eta.agent.memory.AgentMemorySessionSnapshots
@@ -35,6 +36,7 @@ import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * 单次 Runtime run 的阻塞执行器。
@@ -238,9 +240,38 @@ internal class AgentRuntimeRunExecutor(
             val runTools = JSONArray(mcpTools.toString()).also { tools ->
                 if (historyTool != null) tools.put(AgentConversationToolCatalog.schema())
                 if (characterMemoryTools != null && memoryEnabled) CharacterMemoryTools.appendSchemas(tools)
+                tools.put(AgentUserQuestion.schema())
+            }
+            // 提问在工具内阻塞等待；问题与结论作为独立事件推给 App、胶囊和恢复日志。
+            fun askUser(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
+                val question = AgentUserQuestion.parse(call.argumentsJson)
+                    ?: return AgentModelClient.ToolResult(JSONObject()
+                        .put("ok", false)
+                        .put("code", "INVALID_QUESTION")
+                        .put("message", "问题为空或格式无效：至少提供一个问题，每题 2–4 个选项")
+                        .toString())
+                val questionId = "${request.runId}:${call.id}"
+                acceptEvent(
+                    session,
+                    AgentEvent.UserQuestionAsked(questionId, call.id, question.toJson(), AgentUserQuestion.TIMEOUT_MS),
+                    archivedEvents,
+                    entrySurfaceGuard,
+                    checkpointRecorder,
+                )
+                val answer = runController.awaitUserAnswer(questionId, AgentUserQuestion.TIMEOUT_MS)
+                acceptEvent(
+                    session,
+                    AgentEvent.UserQuestionResolved(questionId, answer.status),
+                    archivedEvents,
+                    entrySurfaceGuard,
+                    checkpointRecorder,
+                )
+                return AgentModelClient.ToolResult(answer.toToolResult(question))
             }
             val runToolExecutor = AgentModelClient.ToolExecutor { call ->
-                if (call.name == AgentConversationToolCatalog.READ_HISTORY && historyTool != null) {
+                if (call.name == AgentUserQuestion.TOOL_NAME) {
+                    askUser(call)
+                } else if (call.name == AgentConversationToolCatalog.READ_HISTORY && historyTool != null) {
                     historyTool.execute(call)
                 } else if (call.name in CharacterMemoryTools.NAMES && characterMemoryTools != null) {
                     characterMemoryTools.execute(call)

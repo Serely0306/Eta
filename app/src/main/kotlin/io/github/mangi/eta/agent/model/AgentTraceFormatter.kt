@@ -49,6 +49,10 @@ internal class AgentTraceFormatter {
             "open_system_panel" -> "打开系统面板"
             "read_image" -> "查看图片"
             AgentConversationToolCatalog.READ_HISTORY -> "读取当前会话历史"
+            AgentUserQuestion.TOOL_NAME -> AgentUserQuestion.parse(toolCall.argumentsJson)
+                ?.items?.firstOrNull()?.question
+                ?.let { "询问：${it.take(USER_QUESTION_PREVIEW_CHARS)}" }
+                ?: "询问用户"
             "memory_get", "character_memory_get" -> summarizeMemoryGetArguments(toolCall.argumentsJson)
             "memory_write", "character_memory_write" -> summarizeMemoryWriteArguments(toolCall.argumentsJson)
             "skills_list" -> "查看技能列表"
@@ -276,6 +280,7 @@ internal class AgentTraceFormatter {
         return when (toolName) {
             BROWSER_TOOL_NAME -> json?.let(::summarizeBrowserResult) ?: "浏览器操作完成"
             AgentConversationToolCatalog.READ_HISTORY -> "已读取历史分页"
+            AgentUserQuestion.TOOL_NAME -> json?.let(::summarizeUserAnswer) ?: "完成"
             "memory_get", "memory_write", "character_memory_get", "character_memory_write" ->
                 json?.let { summarizeMemoryResult(toolName, it) } ?: "完成"
             "search_apps" -> json?.let(::summarizeSearchAppsResult) ?: "完成"
@@ -286,6 +291,24 @@ internal class AgentTraceFormatter {
 
     private fun parseResultJson(result: AgentModelClient.ToolResult): JSONObject? =
         runCatching { JSONObject(result.content) }.getOrNull()
+
+    private fun summarizeUserAnswer(json: JSONObject): String = when (json.optString("status")) {
+        AgentUserAnswer.STATUS_SKIPPED -> "用户跳过了问题"
+        AgentUserAnswer.STATUS_TIMEOUT -> "长时间未回答"
+        else -> {
+            val answers = json.optJSONArray("answers")
+            val text = if (answers != null) {
+                (0 until answers.length()).mapNotNull { index ->
+                    answers.optJSONObject(index)?.optJSONArray("selected")?.let { selected ->
+                        (0 until selected.length()).joinToString("、") { selected.optString(it) }
+                    }?.takeIf(String::isNotBlank)
+                }.joinToString("；")
+            } else {
+                json.optString("text")
+            }
+            "已回答：${text.take(USER_QUESTION_PREVIEW_CHARS)}"
+        }
+    }
 
     /**
      * 网页错误正文、搜索词和页面标题可能回显私密 URL，只保留计数。动作与主机已在参数摘要中，
@@ -576,6 +599,7 @@ internal class AgentTraceFormatter {
 
     private companion object {
         const val BROWSER_TOOL_NAME = "browser_use"
+        const val USER_QUESTION_PREVIEW_CHARS = 60
         const val MAX_DISPLAY_COMMAND_CHARS = 4_000
         const val MAX_QUERY_SUMMARY_CHARS = 30
         const val MAX_LISTED_APP_NAMES = 3
