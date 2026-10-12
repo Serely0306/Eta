@@ -61,6 +61,7 @@ private val DISPLAY_TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-
 @Composable
 internal fun AutomationsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val automations by remember { AgentAutomationStore.flow() }.collectAsState()
     var editing by remember { mutableStateOf<AgentAutomation?>(null) }
     var creating by remember { mutableStateOf(false) }
@@ -141,7 +142,7 @@ internal fun AutomationsScreen(onBack: () -> Unit) {
                                             val started = AgentAutomationRunner.fire(context, automation.id, trigger = null)
                                             Toast.makeText(
                                                 context,
-                                                context.getString(if (started) R.string.automation_started else R.string.automation_busy),
+                                                resources.getString(if (started) R.string.automation_started else R.string.automation_busy),
                                                 Toast.LENGTH_SHORT,
                                             ).show()
                                         },
