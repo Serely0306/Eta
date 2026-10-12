@@ -153,6 +153,7 @@ internal class AgentLocalTools(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         publishedObservation.set(PublishedObservation())
+        if (browserRunId.isNotBlank()) ForegroundResourceLease.releaseAll(browserRunId)
         AgentBrowserSession.interruptAgentAction(browserRunId)
         webTools.close()
         terminalController.interruptAll()
@@ -174,71 +175,80 @@ internal class AgentLocalTools(
             }
             deviceToolPermissionError(toolCall.name)?.let { return@runCatching it }
             memoryToolPermissionError(toolCall.name)?.let { return@runCatching it }
-            when (val decision = beforeToolExecution(toolCall.name)) {
-                ToolExecutionDecision.Allow -> Unit
-                is ToolExecutionDecision.Reject -> {
-                    if (decision.code.startsWith("ACCESSIBILITY_")) publishedObservation.set(PublishedObservation())
-                    return@runCatching textResult(
-                        errorResult(
-                            code = decision.code,
-                            message = decision.message,
-                        ),
-                    )
-                }
+            // 屏幕与浏览器跨 run 互斥；入口窗口关闭与无障碍准备也属于界面操作，须在持有租约后进行。
+            val leased = ForegroundResourceLease.resourceFor(toolCall.name)?.takeIf { browserRunId.isNotBlank() }
+            if (leased != null && !ForegroundResourceLease.acquire(leased, browserRunId, isCancelled = closed::get)) {
+                return@runCatching textResult(errorResult(leased.busyCode, leased.busyMessage))
             }
-            when (toolCall.name) {
-                "get_current_context" -> textResult(DeviceContextTool.current(context))
-                "search_apps" -> textResult(searchApps(args))
-                "launch_app" -> textResult(launchApp(args))
-                "open_uri" -> textResult(openUri(args))
-                "browser_use" -> browserUse(args, toolCall.id)
-                "web_search", "fetch_url" -> {
-                    if (!browserToolsEnabled()) textResult(errorResult("BROWSER_TOOLS_DISABLED", "请先启用网页搜索、读取与浏览器工具"))
-                    else textResult(webTools.execute(toolCall.name, args))
+            try {
+                when (val decision = beforeToolExecution(toolCall.name)) {
+                    ToolExecutionDecision.Allow -> Unit
+                    is ToolExecutionDecision.Reject -> {
+                        if (decision.code.startsWith("ACCESSIBILITY_")) publishedObservation.set(PublishedObservation())
+                        return@runCatching textResult(
+                            errorResult(
+                                code = decision.code,
+                                message = decision.message,
+                            ),
+                        )
+                    }
                 }
-                "observe_screen" -> observeScreen(args)
-                "tap" -> afterAction(tap(args))
-                "tap_area" -> afterAction(tapArea(args))
-                "tap_element" -> afterAction(tapElement(args))
-                "long_press" -> afterAction(longPress(args))
-                "long_press_element" -> afterAction(longPressElement(args))
-                "swipe" -> afterAction(swipe(args))
-                "scroll" -> afterAction(deviceController.scroll(args.optString("direction"), args.optString("amount")))
-                "scroll_element" -> afterAction(scrollElement(args))
-                "type_text" -> afterAction(typeText(args))
-                // 旧会话或旧入口仍可能请求这些工具名；保留执行路径，但不再出现在模型目录里。
-                "input_text" -> afterAction(inputText(args))
-                "replace_text" -> afterAction(replaceText(args))
-                "clear_text" -> afterAction(clearText(args))
-                "set_clipboard" -> textResult(setClipboard(args))
-                "get_clipboard" -> textResult(getClipboard())
-                "paste_text" -> afterAction(pasteText(args))
-                "press_key" -> afterAction(deviceController.pressKey(args.optString("button")))
-                "wait" -> textResult(deviceController.waitMs(args.optInt("duration_ms", 1_000)))
-                "wait_for_text" -> textResult(waitForText(args))
-                "wait_for_package" -> textResult(waitForPackage(args))
-                "open_system_panel" -> textResult(deviceController.openSystemPanel(args.optString("panel")))
-                in DEVICE_TOOL_NAMES ->
-                    structuredDeviceTools.execute(toolCall.name, args)
-                        ?: textResult(errorResult("UNKNOWN_TOOL", "未知设备工具"))
-                "read_image" -> fileVisionTool { imageTools.readImage(args) }
-                "terminal" -> textResult(terminalTool { terminal(args) })
-                "run_command" -> textResult(terminalTool { runCommand(args) })
-                in AgentFileToolCatalog.names -> textResult(terminalTool { terminalController.fileTool(toolCall.name, args) })
-                "memory_get" -> textResult(memoryGet(args))
-                "memory_write" -> textResult(memoryWrite(args))
-                "skills_list" -> textResult(skillsList(args))
-                "skills_read" -> textResult(skillsRead(args))
-                "skills_read_resource" -> textResult(skillsReadResource(args))
-                "skills_list_curated" -> textResult(skillsListCurated())
-                "skills_inspect_github" -> textResult(skillsInspectGitHub(args))
-                "skills_install_from_github" -> textResult(skillsInstallFromGitHub(args))
-                else -> textResult(
-                    errorResult(
-                        code = "UNKNOWN_TOOL",
-                        message = "未知工具：${toolCall.name}"
+                when (toolCall.name) {
+                    "get_current_context" -> textResult(DeviceContextTool.current(context))
+                    "search_apps" -> textResult(searchApps(args))
+                    "launch_app" -> textResult(launchApp(args))
+                    "open_uri" -> textResult(openUri(args))
+                    "browser_use" -> browserUse(args, toolCall.id)
+                    "web_search", "fetch_url" -> {
+                        if (!browserToolsEnabled()) textResult(errorResult("BROWSER_TOOLS_DISABLED", "请先启用网页搜索、读取与浏览器工具"))
+                        else textResult(webTools.execute(toolCall.name, args))
+                    }
+                    "observe_screen" -> observeScreen(args)
+                    "tap" -> afterAction(tap(args))
+                    "tap_area" -> afterAction(tapArea(args))
+                    "tap_element" -> afterAction(tapElement(args))
+                    "long_press" -> afterAction(longPress(args))
+                    "long_press_element" -> afterAction(longPressElement(args))
+                    "swipe" -> afterAction(swipe(args))
+                    "scroll" -> afterAction(deviceController.scroll(args.optString("direction"), args.optString("amount")))
+                    "scroll_element" -> afterAction(scrollElement(args))
+                    "type_text" -> afterAction(typeText(args))
+                    // 旧会话或旧入口仍可能请求这些工具名；保留执行路径，但不再出现在模型目录里。
+                    "input_text" -> afterAction(inputText(args))
+                    "replace_text" -> afterAction(replaceText(args))
+                    "clear_text" -> afterAction(clearText(args))
+                    "set_clipboard" -> textResult(setClipboard(args))
+                    "get_clipboard" -> textResult(getClipboard())
+                    "paste_text" -> afterAction(pasteText(args))
+                    "press_key" -> afterAction(deviceController.pressKey(args.optString("button")))
+                    "wait" -> textResult(deviceController.waitMs(args.optInt("duration_ms", 1_000)))
+                    "wait_for_text" -> textResult(waitForText(args))
+                    "wait_for_package" -> textResult(waitForPackage(args))
+                    "open_system_panel" -> textResult(deviceController.openSystemPanel(args.optString("panel")))
+                    in DEVICE_TOOL_NAMES ->
+                        structuredDeviceTools.execute(toolCall.name, args)
+                            ?: textResult(errorResult("UNKNOWN_TOOL", "未知设备工具"))
+                    "read_image" -> fileVisionTool { imageTools.readImage(args) }
+                    "terminal" -> textResult(terminalTool { terminal(args) })
+                    "run_command" -> textResult(terminalTool { runCommand(args) })
+                    in AgentFileToolCatalog.names -> textResult(terminalTool { terminalController.fileTool(toolCall.name, args) })
+                    "memory_get" -> textResult(memoryGet(args))
+                    "memory_write" -> textResult(memoryWrite(args))
+                    "skills_list" -> textResult(skillsList(args))
+                    "skills_read" -> textResult(skillsRead(args))
+                    "skills_read_resource" -> textResult(skillsReadResource(args))
+                    "skills_list_curated" -> textResult(skillsListCurated())
+                    "skills_inspect_github" -> textResult(skillsInspectGitHub(args))
+                    "skills_install_from_github" -> textResult(skillsInstallFromGitHub(args))
+                    else -> textResult(
+                        errorResult(
+                            code = "UNKNOWN_TOOL",
+                            message = "未知工具：${toolCall.name}"
+                        )
                     )
-                )
+                }
+            } finally {
+                leased?.let { ForegroundResourceLease.finish(it, browserRunId) }
             }
         }.getOrElse { throwable ->
             textResult(

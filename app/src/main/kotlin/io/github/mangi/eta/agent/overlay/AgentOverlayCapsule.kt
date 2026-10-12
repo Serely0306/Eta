@@ -111,6 +111,8 @@ internal fun AgentOverlayCapsule(
     question: PendingQuestion? = null,
     onAnswerQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
     onSkipQuestion: (String) -> Unit = {},
+    /** 浮层展示的 run 之外仍在运行的任务数；控制按钮只作用于当前展示的 run。 */
+    otherRunCount: Int = 0,
 ) {
     val touchSlop = LocalViewConfiguration.current.touchSlop
     if (minimized) {
@@ -220,6 +222,15 @@ internal fun AgentOverlayCapsule(
                         )
                     }
                     ThoughtLine(thought = state.thought.takeIf { state.phase == AgentOverlayPhase.RUNNING }.orEmpty())
+                    }
+                    if (otherRunCount > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.overlay_other_runs, otherRunCount),
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                        )
                     }
                 }
 

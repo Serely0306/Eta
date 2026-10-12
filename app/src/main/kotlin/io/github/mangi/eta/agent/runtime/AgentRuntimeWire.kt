@@ -606,6 +606,19 @@ internal object AgentRuntimeWire {
         putString(KEY_RUN_ID, runId)
     }
 
+    /** 活跃 run 列表，最近启动的在前；run_id 保留最近一个，兼容只认单个 run 的旧客户端。 */
+    fun activeRunsBundle(runIds: List<String>): Bundle = Bundle().apply {
+        putString(KEY_RUN_ID, runIds.firstOrNull().orEmpty())
+        putStringArrayList(KEY_ACTIVE_RUN_IDS, ArrayList(runIds))
+    }
+
+    /** 新服务返回完整列表；旧服务只有 run_id 时退化为单元素列表。 */
+    fun activeRunIdsFromBundle(bundle: Bundle): List<String> =
+        bundle.getStringArrayList(KEY_ACTIVE_RUN_IDS)?.filter(String::isNotBlank)
+            ?: listOfNotNull(bundle.getString(KEY_RUN_ID)?.takeIf(String::isNotBlank))
+
+    private const val KEY_ACTIVE_RUN_IDS = "active_run_ids"
+
     fun attachRunResponseBundle(runId: String, attached: Boolean): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)
         putBoolean(KEY_OK, attached)

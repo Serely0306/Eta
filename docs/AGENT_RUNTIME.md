@@ -40,12 +40,12 @@ pending steering
 - 只有明确的 `tool_calls` / `tool_use` 终止原因才允许执行工具；`stop`、内容过滤或未知终止原因中夹带的调用一律作为协议矛盾拒绝。
 - 工具参数在执行前按本轮实际下发的 JSON Schema 校验，支持本地 `$ref`、组合 Schema、条件 Schema 与常用对象、数组、字符串、数值约束；这只检查调用合同，不承担权限确认或额外安全策略。
 - transcript 只返回本次 run 新增的 assistant、tool 和运行中 steering 消息，不重复旧 history 或本轮初始用户消息。
-- GUI/终端工具保持串行。Android 前台状态和会话式 Shell 都不具备可安全并行的通用语义。
+- 同一 run 内 GUI/终端工具保持串行。Android 前台状态和会话式 Shell 都不具备可安全并行的通用语义；不同 run 之间的屏幕与浏览器由资源租约互斥，见[并发运行](#并发运行)。
 - 单次 run 不设置固定回合数或总时限，由模型自然结束、用户取消或不可恢复错误终止。
 - cancel 是终止信号；pause 是检查点阻塞；steering 是下一回合输入。三者不能互相模拟。
 - cancel 的主线程路径只做原子终态与资源关闭：共享浏览器按 runId 校验归属；终端立即封闭新的进程接纳，并在后台按独立进程组终止同步命令、会话和 async job，再完成线程与流回收。Android 上 `setsid` 或 PID/PGID ownership 握手不可用时会 fail closed；非 Android 测试环境才允许父子树快照回退。终止前还会核验随机 ownership token，避免陈旧 PGID 复用后误杀无关进程。
 - 最终 steering 检查会原子关闭接收入口；Loop 返回后不会再把无人消费的补充指令误报为已接收。补充指令也不会解除 pause。
-- 新 run 替换旧 run、用户取消和正常完成都通过 `AgentRuntimeSession` 的 `RUNNING → COMMITTING → TERMINAL` 状态机竞争唯一终态；提交胜者独占 outbox、归档和最终发布，客户端等待最终结果或 Binder 断连，不按等待时长取消任务。
+- 同一通道的新 run 替换旧 run、用户取消和正常完成都通过 `AgentRuntimeSession` 的 `RUNNING → COMMITTING → TERMINAL` 状态机竞争唯一终态；提交胜者独占 outbox、归档和最终发布，客户端等待最终结果或 Binder 断连，不按等待时长取消任务。
 - 入口请求只能缩小工具能力，不能自行授权。Runtime 在开始 run 时裁剪配置，在每次浏览器、终端和设备工具执行前重新读取用户开关，并在 thinking 关闭时移除自定义请求体中的 reasoning/thinking 覆盖字段。
 - 设备工具分为直达工具、敏感读取工具和敏感操作工具，当前均默认开启。Runtime 在每次执行前重新读取用户开关；开关允许且参数符合工具 Schema 后即可执行，不再匹配用户原话，也不维护关键包、系统应用或 Settings key 黑名单。
 - 微信发送不提供专用工具、参数协议或额外策略层，完全使用通用 GUI 工具观察和操作微信界面。
@@ -54,6 +54,14 @@ pending steering
 助理入口的 `assistant_screen_context` 是有界、可选的单次运行字段；旧入口缺失时按空内容处理。应用原始内容只保留在当前用户消息的临时元数据中，并在发给 Provider 时投影为数据文本。稳定会话编码和压缩摘要输入不包含该元数据，用户原话保持不变。截图仍使用既有图片传输协议。
 
 截图图片携带可选的 `preserve_original` 标记：Runtime 接收文件描述符或内联图片后保留原始字节、编码和尺寸，不重新转为 JPEG。旧入口缺失该标记时继续使用附件兼容编码。系统仅提供 Bitmap 时，在截图采集端一次性编码为原尺寸 PNG；后续只进行传输所需的 Base64 封装，不解码重绘、缩放或铺底。容量超限时返回错误，不通过降低截图质量绕过上限。
+
+## 并发运行
+
+`AgentRuntimeService` 按 runId 维护运行表，不同通道的 run 可以同时执行，总数上限为 3。通道按入口划分：App 内每个会话是一个通道，系统助手入口（超级小爱、小布、Eta 语音）按来源各为一个通道。同一通道的新请求替换旧 run，例如再次唤醒超级小爱会停止上一次小爱任务，但不影响 App 里正在执行的会话；超过上限时新请求直接失败并说明原因。
+
+- 屏幕与共享浏览器由 `ForegroundResourceLease` 跨 run 互斥：操作或读取前台界面、拉起界面的工具占用屏幕，`browser_use` 占用 Agent 浏览器。持有者用完工具后空闲 45 秒自动让出，run 结束时全部释放；其他 run 最多等待 60 秒，超时返回 `SCREEN_BUSY` / `BROWSER_BUSY` 并提示改走不需要界面的步骤或询问用户。终端、文件、网页读取等工具不受影响。
+- 浮层只展示一个 run：最近操作前台界面或提出 ask_user 问题的 run。胶囊的暂停、补充与停止只作用于该 run，并显示另有几个任务在运行；它结束后浮层交给最近启动、仍在运行的 run。结果卡片持有自己的终态快照，关闭卡片不影响其他 run 的胶囊。执行通知跟随浮层 run。
+- `MSG_QUERY_ACTIVE_RUN` 返回全部活跃 run（`active_run_ids`，最近启动的在前），`run_id` 保留最近一个以兼容旧客户端。App 按会话跟踪各自的 run，停止、追加与回答只作用于当前会话；恢复时对每个仍在执行的 run 分别重新订阅。
 
 ## 运行中提问（ask_user）
 

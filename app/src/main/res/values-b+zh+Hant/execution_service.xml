@@ -9,6 +9,7 @@
     <string name="execution_chip_running">操作中</string>
     <string name="execution_chip_answering">回答中</string>
     <string name="execution_chip_waiting">待回答</string>
+    <string name="overlay_other_runs">另有 %1$d 個</string>
     <string name="overlay_waiting_for_answer">等待回答：%1$s</string>
     <string name="overlay_waiting_for_answer_plain">等待你的回答</string>
     <string name="question_title">Eta 需要你確認</string>

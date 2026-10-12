@@ -12,7 +12,8 @@ internal object AgentRunRecoveryCoordinator {
 
     data class Plan(
         val completed: List<Completed>,
-        val reattach: AgentRunCheckpointStore.Checkpoint?,
+        /** Runtime 仍在执行、需要重新订阅的 run；不同会话可以同时运行。 */
+        val reattach: List<AgentRunCheckpointStore.Checkpoint>,
         val interrupted: List<AgentRunCheckpointStore.Checkpoint>,
     )
 
@@ -21,8 +22,8 @@ internal object AgentRunRecoveryCoordinator {
         completedRuns: List<AgentRuntimeWire.CompletedRun>,
         activeStateKnown: Boolean,
         terminalStateKnown: Boolean,
-        activeRunId: String?,
-        locallyObservedRunId: String?,
+        activeRunIds: Set<String>,
+        locallyObservedRunIds: Set<String>,
     ): Plan {
         val uiCheckpoints = checkpoints
             .filter { it.handoff.source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE }
@@ -30,23 +31,22 @@ internal object AgentRunRecoveryCoordinator {
         val completed = completedRuns
             .asSequence()
             .filter { it.handoff.source == AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE }
-            .filterNot { it.stableRunId == locallyObservedRunId }
+            .filterNot { it.stableRunId in locallyObservedRunIds }
             .sortedBy { it.createdAt }
             .map { run -> Completed(run, uiCheckpoints[run.stableRunId]) }
             .toList()
         val completedRunIds = completed.mapTo(mutableSetOf()) { it.result.stableRunId }
         val unresolved = uiCheckpoints.values
-            .filterNot { it.runId == locallyObservedRunId || it.runId in completedRunIds }
+            .filterNot { it.runId in locallyObservedRunIds || it.runId in completedRunIds }
             .sortedBy { it.createdAt }
-        val active = unresolved
-            .takeIf { activeStateKnown }
-            ?.singleOrNull { it.runId == activeRunId }
+        val active = if (activeStateKnown) unresolved.filter { it.runId in activeRunIds } else emptyList()
+        val activeIds = active.mapTo(mutableSetOf()) { it.runId }
 
         return Plan(
             completed = completed,
             reattach = active,
             interrupted = if (activeStateKnown && terminalStateKnown) {
-                unresolved.filterNot { it.runId == active?.runId }
+                unresolved.filterNot { it.runId in activeIds }
             } else {
                 emptyList()
             },
