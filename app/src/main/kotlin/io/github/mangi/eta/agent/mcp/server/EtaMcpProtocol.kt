@@ -273,6 +273,8 @@ internal class EtaMcpProtocol(
                 "界面类工具（observe_screen、tap_element 等）操作的是用户正在使用的真实屏幕，" +
                 "与手机上的 Eta 任务共用屏幕租约，遇到 SCREEN_BUSY 时稍后再试；" +
                 "terminal 与文件工具在设备已授权 Root 时默认以 Root 身份执行。" +
-                "工具结果为 JSON 文本，ok=false 时 code 字段给出原因。"
+                "工具结果为 JSON 文本，ok=false 时 code 字段给出原因。" +
+                "需要多步完成的手机任务可用 eta_task_start 交给 Eta 自己的 Agent 执行，" +
+                "再用 eta_task_status 等待结果，用 eta_task_answer 回答它提出的问题。"
     }
 }

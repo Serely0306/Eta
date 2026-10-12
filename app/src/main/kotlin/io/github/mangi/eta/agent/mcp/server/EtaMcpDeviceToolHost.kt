@@ -23,8 +23,11 @@ import org.json.JSONObject
  */
 internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
     private val appContext = context.applicationContext
+    private val tasks = sharedTaskManager(appContext)
 
-    override fun listTools(): List<EtaMcpTool> {
+    override fun listTools(): List<EtaMcpTool> = deviceTools() + tasks.tools()
+
+    private fun deviceTools(): List<EtaMcpTool> {
         val permissions = permissions()
         val disabled = AgentToolToggles.effective(permissions.disabledTools)
         val catalog = AgentToolCatalog.build(
@@ -68,6 +71,10 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
         )
         return object : EtaMcpToolHost.Session {
             override fun call(name: String, arguments: JSONObject): EtaMcpToolOutcome {
+                if (tasks.handles(name)) {
+                    val result = tasks.call(name, arguments)
+                    return EtaMcpToolOutcome(text = result.toString(), isError = !result.optBoolean("ok", false))
+                }
                 val result = tools.execute(
                     AgentModelClient.ToolCall(
                         id = "mcp-" + UUID.randomUUID().toString(),
@@ -97,6 +104,14 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
     private fun memoryEnabled(): Boolean = runBlocking { AgentMemoryRepository.isEnabled() }
 
     internal companion object {
+        @Volatile private var taskManager: EtaMcpTaskManager? = null
+
+        /** 委托任务跨 MCP 会话与服务重启保留，进程内共用一份。 */
+        private fun sharedTaskManager(context: Context): EtaMcpTaskManager =
+            taskManager ?: synchronized(this) {
+                taskManager ?: EtaMcpTaskManager(EtaMcpRuntimeTaskRunner(context)).also { taskManager = it }
+            }
+
         /** Skill 工具服务于 Eta 自身的 Agent 指令体系，对电脑端没有意义，不开放。 */
         fun exposed(name: String): Boolean = !name.startsWith("skills_")
 

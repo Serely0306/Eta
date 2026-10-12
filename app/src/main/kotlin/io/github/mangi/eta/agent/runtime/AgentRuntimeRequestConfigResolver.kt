@@ -16,7 +16,8 @@ internal object AgentRuntimeRequestConfigResolver {
      */
     fun runtimeConfigSource(request: AgentRuntimeWire.RunRequest): RuntimeConfigSource? =
         when (request.handoff?.source) {
-            AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE -> RuntimeConfigSource.DEFAULT_MODEL
+            AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
+            AgentRuntimeWire.PC_MCP_HANDOFF_SOURCE -> RuntimeConfigSource.DEFAULT_MODEL
             AgentRuntimeWire.XIAOAI_HANDOFF_SOURCE -> RuntimeConfigSource.VENDOR_ASSISTANT_MODEL
             else -> null
         }

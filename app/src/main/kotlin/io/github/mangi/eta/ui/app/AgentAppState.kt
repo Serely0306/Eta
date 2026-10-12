@@ -2000,6 +2000,7 @@ internal fun conversationEntrySource(conversationId: String, title: String): Con
     return when {
         tagged == AgentRuntimeWire.XIAOAI_HANDOFF_SOURCE || title.startsWith("超级小爱") -> ConversationEntrySource.XiaoAi
         tagged == BREENO_SOURCE_TAG || title.startsWith("小布") -> ConversationEntrySource.Breeno
+        tagged == AgentRuntimeWire.PC_MCP_HANDOFF_SOURCE -> ConversationEntrySource.Computer
         else -> null
     }
 }

@@ -608,6 +608,7 @@ private fun ConversationDrawerGroup.localizedLabel(): String = when (val value =
     is ConversationDrawerSection.Entry -> when (value.source) {
         ConversationEntrySource.XiaoAi -> stringResource(R.string.conversation_section_xiaoai)
         ConversationEntrySource.Breeno -> stringResource(R.string.conversation_section_breeno)
+        ConversationEntrySource.Computer -> stringResource(R.string.conversation_section_computer)
     }
     ConversationDrawerSection.Today -> stringResource(R.string.conversation_section_today)
     is ConversationDrawerSection.Dated -> value.label

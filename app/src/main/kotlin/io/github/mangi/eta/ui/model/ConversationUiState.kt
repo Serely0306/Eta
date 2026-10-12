@@ -28,6 +28,8 @@ data class ConversationSummaryUi(
 enum class ConversationEntrySource {
     XiaoAi,
     Breeno,
+    /** 电脑端经设备端 MCP 服务委托的任务。 */
+    Computer,
 }
 
 @Immutable

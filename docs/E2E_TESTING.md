@@ -25,7 +25,8 @@
 | 终端参数分级校验 | `02b37ac` | E3、E4 | 未执行 |
 | 多会话并发、屏幕与浏览器租约、浮层归属 | `9875539` | A1–A10、B1–B3、B5、C5、G2 | 未执行 |
 | 真实模型冒烟 | — | H1–H3 | 未执行 |
-| 设备端 MCP 服务：设备工具、令牌鉴权、会话与设置页 | 待补（MCP 首个提交） | I1–I10 | 未执行 |
+| 设备端 MCP 服务：设备工具、令牌鉴权、会话与设置页 | `ee6391e` | I1–I10 | 未执行 |
+| 设备端 MCP 服务：委托任务与“电脑端”会话分组 | 待补（本次提交） | I11–I15 | 未执行 |
 
 后续阶段的用例在实现时补充，预留分组：J 规划与子 Agent、K 模型回退链、L 主动触发、M 虚拟屏与通知屏蔽。
 
@@ -84,7 +85,7 @@ PC 上运行一个 OpenAI 兼容服务（`/v1/chat/completions`、`/v1/responses
 | `steer` | `run_id`、`text_b64` | 运行中追加要求 |
 | `answer` | `run_id`、`question_id`、`selection` 或 `text_b64` | 回答 ask_user |
 | `set_tools` | `disabled`（逗号分隔） | 设置工具开关 |
-| `setup_mock` | `base_url`、`api`（openai/anthropic） | 写入 `e2e-mock` Provider |
+| `setup_mock` | `base_url`、`api`（openai/anthropic）、`as_default`（可选） | 写入 `e2e-mock` Provider；`as_default=true` 时临时设为默认模型（MCP 委托任务等走默认模型的入口需要），`cleanup` 时恢复 |
 | `cleanup` | 无 | 删除 `[E2E]` 会话与 `e2e-mock` Provider，恢复工具开关 |
 | `timeouts` | `ask_user_ms`、`lease_wait_ms`、`lease_idle_ms` | 缩短超时，便于测超时分支；进程重启后失效 |
 
@@ -198,7 +199,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 
 ### I. 设备端 MCP 服务
 
-这一组不需要测试入口：驱动端经 `adb forward` 直接以 HTTP 调用 MCP 服务，开关与令牌在 Eta 的 MCP 页面操作（统一落地时可加 `mcp_server` 指令自动化）。
+这一组不需要测试入口：驱动端经 `adb forward` 直接以 HTTP 调用 MCP 服务，开关与令牌在 Eta 的 MCP 页面操作（统一落地时可加 `mcp_server` 指令自动化）。委托任务（I11–I15）走默认模型，需先 `setup_mock` 并带 `as_default=true`。
 
 | ID | 场景 | 断言 |
 |---|---|---|
@@ -212,6 +213,11 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | I8 `M` | 在执行通知中点停止 | 服务停止，MCP 页开关显示关闭；再次打开 Eta 不自动启动 |
 | I9 `M` `慢` | 会话空闲超过 30 分钟后继续调用 | 返回 404；客户端重新 `initialize` 后正常 |
 | I10 `R` | Claude Code 分别经 USB 与局域网连接，完成一次“观察屏幕并点击” | 连接成功，工具调用生效 |
+| I11 `M` | `eta_task_start`（Mock 剧本为两步工具调用后回复），`wait_seconds=0` 后用 `eta_task_status` 等待 | 先返回 `running`；随后 `completed`，`result` 为剧本回复，`recent_steps` 含两步 |
+| I12 `M` | 剧本中调用 ask_user；分别用电脑端 `eta_task_answer` 与手机胶囊回答 | 状态为 `waiting_for_answer` 并带问题；任一端回答后问题关闭、任务继续，另一端的迟到回答被忽略 |
+| I13 `M` | 同一 `conversation_id` 连续两个任务；第一个执行中再提交第二个 | 第二个任务能引用第一个任务的上下文；执行中重复提交返回 `CONVERSATION_BUSY` |
+| I14 `M` | 两个不同 `conversation_id` 的任务与一个 App 会话任务同时运行；再提交第 4 个 | 三者并行互不替换；第 4 个以并发上限失败（同 A3） |
+| I15 `M` | `eta_task_stop`；任务结束后打开 Eta | 状态为 `stopped`；侧栏“电脑端”分组出现该会话的归档 |
 
 ## 执行方式
 

@@ -480,6 +480,11 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             val conversationId = AgentUiHandoffPayload.from(handoff.payload).conversationId
             return "conversation:" + conversationId.ifBlank { request.runId }
         }
+        // 电脑端可同时委托多个会话的任务，按会话分通道，避免新任务停掉另一会话的任务。
+        if (handoff.source == AgentRuntimeWire.PC_MCP_HANDOFF_SOURCE) {
+            val conversationKey = AgentExternalArchivePayload.from(handoff.payload)?.conversationKey.orEmpty()
+            return "entry:${handoff.source}:" + conversationKey.ifBlank { request.runId }
+        }
         return "entry:" + handoff.source
     }
 

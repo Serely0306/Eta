@@ -15,6 +15,7 @@ class ConversationEntryGroupingTest {
         assertEquals(ConversationEntrySource.XiaoAi, conversationEntrySource("archive-0123abcd", "超级小爱：查天气"))
         assertEquals(ConversationEntrySource.Breeno, conversationEntrySource("archive-breeno-0123abcd", ""))
         assertEquals(ConversationEntrySource.Breeno, conversationEntrySource("archive-0123abcd", "小布对话"))
+        assertEquals(ConversationEntrySource.Computer, conversationEntrySource("archive-pc_mcp-0123abcd", "整理下载目录"))
         assertNull(conversationEntrySource("archive-0123abcd", "改过的名字"))
         assertNull(conversationEntrySource("conv-1", "超级小爱：普通会话不归组"))
         assertNull(conversationEntrySource("assistant-0123abcd", "Eta 语音"))
