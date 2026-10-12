@@ -631,4 +631,9 @@ internal object AnthropicEphemeralState {
         if (contentBlocks(message) == null) message else JSONObject(message.toString()).apply {
             remove(CONTENT_BLOCKS_KEY)
         }
+
+    /** 原地移除；签名块绑定生成它的模型，切换模型后不能再回传。 */
+    fun strip(message: JSONObject) {
+        message.remove(CONTENT_BLOCKS_KEY)
+    }
 }

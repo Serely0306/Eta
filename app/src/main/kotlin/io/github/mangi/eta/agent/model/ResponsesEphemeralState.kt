@@ -17,4 +17,9 @@ internal object ResponsesEphemeralState {
     fun copyOutputItems(source: JSONObject, target: JSONObject) {
         outputItems(source)?.let { attachOutputItems(target, it) }
     }
+
+    /** 原地移除；切换到其他模型后，旧模型的 opaque items 不再有效。 */
+    fun strip(message: JSONObject) {
+        message.remove(OUTPUT_ITEMS_KEY)
+    }
 }

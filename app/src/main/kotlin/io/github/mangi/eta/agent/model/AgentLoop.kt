@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.agent.runtime.AgentEvent
+import io.github.mangi.eta.agent.runtime.AgentRunCancelledException
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import org.json.JSONArray
@@ -33,6 +34,8 @@ internal class AgentLoop(
     private val purpose: ProviderRequestPurpose = ProviderRequestPurpose.CHAT,
     private val roleplayContext: RoleplayRunContext? = null,
     initialSupplementIndex: Int = 0,
+    private val fallback: ModelFallbackPolicy = ModelFallbackPolicy.NONE,
+    private val providerFor: (AgentModelClient.ModelConfig) -> AgentProviderClient = ProviderClientFactory::getClient,
 ) {
     data class Result(
         val content: String,
@@ -55,6 +58,11 @@ internal class AgentLoop(
         roleplay = roleplayContext != null,
     )
     private var supplementIndex = initialSupplementIndex
+    /** 当前对话请求使用的模型；回退后本次 run 的剩余回合保持在新模型上。上下文压缩仍用主模型。 */
+    private var activeConfig = config
+    private var activeProvider = provider
+    private var nextFallbackIndex = 0
+    private var lastStartedRound = 0
 
     fun contextSnapshot(): AgentContextSnapshot? = context.snapshot()
 
@@ -100,40 +108,45 @@ internal class AgentLoop(
             toolCallValidator = AgentToolCallValidator(roundTools)
             publishTranscript()
             if (purpose.allowsTools) context.compact()
-            val requestMessages = AssistantScreenContextProjection.project(
-                roleplayContext?.projectMessages(messages) ?: messages,
-            )
             var roundInputTokens: Int? = null
             val reasoningLengthBeforeRound = accumulatedReasoning.length
             val completedRound = try {
-                modelRetry.complete(
-                    initialRound = round,
-                    request = ProviderRequest(config, requestMessages, roundTools, sessionId, purpose),
-                    provider = provider,
-                    controller = runController,
-                    onEvent = { event ->
-                        if (event is AgentEvent.RoundStarted) roundInputTokens = null
-                        onEvent(event)
-                    },
-                    onProviderEvent = { attemptRound, providerEvent ->
-                        if (!purpose.allowsTools && (providerEvent is ProviderEvent.HostedToolStarted ||
-                                providerEvent is ProviderEvent.BlockStart && providerEvent.kind == AssistantBlockKind.TOOL_CALL)) {
-                            throw AgentModelFailure("REPLY_REWRITE_TOOL_CALL", false, "改写回复时模型请求了工具，已停止；原回复未改变。")
-                        }
-                        if (providerEvent is ProviderEvent.Usage) {
-                            roundInputTokens = providerEvent.contextInputTokens ?: roundInputTokens
-                        }
-                        if (providerEvent is ProviderEvent.BlockDelta &&
-                            providerEvent.kind == AssistantBlockKind.THINKING
-                        ) {
-                            accumulatedReasoning.append(providerEvent.delta)
-                        }
-                        providerEvent.toAgentEvent(attemptRound)?.let(onEvent)
-                    },
-                    discardAttemptReasoning = { accumulatedReasoning.setLength(reasoningLengthBeforeRound) },
-                ).also { response ->
-                    rejectContentFilter(response.response)
-                    if (purpose == ProviderRequestPurpose.CHAT) validateChatResponse(response.response)
+                completeRoundWithFallback(round, reasoningLengthBeforeRound) { startRound, roundConfig, roundProvider ->
+                    val requestMessages = AssistantScreenContextProjection.project(
+                        roleplayContext?.projectMessages(messages) ?: messages,
+                    )
+                    modelRetry.complete(
+                        initialRound = startRound,
+                        request = ProviderRequest(roundConfig, requestMessages, roundTools, sessionId, purpose),
+                        provider = roundProvider,
+                        controller = runController,
+                        onEvent = { event ->
+                            if (event is AgentEvent.RoundStarted) {
+                                roundInputTokens = null
+                                lastStartedRound = maxOf(lastStartedRound, event.round)
+                            }
+                            onEvent(event)
+                        },
+                        onProviderEvent = { attemptRound, providerEvent ->
+                            if (!purpose.allowsTools && (providerEvent is ProviderEvent.HostedToolStarted ||
+                                    providerEvent is ProviderEvent.BlockStart && providerEvent.kind == AssistantBlockKind.TOOL_CALL)) {
+                                throw AgentModelFailure("REPLY_REWRITE_TOOL_CALL", false, "改写回复时模型请求了工具，已停止；原回复未改变。")
+                            }
+                            if (providerEvent is ProviderEvent.Usage) {
+                                roundInputTokens = providerEvent.contextInputTokens ?: roundInputTokens
+                            }
+                            if (providerEvent is ProviderEvent.BlockDelta &&
+                                providerEvent.kind == AssistantBlockKind.THINKING
+                            ) {
+                                accumulatedReasoning.append(providerEvent.delta)
+                            }
+                            providerEvent.toAgentEvent(attemptRound)?.let(onEvent)
+                        },
+                        discardAttemptReasoning = { accumulatedReasoning.setLength(reasoningLengthBeforeRound) },
+                    ).also { response ->
+                        rejectContentFilter(response.response)
+                        if (purpose == ProviderRequestPurpose.CHAT) validateChatResponse(response.response)
+                    }
                 }
             } finally {
                 // 同一回合的重试仍需原始观察；整个回合结束后才移除截图。
@@ -222,6 +235,58 @@ internal class AgentLoop(
             )
         }
     }
+
+    /**
+     * 用当前模型完成一个回合；失败且回退链里还有可用模型时换模型重做同一回合。
+     * 失败尝试的半截输出仍按重试的方式保留在展示中，模型上下文只接纳成功的那次。
+     */
+    private fun completeRoundWithFallback(
+        round: Int,
+        reasoningLengthBeforeRound: Int,
+        attempt: (
+            startRound: Int,
+            config: AgentModelClient.ModelConfig,
+            provider: AgentProviderClient,
+        ) -> AgentModelRetry.Result,
+    ): AgentModelRetry.Result {
+        var startRound = round
+        while (true) {
+            try {
+                return attempt(startRound, activeConfig, activeProvider)
+            } catch (failure: Exception) {
+                if (failure is AgentRunCancelledException) throw failure
+                runController.throwIfCancelled()
+                if (purpose != ProviderRequestPurpose.CHAT || !fallback.shouldFallBack(failure)) throw failure
+                if (!switchToNextFallback(failure)) throw failure
+                accumulatedReasoning.setLength(reasoningLengthBeforeRound)
+                // 失败尝试已占用的轮次编号不再复用，避免展示消息的 id 冲突。
+                startRound = maxOf(startRound, lastStartedRound) + 1
+            }
+        }
+    }
+
+    private fun switchToNextFallback(failure: Exception): Boolean {
+        while (nextFallbackIndex < fallback.configs.size) {
+            val candidate = fallback.configs[nextFallbackIndex++]
+            if (candidate.providerId == activeConfig.providerId && candidate.model == activeConfig.model) continue
+            ModelFallbackPolicy.stripProviderState(messages)
+            val prepared = ModelFallbackPolicy.prepare(candidate, messages) ?: continue
+            onEvent(
+                AgentEvent.ModelFallback(
+                    round = lastStartedRound,
+                    fromModel = activeConfig.displayLabel(),
+                    toModel = prepared.displayLabel(),
+                    reasonCode = (failure as? AgentModelFailure)?.code ?: failure.javaClass.simpleName,
+                ),
+            )
+            activeConfig = prepared
+            activeProvider = providerFor(prepared)
+            return true
+        }
+        return false
+    }
+
+    private fun AgentModelClient.ModelConfig.displayLabel(): String = modelDisplayName.ifBlank { model }
 
     /**
      * 拒答或过滤会在流中途截断回复，半截正文、思考块和工具调用都不能进入上下文：

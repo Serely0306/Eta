@@ -11,6 +11,7 @@ import io.github.mangi.eta.agent.model.AgentModelExecutionException
 import io.github.mangi.eta.agent.model.AgentModelFailure
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.model.AgentTaskPlan
+import io.github.mangi.eta.agent.model.ModelFallbackPolicy
 import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
@@ -35,6 +36,7 @@ import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
+import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -248,6 +250,22 @@ internal class AgentRuntimeRunExecutor(
             }
             fun emitRunEvent(event: AgentEvent) =
                 acceptEvent(session, event, archivedEvents, entrySurfaceGuard, checkpointRecorder)
+            // 回退链按本次 run 开始时的设置解析，备用模型同样受思考权限约束；改写回复不换模型。
+            val fallbackPolicy = if (request.operation == AgentRuntimeWire.OP_REWRITE_REPLY) {
+                ModelFallbackPolicy.NONE
+            } else {
+                val resolved = runBlocking {
+                    runCatching { RuntimeConfigRepository.modelFallbackPolicy(request.config) }
+                        .getOrElse { throwable ->
+                            AndroidAgentLogger.warnThrottled("agent_model_fallback_unavailable") {
+                                "Model fallback settings unavailable: type=${throwable.safeLogType()}"
+                            }
+                            ModelFallbackPolicy.NONE
+                        }
+                }
+                val permissions = currentPermissions()
+                resolved.copy(configs = resolved.configs.map { AgentRuntimePolicy.constrain(it, permissions) })
+            }
             // 计划只是进度声明：校验后推给浮层、通知与电脑端，不改变设备状态。
             fun updatePlan(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
                 val plan = AgentTaskPlan.parse(call.argumentsJson).getOrElse { failure ->
@@ -276,6 +294,7 @@ internal class AgentRuntimeRunExecutor(
                     RoutingToolExecutor(local = newLocalTools(ownerId), mcp = McpToolExecutor(mcpSnapshot))
                 },
                 emit = ::emitRunEvent,
+                fallback = fallbackPolicy,
             )
             // 提问在工具内阻塞等待；问题与结论作为独立事件推给 App、胶囊和恢复日志。
             fun askUser(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
@@ -352,6 +371,7 @@ internal class AgentRuntimeRunExecutor(
                 skillContext = skillContext,
                 memoryContext = memoryContext,
                 additionalTools = runTools,
+                fallback = fallbackPolicy,
             ) { event ->
                 timing.accept(event)
                 acceptEvent(

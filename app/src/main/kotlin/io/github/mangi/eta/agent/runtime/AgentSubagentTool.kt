@@ -5,6 +5,7 @@ import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentTaskPlan
 import io.github.mangi.eta.agent.model.AgentToolCatalog
 import io.github.mangi.eta.agent.model.AgentUserQuestion
+import io.github.mangi.eta.agent.model.ModelFallbackPolicy
 import io.github.mangi.eta.agent.model.AgentToolSchema
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.agent.tool.ForegroundResourceLease
@@ -32,6 +33,7 @@ internal class AgentSubagentTool(
     /** 按执行器 id 新建工具执行器；id 同时作为租约与浏览器归属。 */
     private val newExecutor: (ownerId: String) -> RoutingToolExecutor,
     private val emit: (AgentEvent) -> Unit,
+    private val fallback: ModelFallbackPolicy = ModelFallbackPolicy.NONE,
 ) {
     private class Task(val task: String, val context: String)
 
@@ -112,6 +114,7 @@ internal class AgentSubagentTool(
                 disabledToolsProvider = { disabledTools() + excluded },
                 sessionId = "$parentSessionId:sub:$toolCallId:$index",
                 operationId = "$runId-sub-$index",
+                fallback = fallback,
             ) { event ->
                 when (event) {
                     is AgentEvent.RoundStarted -> if (++rounds > MAX_ROUNDS && roundLimitHit.compareAndSet(false, true)) {

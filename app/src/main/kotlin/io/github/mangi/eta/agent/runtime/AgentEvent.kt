@@ -66,6 +66,20 @@ internal sealed interface AgentEvent {
             "model_retry_scheduled round=$round, attempt=$attempt, delay_ms=$delayMs, code=${reasonCode.toSafeLogToken()}"
     }
 
+    /** 当前模型失败后按回退链换用下一个模型，继续同一回合；模型名为展示名。 */
+    data class ModelFallback(
+        val round: Int,
+        val fromModel: String,
+        val toModel: String,
+        val reasonCode: String,
+    ) : AgentEvent {
+        val displayMessage: String
+            get() = "$fromModel 请求失败（$reasonCode），已切换到备用模型 $toModel 继续；此前工具结果已保留。"
+
+        override fun toLogLine(): String =
+            "model_fallback round=$round, code=${reasonCode.toSafeLogToken()}"
+    }
+
     data class ProviderRequestStarted(
         val round: Int
     ) : AgentEvent {

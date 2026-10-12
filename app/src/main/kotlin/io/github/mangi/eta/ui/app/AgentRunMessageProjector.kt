@@ -58,6 +58,7 @@ internal class AgentRunMessageProjector(
             )
         }
         is AgentEvent.ModelRetryScheduled -> scheduleModelRetry(runId, event, messages)
+        is AgentEvent.ModelFallback -> noteModelFallback(runId, event, messages)
         is AgentEvent.RunFailed -> failRunningTools(event.reason, finalizeText(runId, finalizeThinking(runId, messages)))
         is AgentEvent.AssistantReceived -> if (event.reasoningContent.isBlank()) messages else {
             ensureCompletedThinking(runId, event.round, event.reasoningContent, messages)
@@ -144,6 +145,23 @@ internal class AgentRunMessageProjector(
         val notice = SystemNoticeMessageUi(
             id = "assistant-$runId-retry-${event.round}",
             code = SystemNoticeCode.ModelRetry,
+            detail = event.displayMessage,
+        )
+        return finalized.filterNot { it.id == notice.id } + notice
+    }
+
+    /** 换用备用模型前失败尝试的半截正文与思考照常收口，随后插入切换提示。 */
+    fun noteModelFallback(
+        runId: String,
+        event: AgentEvent.ModelFallback,
+        messages: List<AgentChatMessageUi>,
+    ): List<AgentChatMessageUi> {
+        val finalized = finalizeTextRound(
+            runId, event.round, finalizeThinkingRound(runId, event.round, messages),
+        )
+        val notice = SystemNoticeMessageUi(
+            id = "assistant-$runId-fallback-${event.round}",
+            code = SystemNoticeCode.ModelFallback,
             detail = event.displayMessage,
         )
         return finalized.filterNot { it.id == notice.id } + notice

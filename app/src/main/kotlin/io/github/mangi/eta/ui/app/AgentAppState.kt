@@ -812,6 +812,7 @@ internal class AgentAppState(
                 noticeStopped = noticeText(SystemNoticeCode.Stopped),
                 noticeEmptyResult = noticeText(SystemNoticeCode.EmptyResult),
                 noticeModelRetry = noticeText(SystemNoticeCode.ModelRetry),
+                noticeModelFallback = noticeText(SystemNoticeCode.ModelFallback),
                 noticeContextCompaction = noticeText(SystemNoticeCode.ContextCompaction),
                 noticeRuntimeFailed = noticeText(SystemNoticeCode.RuntimeFailed),
                 noticeInterrupted = noticeText(SystemNoticeCode.Interrupted),
@@ -825,6 +826,7 @@ internal class AgentAppState(
             SystemNoticeCode.EmptyResult -> R.string.system_notice_empty_result
             SystemNoticeCode.ContextCompaction -> R.string.context_compaction
             SystemNoticeCode.ModelRetry -> R.string.system_notice_model_retry
+            SystemNoticeCode.ModelFallback -> R.string.system_notice_model_fallback
             SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
             SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
         },

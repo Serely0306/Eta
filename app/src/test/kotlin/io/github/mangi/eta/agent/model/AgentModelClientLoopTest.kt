@@ -760,6 +760,89 @@ class AgentModelClientLoopTest {
     }
 
     @Test
+    fun fallbackModelContinuesTheSameRoundAndKeepsToolResults() {
+        val events = mutableListOf<AgentEvent>()
+        var primaryCalls = 0
+        val primary = object : AgentProviderClient by ScriptedProvider(emptyList()) {
+            override fun complete(
+                request: ProviderRequest,
+                runController: AgentRunController,
+                onEvent: (ProviderEvent) -> Unit,
+            ): ProviderResponse {
+                primaryCalls += 1
+                if (primaryCalls == 1) {
+                    return ProviderResponse(assistant(
+                        finishReason = "tool_calls",
+                        toolCalls = listOf(toolCall("call-1", "get_current_context", "{}")),
+                    ))
+                }
+                throw AgentModelFailure("HTTP_401", false, "模型接口认证失败")
+            }
+        }
+        val backup = ScriptedProvider(assistant(content = "备用模型完成", finishReason = "stop"))
+        val backupConfig = modelConfig().copy(providerId = "backup", model = "backup-model", modelDisplayName = "Backup")
+        val loop = AgentLoop(
+            config = modelConfig(),
+            messages = JSONArray().put(AgentConversationCodec.userTextMessage("开始")),
+            tools = AgentToolCatalog.build(terminalTools = false, browserTools = false),
+            provider = primary,
+            toolExecutor = AgentModelClient.ToolExecutor {
+                AgentModelClient.ToolResult(JSONObject().put("ok", true).put("now", "12:00").toString())
+            },
+            runController = AgentRunController(),
+            traceFormatter = AgentTraceFormatter(),
+            onEvent = events::add,
+            modelRetry = AgentModelRetry { _, _ -> },
+            fallback = ModelFallbackPolicy(listOf(backupConfig)),
+            providerFor = { config ->
+                assertEquals("backup-model", config.model)
+                backup
+            },
+        )
+
+        val result = loop.run()
+
+        assertEquals("备用模型完成", result.content)
+        assertEquals(2, primaryCalls)
+        val fallback = events.filterIsInstance<AgentEvent.ModelFallback>().single()
+        assertEquals("test-model", fallback.fromModel)
+        assertEquals("Backup", fallback.toModel)
+        assertEquals("HTTP_401", fallback.reasonCode)
+        // 备用模型拿到的是同一回合的完整上下文，包括主模型已完成的工具结果。
+        assertTrue(backup.requests.single().toString().contains("12:00"))
+        val rounds = events.filterIsInstance<AgentEvent.RoundStarted>().map { it.round }
+        assertEquals(rounds.distinct(), rounds)
+    }
+
+    @Test
+    fun contextOverflowIsNotHandedToFallbackModels() {
+        val primary = object : AgentProviderClient by ScriptedProvider(emptyList()) {
+            override fun complete(
+                request: ProviderRequest,
+                runController: AgentRunController,
+                onEvent: (ProviderEvent) -> Unit,
+            ): ProviderResponse = throw AgentModelFailure("CONTEXT_OVERFLOW", false, "模型上下文超过容量限制。")
+        }
+        val backup = ScriptedProvider(assistant(content = "不应调用", finishReason = "stop"))
+        val loop = AgentLoop(
+            config = modelConfig(),
+            messages = JSONArray().put(AgentConversationCodec.userTextMessage("开始")),
+            tools = AgentToolCatalog.build(terminalTools = false, browserTools = false),
+            provider = primary,
+            toolExecutor = AgentModelClient.ToolExecutor { error("不应执行工具") },
+            runController = AgentRunController(),
+            traceFormatter = AgentTraceFormatter(),
+            onEvent = {},
+            modelRetry = AgentModelRetry { _, _ -> },
+            fallback = ModelFallbackPolicy(listOf(modelConfig().copy(model = "backup-model"))),
+            providerFor = { backup },
+        )
+        val failure = runCatching { loop.run() }.exceptionOrNull() as? AgentModelFailure
+        assertEquals("CONTEXT_OVERFLOW", failure?.code)
+        assertTrue(backup.requests.isEmpty())
+    }
+
+    @Test
     fun disabledToolsLeaveDeclarationsAndPromptAndCanChangeBetweenRounds() {
         var disabled = emptySet<String>()
         val provider = ScriptedProvider(listOf(

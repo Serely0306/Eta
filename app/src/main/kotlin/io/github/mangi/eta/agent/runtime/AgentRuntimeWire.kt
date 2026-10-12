@@ -786,6 +786,14 @@ internal object AgentRuntimeWire {
                 putString("status", event.status)
             }
 
+            is AgentEvent.ModelFallback -> {
+                putString(KEY_TYPE, "model_fallback")
+                putInt("round", event.round)
+                putString("from_model", event.fromModel)
+                putString("to_model", event.toModel)
+                putString("reason_code", event.reasonCode)
+            }
+
             is AgentEvent.PlanUpdated -> {
                 putString(KEY_TYPE, "plan_updated")
                 putString("tool_call_id", event.toolCallId)
@@ -955,6 +963,13 @@ internal object AgentRuntimeWire {
         "user_question_resolved" -> AgentEvent.UserQuestionResolved(
             questionId = bundle.getString("question_id").orEmpty(),
             status = bundle.getString("status").orEmpty(),
+        )
+
+        "model_fallback" -> AgentEvent.ModelFallback(
+            round = bundle.getInt("round"),
+            fromModel = bundle.getString("from_model").orEmpty(),
+            toModel = bundle.getString("to_model").orEmpty(),
+            reasonCode = bundle.getString("reason_code").orEmpty(),
         )
 
         "plan_updated" -> AgentEvent.PlanUpdated(

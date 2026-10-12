@@ -62,6 +62,7 @@ import io.github.mangi.eta.agent.accessibility.AccessibilityProtectionClient
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
+import io.github.mangi.eta.data.model.ModelFallbackSettings
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.update.AppLatestRelease
@@ -222,6 +223,10 @@ private fun SettingsPageContent(
     val vendorModelIndex = vendorModelOptions
         .indexOfFirst { it?.first == vendorModelId }
         .coerceAtLeast(0)
+    val fallbackSettings by RuntimeConfigRepository.modelFallbackFlow()
+        .collectAsState(initial = ModelFallbackSettings())
+    val fallbackModelOptions = remember(vendorModelOptions) { vendorModelOptions.filterNotNull() }
+    val fallbackNoneLabel = stringResource(R.string.settings_model_fallback_none)
     val providerSummary = selectedProvider?.let { provider ->
         "${provider.name} / ${selectedModel?.displayName ?: stringResource(R.string.settings_model_not_selected)}"
     } ?: stringResource(R.string.settings_not_configured)
@@ -296,6 +301,54 @@ private fun SettingsPageContent(
                         icon = Icons.Rounded.Psychology,
                         iconTint = EtaPreferenceColors.Blue,
                     )
+
+                    // 回退链：前一个槽位选定后才显示下一个，清空某一槽位时其后的模型依次前移。
+                    val fallbackSlots = (fallbackSettings.modelIds.size + 1).coerceAtMost(ModelFallbackSettings.MAX_MODELS)
+                    repeat(fallbackSlots) { slot ->
+                        val currentId = fallbackSettings.modelIds.getOrNull(slot)
+                        EtaPreferenceDivider()
+                        EtaDropdownPreference(
+                            title = stringResource(R.string.settings_model_fallback_slot, slot + 1),
+                            summary = if (slot == 0) stringResource(R.string.settings_model_fallback_summary) else null,
+                            items = listOf(DropdownItem(text = fallbackNoneLabel)) +
+                                fallbackModelOptions.map { DropdownItem(text = it.second) },
+                            selectedIndex = fallbackModelOptions.indexOfFirst { it.first == currentId } + 1,
+                            onSelectedIndexChange = { index ->
+                                val chosen = fallbackModelOptions.getOrNull(index - 1)?.first
+                                val next = fallbackSettings.modelIds.toMutableList().apply {
+                                    if (chosen == null) {
+                                        if (slot < size) removeAt(slot)
+                                    } else if (slot < size) {
+                                        set(slot, chosen)
+                                    } else {
+                                        add(chosen)
+                                    }
+                                }.distinct()
+                                coroutineScope.launch {
+                                    RuntimeConfigRepository.setModelFallback(fallbackSettings.copy(modelIds = next))
+                                }
+                            },
+                            startAction = {
+                                EtaPreferenceIcon(icon = Icons.Rounded.Cloud, tint = EtaPreferenceColors.Blue)
+                            },
+                        )
+                    }
+                    if (fallbackSettings.modelIds.isNotEmpty()) {
+                        EtaPreferenceDivider()
+                        EtaSwitchPreference(
+                            title = stringResource(R.string.settings_model_fallback_content_filter),
+                            summary = stringResource(R.string.settings_model_fallback_content_filter_summary),
+                            checked = fallbackSettings.onContentFilter,
+                            onCheckedChange = { enabled ->
+                                coroutineScope.launch {
+                                    RuntimeConfigRepository.setModelFallback(fallbackSettings.copy(onContentFilter = enabled))
+                                }
+                            },
+                            startAction = {
+                                EtaPreferenceIcon(icon = Icons.Rounded.FilterAlt, tint = EtaPreferenceColors.Blue)
+                            },
+                        )
+                    }
                 }
             }
 

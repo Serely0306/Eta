@@ -903,6 +903,11 @@
   <string name="settings_open_assistant_failed">无法打开默认助理设置</string>
   <string name="settings_model_not_selected">未选择模型</string>
   <string name="settings_vendor_assistant_model">厂商助手模型</string>
+  <string name="settings_model_fallback_slot">备用模型 %1$d</string>
+  <string name="settings_model_fallback_summary">当前模型失败且重试无效时，按顺序换用备用模型继续</string>
+  <string name="settings_model_fallback_none">不使用</string>
+  <string name="settings_model_fallback_content_filter">回复被拦截时也换模型</string>
+  <string name="settings_model_fallback_content_filter_summary">服务商审核中断回复时改用备用模型重试</string>
   <string name="settings_vendor_assistant_model_summary">接管小爱或小布请求时使用的模型</string>
   <string name="settings_vendor_assistant_model_follow_default">跟随默认模型</string>
   <string name="settings_not_configured">未配置</string>
@@ -1340,6 +1345,7 @@
   <string name="speech_credentials_lost">语音凭据无法解密，请重新填写并保存</string>
   <string name="speech_save_retry">请重试</string>
   <string name="system_notice_model_retry">模型请求重试</string>
+  <string name="system_notice_model_fallback">已切换备用模型</string>
   <string name="tool_inspect_app">检查应用</string>
   <string name="tool_inspect_app_description">查看指定应用的版本、UID、安装信息、启用状态与权限。</string>
   <string name="tool_edit_file">精确编辑文件</string>

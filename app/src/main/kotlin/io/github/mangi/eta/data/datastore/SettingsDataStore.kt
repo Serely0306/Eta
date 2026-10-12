@@ -16,6 +16,7 @@ import io.github.mangi.eta.data.model.AppearancePaletteStyle
 import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
+import io.github.mangi.eta.data.model.ModelFallbackSettings
 import io.github.mangi.eta.data.model.SpeechSettings
 import kotlinx.serialization.json.Json
 import io.github.mangi.eta.data.model.Settings
@@ -49,6 +50,8 @@ internal object SettingsDataStore {
     private val SELECTED_PROVIDER_ID = stringPreferencesKey("selected_provider_id")
     private val SELECTED_MODEL_ID = stringPreferencesKey("selected_model_id")
     private val VENDOR_ASSISTANT_MODEL_ID = stringPreferencesKey("vendor_assistant_model_id")
+    private val MODEL_FALLBACK_IDS = stringPreferencesKey("model_fallback_ids")
+    private val MODEL_FALLBACK_ON_CONTENT_FILTER = booleanPreferencesKey("model_fallback_on_content_filter")
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
@@ -210,6 +213,39 @@ internal object SettingsDataStore {
     suspend fun setVendorAssistantModelId(modelId: String?) {
         ensureInitialized()
         dataStore.edit { prefs -> prefs.putOrRemove(VENDOR_ASSISTANT_MODEL_ID, modelId) }
+    }
+
+    /** 主模型失败后依次换用的备用模型；为空表示不回退。 */
+    fun modelFallbackFlow(): Flow<ModelFallbackSettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) {
+                    emit(emptyPreferences())
+                } else {
+                    throw cause
+                }
+            }
+            .map { prefs ->
+                ModelFallbackSettings(
+                    modelIds = prefs[MODEL_FALLBACK_IDS].orEmpty().split(',').map(String::trim).filter(String::isNotEmpty)
+                        .distinct().take(ModelFallbackSettings.MAX_MODELS),
+                    onContentFilter = prefs[MODEL_FALLBACK_ON_CONTENT_FILTER] ?: false,
+                )
+            }
+    }
+
+    suspend fun modelFallback(): ModelFallbackSettings = modelFallbackFlow().first()
+
+    suspend fun setModelFallback(settings: ModelFallbackSettings) {
+        ensureInitialized()
+        dataStore.edit { prefs ->
+            prefs.putOrRemove(
+                MODEL_FALLBACK_IDS,
+                settings.modelIds.distinct().take(ModelFallbackSettings.MAX_MODELS).joinToString(",").ifEmpty { null },
+            )
+            prefs[MODEL_FALLBACK_ON_CONTENT_FILTER] = settings.onContentFilter
+        }
     }
 
     suspend fun clearSelectedModelIdForProvider(providerId: String) {

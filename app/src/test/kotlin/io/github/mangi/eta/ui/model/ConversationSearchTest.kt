@@ -15,6 +15,7 @@ class ConversationSearchTest {
             SystemNoticeCode.EmptyResult -> "Empty result"
             SystemNoticeCode.ContextCompaction -> "上下文压缩"
             SystemNoticeCode.ModelRetry -> "Retrying"
+            SystemNoticeCode.ModelFallback -> "Fallback"
             SystemNoticeCode.RuntimeFailed -> "Runtime failed"
             SystemNoticeCode.Interrupted -> "Interrupted"
         }

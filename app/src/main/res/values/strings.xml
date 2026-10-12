@@ -270,6 +270,7 @@
   <string name="system_notice_empty_result">The run completed without a text response.</string>
   <string name="system_notice_runtime_failed">Runtime failed</string>
   <string name="system_notice_model_retry">Retrying model request</string>
+  <string name="system_notice_model_fallback">Switched to a fallback model</string>
   <string name="conversation_persistence_failed">Couldn’t save the conversation. Please try again.</string>
   <string name="system_notice_interrupted">The run was interrupted. Partial output is preserved; unfinished actions were not retried.</string>
   <string name="tool_status_unknown">Result unknown</string>
@@ -915,6 +916,11 @@
   <string name="settings_open_assistant_failed">Couldn\'t open default assistant settings</string>
   <string name="settings_model_not_selected">No model selected</string>
   <string name="settings_vendor_assistant_model">Vendor assistant model</string>
+  <string name="settings_model_fallback_slot">Fallback model %1$d</string>
+  <string name="settings_model_fallback_summary">Used in order when the current model keeps failing after retries</string>
+  <string name="settings_model_fallback_none">Not used</string>
+  <string name="settings_model_fallback_content_filter">Also switch when a reply is blocked</string>
+  <string name="settings_model_fallback_content_filter_summary">Retry with the fallback model when provider moderation stops a reply</string>
   <string name="settings_vendor_assistant_model_summary">Model used when XiaoAi or Breeno requests are taken over</string>
   <string name="settings_vendor_assistant_model_follow_default">Follow default model</string>
   <string name="settings_not_configured">Not configured</string>

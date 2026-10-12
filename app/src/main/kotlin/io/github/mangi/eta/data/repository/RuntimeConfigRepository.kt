@@ -2,11 +2,13 @@ package io.github.mangi.eta.data.repository
 
 import android.content.SharedPreferences
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.ModelFallbackPolicy
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomProviderSetting
 import io.github.mangi.eta.data.model.Model
+import io.github.mangi.eta.data.model.ModelFallbackSettings
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.OpenAiCompatibleProviderSetting
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
@@ -97,6 +99,35 @@ internal object RuntimeConfigRepository {
      */
     suspend fun vendorAssistantRuntimeConfig(): AgentModelClient.ModelConfig? =
         runtimeConfigFor(SettingsDataStore.vendorAssistantModelId())
+
+    fun modelFallbackFlow() = SettingsDataStore.modelFallbackFlow()
+
+    suspend fun setModelFallback(settings: ModelFallbackSettings) = SettingsDataStore.setModelFallback(settings)
+
+    /**
+     * 按回退链顺序构造备用模型配置；停用、删除或与主模型相同的条目跳过。
+     * 工具开关沿用主模型配置，由 Runtime 再与本地权限取交集。
+     */
+    suspend fun modelFallbackPolicy(primary: AgentModelClient.ModelConfig): ModelFallbackPolicy {
+        val settings = SettingsDataStore.modelFallback()
+        if (settings.modelIds.isEmpty()) return ModelFallbackPolicy.NONE
+        ProviderRepository.ensureBuiltInsMerged()
+        val providers = ProviderRepository.allProviders()
+        val configs = settings.modelIds.mapNotNull { id ->
+            providers.enabledModel(id)?.let { (provider, model) -> buildRuntimeConfig(provider, model) }
+        }.filterNot { it.providerId == primary.providerId && it.model == primary.model }
+            .map { config ->
+                config.copy(
+                    terminalTools = primary.terminalTools,
+                    browserTools = primary.browserTools,
+                    deviceDirectTools = primary.deviceDirectTools,
+                    deviceSensitiveReadTools = primary.deviceSensitiveReadTools,
+                    deviceSensitiveActionTools = primary.deviceSensitiveActionTools,
+                    autoCompactionEnabled = primary.autoCompactionEnabled,
+                )
+            }
+        return ModelFallbackPolicy(configs, onContentFilter = settings.onContentFilter)
+    }
 
     suspend fun syncToRemotePreferences(service: XposedService?): Boolean {
         val prefs = Prefs.remotePreferencesForUi(service) ?: return false

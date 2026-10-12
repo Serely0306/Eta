@@ -107,9 +107,12 @@ internal object AgentModelClient {
         assistantScreenContext: String = "",
         onContextSnapshot: (AgentContextSnapshot) -> Unit = {},
         onTranscript: (List<ConversationMessage>) -> Unit = {},
+        /** 主模型失败后按顺序换用的备用模型；配置不完整的备用模型直接跳过。 */
+        fallback: ModelFallbackPolicy = ModelFallbackPolicy.NONE,
         onEvent: (AgentEvent) -> Unit = {}
     ): ModelResponse.Text {
         config.validate()
+        val usableFallback = fallback.copy(configs = fallback.configs.filter { runCatching { it.validate() }.isSuccess })
         val initialCapabilities = capabilitiesProvider()
         val initialDisabledTools = if (rewriteReply) emptySet() else disabledToolsProvider()
         val messages = AgentPromptBuilder.buildInitialMessages(
@@ -196,6 +199,7 @@ internal object AgentModelClient {
             purpose = if (rewriteReply) ProviderRequestPurpose.REPLY_REWRITE else ProviderRequestPurpose.CHAT,
             roleplayContext = roleplayContext,
             initialSupplementIndex = initialSupplementIndex,
+            fallback = usableFallback,
             toolsForRound = {
                 val capabilities = capabilitiesProvider()
                 val disabledTools = if (rewriteReply) emptySet() else disabledToolsProvider()
