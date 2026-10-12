@@ -71,8 +71,22 @@ internal class RootShellTerminalController(
         )
     }
 
-    fun terminalAction(args: JSONObject): String {
-        TerminalToolContract.validate(args)?.let { return errorJson(it.code, it.message) }
+    fun terminalAction(rawArgs: JSONObject): String {
+        val (normalized, failure) = TerminalToolContract.normalize(rawArgs)
+        failure?.let { return errorJson(it.code, it.message) }
+        val args = requireNotNull(normalized).args
+        val result = terminalActionWithArgs(args)
+        if (normalized.ignored.isEmpty()) return result
+        // 与当前 action 无关的参数不影响执行，只告知模型以免下次继续传。
+        return runCatching {
+            JSONObject(result)
+                .put("ignored_arguments", JSONArray(normalized.ignored))
+                .put("ignored_reason", "这些参数不适用于 action=${args.optString("action")}，已忽略")
+                .toString()
+        }.getOrDefault(result)
+    }
+
+    private fun terminalActionWithArgs(args: JSONObject): String {
         return terminalAction(
             action = args.getString("action"),
             command = args.optString("command"),

@@ -159,7 +159,7 @@ class RootShellTerminalControllerTest {
     }
 
     @Test
-    fun terminalSchemaAndExecutionRejectIgnoredOrConflictingArguments() {
+    fun terminalSchemaAndExecutionRejectConflictsButIgnoreHarmlessExtras() {
         val tools = JSONArray().also(AgentTerminalToolCatalog::appendTo)
         assertEquals(1, tools.length())
         assertEquals("terminal", tools.getJSONObject(0).getJSONObject("function").getString("name"))
@@ -171,11 +171,10 @@ class RootShellTerminalControllerTest {
             """{"action":"exec","command":"pwd","session_id":"session","environment":"android"}""",
             """{"action":"exec","command":"pwd","session_id":"session","async":true}""",
             """{"action":"open","command":"pwd"}""",
+            """{"action":"read_async_result","job_id":"job","session_id":"session"}""",
             """{"action":"close"}""",
             """{"action":"close","session_id":"session","job_id":"job"}""",
-            """{"action":"daemon_list","identity":"root"}""",
             """{"action":"daemon_logs"}""",
-            """{"action":"daemon_start","command":"sleep 1","timeout_ms":1000}""",
             """{"action":"read_async_result","job_id":"job","offset_chars":-1}""",
             """{"action":"exec","command":"pwd","timeout_ms":"1000"}""",
         )
@@ -204,6 +203,21 @@ class RootShellTerminalControllerTest {
             val legacy = """{"action":"open_and_exec","command":"pwd"}"""
             assertNotNull(validator.validate(AgentModelClient.ToolCall("call", "terminal", legacy)))
             assertNull(TerminalToolContract.validate(JSONObject(legacy)))
+            // 与 action 无关的无害字段（含未声明字段）被剔除并注明，不再导致整次调用失败。
+            mapOf(
+                """{"action":"daemon_list","identity":"root"}""" to listOf("identity"),
+                """{"action":"daemon_start","command":"sleep 1","timeout_ms":1000}""" to listOf("timeout_ms"),
+                """{"action":"open","timeout_ms":1000,"reason":"准备"}""" to listOf("timeout_ms", "reason"),
+            ).forEach { (json, ignored) ->
+                assertNull(json, validator.validate(AgentModelClient.ToolCall("call", "terminal", json)))
+                val (normalized, failure) = TerminalToolContract.normalize(JSONObject(json))
+                assertNull(json, failure)
+                assertEquals(json, ignored.toSet(), normalized!!.ignored.toSet())
+                ignored.forEach { assertFalse(json, normalized.args.has(it)) }
+            }
+            val listed = JSONObject(controller.terminalAction(JSONObject("""{"action":"daemon_list","identity":"root"}""")))
+            assertEquals(listOf("identity"), (0 until listed.getJSONArray("ignored_arguments").length())
+                .map { listed.getJSONArray("ignored_arguments").getString(it) })
         } finally {
             controller.closeAll()
         }

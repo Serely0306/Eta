@@ -236,7 +236,7 @@ Root 探测在 IO 线程执行：存在 `su` 时首次自动请求一次，最�
 
 ## 终端环境
 
-模型目录中的命令执行统一使用 `terminal` 的 `action=exec`；`open` 创建会话后仍以 `exec/session_id` 复用。旧 `run_command` 与 `open_and_exec` 不再向模型公开，执行层保留旧入口供既有调用方兼容；新模型调用仍须通过本轮工具目录校验。`TerminalToolContract` 同时定义模型 Schema 和执行前校验，动作只接受其相关字段；使用 `session_id` 时不能再传 `cwd`、`identity`、`environment`，`async=true` 也不能复用持久会话。
+模型目录中的命令执行统一使用 `terminal` 的 `action=exec`；`open` 创建会话后仍以 `exec/session_id` 复用。旧 `run_command` 与 `open_and_exec` 不再向模型公开，执行层保留旧入口供既有调用方兼容；新模型调用仍须通过本轮工具目录校验。`TerminalToolContract` 同时定义模型 Schema 和执行前校验，并按影响分级：与当前动作无关的无害字段（超时、身份、分页及未声明字段）直接忽略，结果中以 `ignored_arguments` 注明；会改变调用含义的情况仍然拒绝，包括 `command`/`session_id` 用在不接受它们的动作上、使用 `session_id` 时再传 `cwd`、`identity`、`environment`、`async=true` 复用持久会话、`close` 未二选一，以及取值非法。各字段的适用动作写在字段说明中，Provider 删除顶层组合约束时模型仍能看到规则。
 
 `terminal` 的 `environment` 明确区分设备控制与通用 Linux 工具，默认值为 `android`：
 
