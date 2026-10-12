@@ -84,6 +84,9 @@ internal fun McpServersScreen(
             }
         },
     ) {
+        item(key = "device_server") {
+            McpDeviceServerSection()
+        }
         item(key = "servers") {
             EtaPreferenceGroupTitle(stringResource(R.string.mcp_configured_servers, servers.size))
             EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp)) {

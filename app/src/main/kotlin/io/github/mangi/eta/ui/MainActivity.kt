@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
+import io.github.mangi.eta.agent.mcp.server.EtaMcpServerController
 import io.github.mangi.eta.agent.voice.EtaAssistantOverlayService
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.repository.AppearanceSettingsRepository
@@ -36,6 +37,8 @@ class MainActivity : ComponentActivity() {
         installStartupSplash { contentReady }
         enableEdgeToEdge()
         updateAssistantHandoff(intent)
+        // 前台服务只能从前台启动，设备端 MCP 服务随 App 打开按设置恢复。
+        EtaMcpServerController.applySettings(this)
         lifecycleScope.launch {
             val initialAppearance = AppearanceSettingsRepository.settings()
             appliedPredictiveBackEnabled = initialAppearance.predictiveBackEnabled
