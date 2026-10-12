@@ -39,6 +39,7 @@ import io.github.mangi.eta.agent.runtime.AgentRunCheckpointStore
 import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.runtime.AgentUiHandoffPayload
+import io.github.mangi.eta.agent.runtime.ExternalArchiveIds
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
@@ -1978,22 +1979,17 @@ private data class ContentMatchCacheEntry(
     val matches: Boolean,
 )
 
-private const val EXTERNAL_ARCHIVE_CONVERSATION_PREFIX = "archive-"
+private const val EXTERNAL_ARCHIVE_CONVERSATION_PREFIX = ExternalArchiveIds.EXTERNAL_PREFIX
 
 private fun String.isReadOnlyExternalArchiveConversation(): Boolean =
     startsWith(EXTERNAL_ARCHIVE_CONVERSATION_PREFIX)
 
-/** 厂商入口的归档编号带上来源，侧栏据此归组；Eta 语音助手沿用原编号规则。 */
-private fun archiveConversationId(source: String, conversationKey: String): String {
-    if (source == AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE) {
-        return ASSISTANT_CONVERSATION_PREFIX + stableArchiveId("$source:$conversationKey")
-    }
-    val sourceTag = source.filter { it.isLetterOrDigit() || it == '_' }.take(MAX_SOURCE_TAG_CHARS)
-    return "$EXTERNAL_ARCHIVE_CONVERSATION_PREFIX$sourceTag-" + stableArchiveId("$source:$conversationKey")
-}
+/** 编号算法与自动任务结果通知共用，见 [ExternalArchiveIds]。 */
+private fun archiveConversationId(source: String, conversationKey: String): String =
+    ExternalArchiveIds.conversationId(source, conversationKey)
 
 private fun legacyArchiveConversationId(source: String, conversationKey: String): String =
-    EXTERNAL_ARCHIVE_CONVERSATION_PREFIX + stableArchiveId("$source:$conversationKey")
+    ExternalArchiveIds.legacyConversationId(source, conversationKey)
 
 /** 新编号带来源标记；旧编号与被改名前的标题前缀作为兜底识别。 */
 internal fun conversationEntrySource(conversationId: String, title: String): ConversationEntrySource? {
@@ -2003,19 +1999,12 @@ internal fun conversationEntrySource(conversationId: String, title: String): Con
         tagged == AgentRuntimeWire.XIAOAI_HANDOFF_SOURCE || title.startsWith("超级小爱") -> ConversationEntrySource.XiaoAi
         tagged == BREENO_SOURCE_TAG || title.startsWith("小布") -> ConversationEntrySource.Breeno
         tagged == AgentRuntimeWire.PC_MCP_HANDOFF_SOURCE -> ConversationEntrySource.Computer
+        tagged == AgentRuntimeWire.AUTOMATION_HANDOFF_SOURCE -> ConversationEntrySource.Automation
         else -> null
     }
 }
 
 private const val BREENO_SOURCE_TAG = "breeno"
-private const val MAX_SOURCE_TAG_CHARS = 16
-private const val ASSISTANT_CONVERSATION_PREFIX = "assistant-"
-
-private fun stableArchiveId(value: String): String =
-    java.security.MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(Charsets.UTF_8))
-        .take(12)
-        .joinToString(separator = "") { byte -> "%02x".format(byte) }
 
 private fun agentBooleanForUi(key: String): Boolean {
     return Prefs.isEnabled(key)

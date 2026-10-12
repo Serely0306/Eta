@@ -12,6 +12,7 @@ import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.rounded.AccessibilityNew
 import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.BugReport
+import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Dashboard
@@ -399,6 +400,19 @@ private fun SettingsPageContent(
                             )
                         },
                         onClick = { onNavigate(AppRoute.McpServers) },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
+                        title = stringResource(R.string.route_automations),
+                        summary = stringResource(R.string.automation_settings_summary),
+                        startAction = {
+                            EtaPreferenceIcon(
+                                icon = Icons.Rounded.Alarm,
+                                tint = EtaPreferenceColors.Orange,
+                            )
+                        },
+                        onClick = { onNavigate(AppRoute.Automations) },
                     )
 
                     EtaPreferenceDivider()

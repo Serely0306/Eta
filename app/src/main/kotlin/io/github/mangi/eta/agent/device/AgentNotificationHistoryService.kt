@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import io.github.mangi.eta.agent.automation.AgentAutomationRunner
 import io.github.mangi.eta.data.repository.NotificationHistoryRepository
 
 class AgentNotificationHistoryService : NotificationListenerService() {
@@ -12,6 +13,18 @@ class AgentNotificationHistoryService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         record(sbn)
+        // 常驻通知（播放、下载进度等）会反复更新，不作为自动任务的触发源。
+        if (!sbn.isOngoing) {
+            val extras = sbn.notification.extras
+            runCatching {
+                AgentAutomationRunner.onNotification(
+                    context = this,
+                    packageName = sbn.packageName,
+                    title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
+                    text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty(),
+                )
+            }
+        }
     }
 
     override fun onListenerConnected() {

@@ -42,6 +42,7 @@ internal object AgentToolRequirements {
             "skills_inspect_github", "skills_install_from_github",
             // 由 Runtime 执行器直接处理的协作工具；登记后可在工具页单独开关。
             "ask_user", "update_plan", "run_subagents",
+            "manage_automations",
         )
         register(
             RootRequirement.PARTIAL,

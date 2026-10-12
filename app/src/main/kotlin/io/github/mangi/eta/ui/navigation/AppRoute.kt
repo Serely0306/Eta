@@ -66,6 +66,9 @@ sealed interface AppRoute : NavKey {
     data object Memory : AppRoute
 
     @Serializable
+    data object Automations : AppRoute
+
+    @Serializable
     data object LinuxEnvironment : AppRoute
 
     @Serializable

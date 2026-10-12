@@ -80,6 +80,7 @@ import io.github.mangi.eta.ui.screens.enhance.SystemEnhanceScreen
 import io.github.mangi.eta.ui.screens.home.AgentHomeScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServerDetailScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServersScreen
+import io.github.mangi.eta.ui.screens.automation.AutomationsScreen
 import io.github.mangi.eta.ui.screens.memory.AgentMemoryScreen
 import io.github.mangi.eta.ui.screens.permissions.PermissionHealthScreen
 import io.github.mangi.eta.ui.screens.skills.AgentSkillsScreen
@@ -695,6 +696,9 @@ fun AgentAppRoot(
                     onImported = { providerId -> navigator.replace(AppRoute.ModelProviderDetail(providerId)) },
                     onBack = ::popRoute,
                 )
+            }
+            entry<AppRoute.Automations>(swipeDismiss = swipeDismiss) {
+                AutomationsScreen(onBack = ::popRoute)
             }
             entry<AppRoute.McpServers>(swipeDismiss = swipeDismiss) {
                 McpServersScreen(

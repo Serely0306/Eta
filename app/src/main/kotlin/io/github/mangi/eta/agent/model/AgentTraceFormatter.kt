@@ -58,6 +58,7 @@ internal class AgentTraceFormatter {
                     "计划 ${index + 1}/${plan.steps.size}：${plan.steps[index].title.take(PLAN_STEP_PREVIEW_CHARS)}"
                 } ?: "计划已全部完成（${plan.steps.size} 步）"
             } ?: "更新计划"
+            "manage_automations" -> "管理自动任务"
             "run_subagents" -> runCatching { JSONObject(toolCall.argumentsJson).optJSONArray("tasks")?.length() }
                 .getOrNull()?.let { "派出 $it 个子 Agent" } ?: "派出子 Agent"
             "memory_get", "character_memory_get" -> summarizeMemoryGetArguments(toolCall.argumentsJson)

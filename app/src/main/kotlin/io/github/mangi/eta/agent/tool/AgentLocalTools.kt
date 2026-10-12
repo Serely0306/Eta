@@ -6,6 +6,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.SystemClock
+import io.github.mangi.eta.agent.automation.AgentAutomationTool
 import io.github.mangi.eta.agent.browser.AgentBrowserSession
 import io.github.mangi.eta.agent.device.DeviceControlUnavailableException
 import io.github.mangi.eta.agent.device.RootAccess
@@ -234,6 +235,7 @@ internal class AgentLocalTools(
                     in AgentFileToolCatalog.names -> textResult(terminalTool { terminalController.fileTool(toolCall.name, args) })
                     "memory_get" -> textResult(memoryGet(args))
                     "memory_write" -> textResult(memoryWrite(args))
+                    AgentAutomationTool.TOOL_NAME -> textResult(AgentAutomationTool(context).execute(args))
                     "skills_list" -> textResult(skillsList(args))
                     "skills_read" -> textResult(skillsRead(args))
                     "skills_read_resource" -> textResult(skillsReadResource(args))

@@ -42,6 +42,8 @@ internal object AgentRuntimeWire {
     const val XIAOAI_HANDOFF_SOURCE = "xiaoai"
     /** 电脑端经设备端 MCP 服务委托的任务。 */
     const val PC_MCP_HANDOFF_SOURCE = "pc_mcp"
+    /** 定时或通知触发的自动任务。 */
+    const val AUTOMATION_HANDOFF_SOURCE = "automation"
 
     internal class PayloadTooLargeException(sizeBytes: Int) : IllegalArgumentException(
         "Agent Runtime 请求元数据过大（$sizeBytes bytes）；请缩短输入或会话历史后重试"

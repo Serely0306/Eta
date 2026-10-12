@@ -90,6 +90,7 @@ internal fun iconForTool(toolId: String): ImageVector = when (toolId) {
     "ask_user" -> Icons.Rounded.ChatBubble
     "update_plan" -> Icons.Rounded.EditNote
     "run_subagents" -> Icons.Rounded.Layers
+    "manage_automations" -> Icons.Rounded.Alarm
     "press_key" -> Icons.Rounded.KeyboardCommandKey
     "open_system_panel" -> Icons.Rounded.WebAsset
     "read_image" -> Icons.Rounded.Image

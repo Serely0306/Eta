@@ -12,12 +12,12 @@
 | 三 | 设备端 MCP 服务：电脑端 Agent 经 USB 或局域网直接调用设备工具，或把任务委托给 Eta 的 Agent（见 [MCP_SERVER.md](MCP_SERVER.md)），待真机验证 |
 | 四 | 计划工具 `update_plan` 与子 Agent `run_subagents`（见 [AGENT_RUNTIME.md](AGENT_RUNTIME.md)「计划与子 Agent」），待真机验证 |
 | 五 | 用户配置的模型回退链，最多 3 个备用模型（见 [AGENT_RUNTIME.md](AGENT_RUNTIME.md)「模型回退链」），待真机验证 |
+| 六 | 自动任务：定时、间隔、单次与通知触发，Agent 可用 `manage_automations` 自行创建（见 [AGENT_RUNTIME.md](AGENT_RUNTIME.md)「自动任务」），待真机验证 |
 
 ## 后续阶段
 
 顺序未定，按需调整：
 
-- 主动触发（定时、事件、通知等触发 Agent 任务）
 - 减少 GUI 路径；虚拟屏执行界面操作，并在接管期间屏蔽通知
 - 超级小爱语音接管（可行时）
 

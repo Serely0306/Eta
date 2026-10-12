@@ -30,6 +30,8 @@ enum class ConversationEntrySource {
     Breeno,
     /** 电脑端经设备端 MCP 服务委托的任务。 */
     Computer,
+    /** 定时或通知触发的自动任务。 */
+    Automation,
 }
 
 @Immutable
