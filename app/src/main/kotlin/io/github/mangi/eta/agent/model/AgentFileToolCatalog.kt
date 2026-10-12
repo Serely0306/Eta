@@ -50,8 +50,8 @@ internal object AgentFileToolCatalog {
         .put("environment", JSONObject().put("type", "string").put("enum", JSONArray(listOf("android", "linux")))
             .put("description", "文件路径所属环境，默认 android；linux 使用设置中选定的发行版和后端，不能使用宿主 rootfs 路径代替 guest 路径。"))
         .put("identity", JSONObject().put("type", "string").put("enum", JSONArray(listOf("user", "root")))
-            .put("description", "Android 默认 user（Eta App UID，不是 ADB Shell）；需要 Root 时显式 root。Linux 默认按用户选定的 PRoot/chroot 后端解析，不会失败后自动升级身份。"))
-        .put("cwd", text("相对路径的基准目录。Android user 默认 Eta 私有工作区，root 默认 /data/local/tmp/eta；Linux 默认 /workspace。与终端保持相同路径规则。", 4096))
+            .put("description", "Android 在 Root 可用时默认 root；目标位于 Eta 私有目录或为相对路径时默认 user（Eta App UID，不是 ADB Shell），避免 Root 新建的文件破坏 App 自己的属主。Linux 默认按用户选定的 PRoot/chroot 后端解析，不会失败后自动切换身份。"))
+        .put("cwd", text("相对路径的基准目录。省略时 Android 相对路径落在 Eta 私有工作区；显式 root 时默认 /data/local/tmp/eta；Linux 默认 /workspace。与终端保持相同路径规则。", 4096))
 
     private fun path(): JSONObject = text("绝对路径或相对于 cwd 的路径；仅接受文件系统路径，不接受 content URI。使用已导入文件的路径时操作的是该副本。", 4096)
     private fun revision(): JSONObject = text("上一次文件或目录结果中的 revision；不同环境和身份的版本不能混用。", 256)

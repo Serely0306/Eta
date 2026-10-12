@@ -177,7 +177,7 @@ Root 探测在 IO 线程执行：存在 `su` 时首次自动请求一次，最�
 | `glob_files` | 以 `*`、`?`、`**` 路径模式递归查找文件，支持游标续查。 |
 | `grep_files` | 在 UTF-8 文本中搜索单行字面文本，返回文件路径、行号与有界片段；默认区分大小写，不使用正则表达式，也不依赖设备安装 `rg`。 |
 
-文件操作整体受 20 秒时间预算和 Runtime 取消约束。所有文件工具共享 `environment`、`identity`、`cwd`。`environment=android` 默认 `identity=user`，以 Eta App UID 访问普通工作区与当前已授权的共享存储；Root 文件操作必须显式传 `identity=root`。这与终端保留的默认身份规则不同。`environment=linux` 使用用户选定的发行版及 PRoot/chroot 后端，路径和符号链接在该 Linux 环境中解释，默认工作目录为 `/workspace`；不能用宿主 rootfs 路径代替 Linux 内路径，也不会在失败后自动切换环境或升级身份。PRoot 内显示 UID 0 不意味着拥有 Android Root 权限。
+文件操作整体受 20 秒时间预算和 Runtime 取消约束。所有文件工具共享 `environment`、`identity`、`cwd`。`environment=android` 在 Root 可用时默认 `identity=root`，与终端一致；目标位于 Eta 自己的私有数据目录或为相对路径（默认落在私有工作区）时默认 `identity=user`，避免 Root 新建的文件留下 root 属主和错误的 SELinux 标签，导致 App 身份与 Linux 环境之后无法访问。没有 Root 时只能以 Eta App UID 访问普通工作区与当前已授权的共享存储。显式传入的 `identity` 始终优先。`environment=linux` 使用用户选定的发行版及 PRoot/chroot 后端，路径和符号链接在该 Linux 环境中解释，默认工作目录为 `/workspace`；不能用宿主 rootfs 路径代替 Linux 内路径，也不会在失败后自动切换环境或升级身份。PRoot 内显示 UID 0 不意味着拥有 Android Root 权限。
 
 `read_file` 单次可见文本最多 16000 字节，游标只跨过已完整解码的 UTF-8 字符。继续读取时使用返回的 `next_offset_bytes` 并携带 `expected_revision`，不能按请求的 `max_bytes` 推算下一段。非 UTF-8、二进制内容或落在字符中间的字节偏移返回明确错误。`max_lines` 与字节预算同时生效，超长单行可能分段并标记 `line_truncated`；`start_line` 定位也有扫描预算，`start_line_reached=false` 不能被当作已读到目标行或文件末尾。读取期间检测到版本变化时返回 `FILE_CHANGED`。
 
@@ -240,7 +240,7 @@ Root 探测在 IO 线程执行：存在 `su` 时首次自动请求一次，最�
 
 `terminal` 的 `environment` 明确区分设备控制与通用 Linux 工具，默认值为 `android`：
 
-- `android` 继续使用系统 Shell。终端未指定身份时保留当前可用身份规则：Root 可用则默认 `root`，否则 `user`；新文件工具则始终默认 `user`。`user` 是 Eta App UID，不等同于 ADB Shell，也不会因某条命令失败而升级权限。`root` 身份在 `su` 内探测 Magisk、KernelSU、APatch 或系统 BusyBox，并优先进入 standalone `ash`，因此 BusyBox applet 不要求预先加入 PATH。
+- `android` 继续使用系统 Shell。终端未指定身份时保留当前可用身份规则：Root 可用则默认 `root`，否则 `user`；文件工具相同，只是 Eta 私有目录与相对路径默认 `user`。`user` 是 Eta App UID，不等同于 ADB Shell，也不会因某条命令失败而升级权限。`root` 身份在 `su` 内探测 Magisk、KernelSU、APatch 或系统 BusyBox，并优先进入 standalone `ash`，因此 BusyBox applet 不要求预先加入 PATH。
 - `linux` 解析用户选择的发行版和后端。chroot 保持原有 rootfs、独立 mount namespace、`/data/local/tmp/eta` 工作区与特权挂载。新建 PRoot 环境和普通工作区使用 App UID 独占的 `filesDir/terminal-user` 目录，避开旧 Root 目录的属主限制；已有普通环境继续使用原位置，路径统一由 `TerminalPrivateStorage` 解析，`/workspace` 映射该私有工作区。仅映射有权访问的共享目录，拒绝“所有文件访问”后仍可导入导出。Linux 内的模拟 root 不意味着 Android Root，两个后端都不构成隔离安全沙箱。
 - 已建立会话和任务保存后端与实际 rootfs/工作区，不因 Root 变化自动切换。持久任务记录的后端与宿主工作区字段为可选，兼容旧记录。获得 Root 不迁移 PRoot，失去 Root 不删除 chroot 或改变文件属主。
 - 普通 Android Shell 与文件后端使用 App UID；显式 Root 文件操作使用特权路径。图片读取沿用自身的授权文件引用规则。无法直接访问的选择器文件经有界复制导入工作区；目录选择不能冒充可实时访问的路径。

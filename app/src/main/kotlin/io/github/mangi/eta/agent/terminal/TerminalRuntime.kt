@@ -43,6 +43,19 @@ internal object TerminalRuntime {
     fun workspace(identity: String): String =
         if (identity == "root") "/data/local/tmp/eta" else userWorkspacePath
 
+    /**
+     * Eta 自己的私有数据目录。Root 在这里新建文件会留下 root 属主与错误的 SELinux 标签，
+     * 之后 App 身份和 Linux 环境反而读不了，因此文件工具在这些目录内默认保持 App 身份。
+     */
+    val appPrivateRoots: List<String> get() = appContext?.let { context ->
+        listOfNotNull(
+            context.dataDir?.absolutePath,
+            context.applicationInfo?.dataDir,
+            "/data/data/${context.packageName}",
+            "/data/user/0/${context.packageName}",
+        ).distinct()
+    }.orEmpty()
+
     fun nativeExecutable(name: String): File? = nativeLibraryDir?.let { File(it, name) }
         ?.takeIf { it.isFile && it.canExecute() }
 }

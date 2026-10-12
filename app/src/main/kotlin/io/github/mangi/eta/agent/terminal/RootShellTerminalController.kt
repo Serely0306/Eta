@@ -835,8 +835,13 @@ internal class RootShellTerminalController(
         return try {
             val environment = normalizeEnvironment(args.optString("environment", "android"))
             val rootfsPath = rootfsPathFor(environment)
+            // 有 Root 时 Android 文件操作默认 Root，与终端一致；Eta 私有目录（含相对路径）保持 App 身份。
             val identity = args.optString("identity").ifBlank {
-                if (environment.isLinux) TerminalRuntime.defaultIdentity(environment, rootfsPath) else "user"
+                when {
+                    environment.isLinux -> TerminalRuntime.defaultIdentity(environment, rootfsPath)
+                    rootAvailable() && !targetsAppPrivateStorage(args) -> "root"
+                    else -> "user"
+                }
             }.let(::normalizeIdentity)
             environmentPreflight(identity, environment, rootfsPath)?.let { return it }
             val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
@@ -937,6 +942,22 @@ internal class RootShellTerminalController(
         environment.isLinux && LinuxEnvironmentPaths.backendOf(rootfsPath) == LinuxExecutionBackend.PROOT && identity == "root" ->
             errorJson("INVALID_IDENTITY", "免 Root Linux 使用普通应用身份，请使用 identity=user")
         else -> null
+    }
+
+    /** 相对路径默认落在 App 私有工作区；绝对路径以 Eta 数据目录为界，~ 指向共享存储。 */
+    private fun targetsAppPrivateStorage(args: JSONObject): Boolean {
+        val path = args.optString("path")
+        val cwd = args.optString("cwd")
+        val target = when {
+            path.startsWith("/") -> path
+            path == "~" || path.startsWith("~/") -> return false
+            cwd.startsWith("/") -> "$cwd/$path"
+            cwd == "~" || cwd.startsWith("~/") -> return false
+            else -> return true
+        }
+        val normalized = runCatching { java.nio.file.Paths.get(target).normalize().toString() }.getOrDefault(target)
+        return (TerminalRuntime.appPrivateRoots + TerminalRuntime.userWorkspacePath)
+            .any { root -> normalized == root || normalized.startsWith("$root/") }
     }
 
     private fun defaultIdentity(environment: TerminalEnvironment): String = when {

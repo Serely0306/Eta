@@ -101,7 +101,12 @@ internal object AgentPromptBuilder {
                 systemMessage(
                     "任务需要在手机上执行命令、查看 Linux/Android 系统信息、读取/写入文件、查询包名或使用 shell 时，" +
                         "命令执行使用 terminal；文件操作优先使用 read_file/write_file/edit_file/stat_file/list_directory/glob_files/grep_files。" +
-                        "文件工具的 environment 与终端相同；Android 文件工具默认 identity=user，只有明确需要且授权可用时才显式指定 root。" +
+                        "文件工具的 environment 与终端相同；" +
+                        (if (rootAvailable) {
+                            "Android 文件工具在 Root 可用时默认以 root 访问，Eta 私有目录与相对路径默认使用 App 身份，一般不需要显式传 identity。"
+                        } else {
+                            "当前只能以 Eta App UID（identity=user）访问 Android 文件。"
+                        }) +
                         "普通 Shell 是 Eta App UID，不等同于 adb shell；以工具返回的实际运行环境为准，不假设 Bash、GNU 参数或 rg 已安装。" +
                         "读取后用 next_offset_bytes 与 expected_revision 续读；修改已有文本优先 edit_file，匹配失败先重新读取，不猜测旧内容。" +
                         "目录、搜索或日志返回不完整标记时，只能针对实际采集范围下结论；文档导入路径表示副本，修改副本不等于写回原文件。" +

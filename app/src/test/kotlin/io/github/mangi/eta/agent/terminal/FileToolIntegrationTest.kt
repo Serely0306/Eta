@@ -9,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FileToolIntegrationTest {
-    @Test fun newFileToolsDefaultToAppIdentityEvenWhenRootIsAvailable() {
+    @Test fun privateWorkspaceKeepsAppIdentityEvenWhenRootIsAvailable() {
         val directory = File(TerminalRuntime.userWorkspacePath, "file-contract-${System.nanoTime()}").apply { mkdirs() }
         val file = File(directory, "中文 '$' config.txt").apply { writeText("甲乙丙丁\n".repeat(6000)) }
         val controller = RootShellTerminalController(NoopLogger, rootAvailable = { true })
@@ -27,6 +27,11 @@ class FileToolIntegrationTest {
                 .put("old_text", "甲").put("new_text", "己").put("replace_all", true).put("expected_revision", first.getString("revision"))))
             assertEquals("FILE_CHANGED", stale.getString("code"))
             assertTrue(file.readText().startsWith("甲"))
+            // 相对路径落在私有工作区，同样保持 App 身份。
+            val relative = JSONObject(controller.fileTool("stat_file", JSONObject()
+                .put("path", "${directory.name}/${file.name}")))
+            assertTrue(relative.toString(), relative.getBoolean("ok"))
+            assertEquals("user", relative.getString("identity"))
         } finally { controller.close(); directory.deleteRecursively() }
     }
 
