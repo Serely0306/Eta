@@ -29,7 +29,8 @@
 | 设备端 MCP 服务：委托任务与“电脑端”会话分组 | `6dd1dc0` | I11–I15 | 未执行 |
 | 设备端 MCP 服务：切换局域网开关后立即重绑端口 | `1ada506` | I16 | 未执行 |
 | 设备端 MCP 服务：电脑端连接情况与复制命令 | `89867a6` | I17–I18 | 未执行 |
-| 设备端 MCP 服务：出口脱敏、可逆占位与截图开关 | 本提交 | I19–I22 | 未执行 |
+| 设备端 MCP 服务：出口脱敏、可逆占位与截图开关 | `13bbbcf` | I19–I22 | 未执行 |
+| 设备端 MCP 服务：委托任务限定可调用的模型 | 本提交 | I23–I26 | 未执行 |
 | 小爱 8.2.65 唤醒与电源键语音交给 Eta | `7010ad3` | G4–G7 | 未执行 |
 | 计划工具与子 Agent | `e2f14b8`、`c359ab3` | J1–J9 | 未执行 |
 | 模型回退链 | `1548476` | K1–K9 | 未执行 |
@@ -237,6 +238,10 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | I20 `M` | 参数中带一个从未出现过的 `[PHONE_999]` 调用 `terminal` | `isError=true`，错误码为 `UNKNOWN_PLACEHOLDER`；命令没有执行 |
 | I21 `M` | 默认设置下 `observe_screen` 带 `include_screenshot=true`；`browser_use` 截图；查看 `tools/list`；开启“允许返回截图与图片”后重复 | 关闭时没有 image 内容，`observe_screen` 仍返回 UI 树，浏览器结果附“已省略”说明，列表中没有 `read_image`；开启后图片返回、`read_image` 出现 |
 | I22 `M` | 取得一个占位符后切换“允许局域网连接”；关闭“号码类信息脱敏”后重复 I19 | 切换后占位符仍可还原；关闭脱敏后输出原值，传回旧占位符仍可还原 |
+| I23 `M` | 不勾选任何模型时查看 `tools/list` 中的 `eta_task_start`，并带 `model` 调用一次 | schema 中没有 `model`；带 `model` 时返回 `INVALID_ARGUMENT`；不带时任务走默认模型（同 I11） |
+| I24 `M` | 准备两个 Mock 模型（`e2e-mock-a`、`e2e-mock-b`，剧本中各自回复自己的名字），只勾选两者；分别不带 `model` 和带 `e2e-mock-b` 启动任务 | `model.enum` 只含这两个 id；前者 `model.id` 为列表中靠前的模型，结果为它的回复；后者结果为 `e2e-mock-b` 的回复 |
+| I25 `M` | 只勾选 `e2e-mock-a`，并把它的剧本设为持续失败；回退链中放入未勾选的 `e2e-mock-b` | 任务以失败结束，Mock 服务没有收到发往 `e2e-mock-b` 的请求 |
+| I26 `M` | 勾选 `e2e-mock-a` 后在模型提供商中停用它，再启动任务；传入未勾选的模型 id | 前者返回 `MODEL_UNAVAILABLE`，后者返回 `INVALID_ARGUMENT`；两者都没有向默认模型发出请求 |
 
 ### J. 计划与子 Agent
 

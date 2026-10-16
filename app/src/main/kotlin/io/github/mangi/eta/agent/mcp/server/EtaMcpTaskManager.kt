@@ -23,10 +23,30 @@ internal class EtaMcpTaskManager(
     private val launch: (name: String, block: () -> Unit) -> Unit = { name, block ->
         thread(name = name, isDaemon = true) { block() }
     },
+    /** 每次列出工具与启动任务时读取，用户在手机上修改勾选后立即生效。 */
+    private val models: () -> ModelChoices = { ModelChoices.DEFAULT_MODEL },
 ) {
+    data class ModelOption(val id: String, val label: String)
+
+    /**
+     * 委托任务可用的模型。[restricted] 为 false 时使用 Eta 的默认模型；为 true 时只能用 [options]
+     * 中的模型，第一个为默认，[options] 为空表示勾选的模型都已停用或删除。
+     */
+    data class ModelChoices(val restricted: Boolean, val options: List<ModelOption>) {
+        companion object {
+            val DEFAULT_MODEL = ModelChoices(restricted = false, options = emptyList())
+        }
+    }
+
     interface Runner {
-        /** 阻塞执行一次 run，并维护该会话的历史。 */
-        fun run(runId: String, conversationKey: String, prompt: String, onEvent: (AgentEvent) -> Unit): AgentRuntimeWire.RunResult
+        /** 阻塞执行一次 run，并维护该会话的历史；[modelId] 为 null 时使用 Eta 的默认模型。 */
+        fun run(
+            runId: String,
+            conversationKey: String,
+            prompt: String,
+            modelId: String?,
+            onEvent: (AgentEvent) -> Unit,
+        ): AgentRuntimeWire.RunResult
         fun cancel(runId: String)
         fun steer(runId: String, text: String): Boolean
         fun answer(runId: String, questionId: String, answer: AgentUserAnswer): Boolean
@@ -40,7 +60,7 @@ internal class EtaMcpTaskManager(
         STOPPED("stopped", true),
     }
 
-    private class Task(val id: String, val conversationKey: String) {
+    private class Task(val id: String, val conversationKey: String, val model: ModelOption?) {
         val lock = ReentrantLock()
         val changed = lock.newCondition()
         var status = Status.RUNNING
@@ -80,6 +100,10 @@ internal class EtaMcpTaskManager(
         val conversationKey = args.optString("conversation_id").trim().ifEmpty { UUID.randomUUID().toString() }
         require(CONVERSATION_ID.matches(conversationKey)) { "conversation_id 只能包含字母、数字、- 和 _，最长 64 字" }
         val waitMs = waitMs(args, DEFAULT_WAIT_SECONDS)
+        val model = when (val choice = chooseModel(args.optString("model").trim())) {
+            is ModelChoice.Use -> choice.model
+            is ModelChoice.Unavailable -> return choice.failure
+        }
         val task = synchronized(tasks) {
             prune()
             tasks.values.firstOrNull { it.conversationKey == conversationKey && !it.lock.withLock { it.status.terminal } }
@@ -87,17 +111,39 @@ internal class EtaMcpTaskManager(
                     return failure("CONVERSATION_BUSY", "该会话已有任务在执行，可等待它结束或先停止")
                         .put("task_id", busy.id)
                 }
-            Task(UUID.randomUUID().toString(), conversationKey).also { tasks[it.id] = it }
+            Task(UUID.randomUUID().toString(), conversationKey, model).also { tasks[it.id] = it }
         }
         launch("eta-mcp-task") {
             val result = runCatching {
-                runner.run(task.id, conversationKey, prompt) { event -> onEvent(task, event) }
+                runner.run(task.id, conversationKey, prompt, model?.id) { event -> onEvent(task, event) }
             }.getOrElse { throwable ->
                 AgentRuntimeWire.RunResult(task.id, ok = false, content = "", error = throwable.message ?: "任务启动失败")
             }
             finish(task, result)
         }
         return await(task, waitMs)
+    }
+
+    private sealed interface ModelChoice {
+        /** [model] 为 null 表示使用 Eta 的默认模型。 */
+        class Use(val model: ModelOption?) : ModelChoice
+        class Unavailable(val failure: JSONObject) : ModelChoice
+    }
+
+    /** 开放了模型选择时只接受勾选范围内的模型，任何情况下都不悄悄换成默认模型。 */
+    private fun chooseModel(requested: String): ModelChoice {
+        val choices = models()
+        if (!choices.restricted) {
+            require(requested.isEmpty()) { "手机上未开放模型选择，省略 model 即使用 Eta 的默认模型" }
+            return ModelChoice.Use(null)
+        }
+        val first = choices.options.firstOrNull() ?: return ModelChoice.Unavailable(
+            failure("MODEL_UNAVAILABLE", "手机上为电脑端勾选的模型均已停用或删除，请在 Eta 的 MCP 页重新勾选"),
+        )
+        if (requested.isEmpty()) return ModelChoice.Use(first)
+        val model = choices.options.firstOrNull { it.id == requested }
+            ?: throw IllegalArgumentException("model 不在可用列表中，可选：" + choices.options.joinToString { it.id })
+        return ModelChoice.Use(model)
     }
 
     private fun onEvent(task: Task, event: AgentEvent) = task.lock.withLock {
@@ -237,6 +283,7 @@ internal class EtaMcpTaskManager(
             .put("step_count", task.stepCount)
             .put("recent_steps", JSONArray(task.steps.toList()))
             .apply {
+                task.model?.let { put("model", JSONObject().put("id", it.id).put("name", it.label)) }
                 task.currentTool?.let { put("current_tool", it) }
                 task.planJson?.let { raw -> runCatching { JSONObject(raw) }.getOrNull()?.let { put("plan", it) } }
                 task.questionId?.let { id ->
@@ -284,22 +331,43 @@ internal class EtaMcpTaskManager(
     private fun failure(code: String, message: String) =
         JSONObject().put("ok", false).put("code", code).put("message", message)
 
-    fun tools(): List<EtaMcpTool> = listOf(
-        EtaMcpTool(
+    fun tools(): List<EtaMcpTool> = listOf(startTool(models())) + fixedTools
+
+    private fun startTool(choices: ModelChoices): EtaMcpTool {
+        val modelProperty = choices.options.takeIf { choices.restricted && it.isNotEmpty() }?.let { options ->
+            "model" to JSONObject().put("type", "string").put("enum", JSONArray(options.map { it.id }))
+                .put(
+                    "description",
+                    "可选；执行任务的模型，省略时使用 ${options.first().id}。可选：" +
+                        options.joinToString("；") { "${it.id} = ${it.label}" },
+                )
+        }
+        val modelHint = when {
+            !choices.restricted -> "任务使用 Eta 的默认模型。"
+            modelProperty != null -> "任务只能使用手机上为电脑端勾选的模型，见 model 参数。"
+            else -> "手机上为电脑端勾选的模型当前均不可用，任务会以 MODEL_UNAVAILABLE 失败。"
+        }
+        return EtaMcpTool(
             name = START,
             description = "把一项任务交给手机上的 Eta Agent 执行（它会用自己的模型和设备工具完成，包括操作界面、终端、文件等），" +
                 "适合需要多步操作或在手机上自主完成的事情；只需单个设备操作时直接调用对应工具更快。" +
                 "立即返回 task_id，并最多等待 wait_seconds 秒：任务结束或需要回答问题时提前返回。" +
-                "继续同一段对话时传入上次返回的 conversation_id。",
+                "继续同一段对话时传入上次返回的 conversation_id。" + modelHint,
             inputSchema = schema(
                 listOf("prompt"),
-                "prompt" to JSONObject().put("type", "string").put("maxLength", MAX_PROMPT_CHARS)
-                    .put("description", "交给 Eta 的任务描述，写清目标与完成标准"),
-                "conversation_id" to JSONObject().put("type", "string").put("maxLength", 64)
-                    .put("description", "可选；相同 id 的任务共享上下文，省略时新开会话"),
-                "wait_seconds" to waitSchema(DEFAULT_WAIT_SECONDS),
+                *listOfNotNull(
+                    "prompt" to JSONObject().put("type", "string").put("maxLength", MAX_PROMPT_CHARS)
+                        .put("description", "交给 Eta 的任务描述，写清目标与完成标准"),
+                    "conversation_id" to JSONObject().put("type", "string").put("maxLength", 64)
+                        .put("description", "可选；相同 id 的任务共享上下文，省略时新开会话"),
+                    modelProperty,
+                    "wait_seconds" to waitSchema(DEFAULT_WAIT_SECONDS),
+                ).toTypedArray(),
             ),
-        ),
+        )
+    }
+
+    private val fixedTools = listOf(
         EtaMcpTool(
             name = STATUS,
             description = "查询委托任务的状态、最近步骤、待回答问题与最终结果；任务仍在执行时最多等待 wait_seconds 秒，结束或需要回答时提前返回。",

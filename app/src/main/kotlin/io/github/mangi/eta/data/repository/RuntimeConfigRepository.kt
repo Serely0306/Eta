@@ -86,6 +86,14 @@ internal object RuntimeConfigRepository {
         return currentRuntimeConfig()
     }
 
+    /** 指定模型仍启用时返回其配置；与 [runtimeConfigFor] 不同，不可用时返回 null，不回落到默认模型。 */
+    suspend fun enabledRuntimeConfig(modelId: String): AgentModelClient.ModelConfig? {
+        ProviderRepository.ensureBuiltInsMerged()
+        return ProviderRepository.allProviders().enabledModel(modelId)?.let { (provider, model) ->
+            buildRuntimeConfig(provider, model)
+        }
+    }
+
     fun vendorAssistantModelIdFlow() = SettingsDataStore.vendorAssistantModelIdFlow()
 
     suspend fun setVendorAssistantModelId(modelId: String?, service: XposedService?): Boolean {
@@ -107,13 +115,18 @@ internal object RuntimeConfigRepository {
     /**
      * 按回退链顺序构造备用模型配置；停用、删除或与主模型相同的条目跳过。
      * 工具开关沿用主模型配置，由 Runtime 再与本地权限取交集。
+     * [allowedModelIds] 非空时只保留其中的模型（电脑端任务限定了可用模型时使用）。
      */
-    suspend fun modelFallbackPolicy(primary: AgentModelClient.ModelConfig): ModelFallbackPolicy {
+    suspend fun modelFallbackPolicy(
+        primary: AgentModelClient.ModelConfig,
+        allowedModelIds: Set<String>? = null,
+    ): ModelFallbackPolicy {
         val settings = SettingsDataStore.modelFallback()
-        if (settings.modelIds.isEmpty()) return ModelFallbackPolicy.NONE
+        val modelIds = settings.modelIds.filter { allowedModelIds == null || it in allowedModelIds }
+        if (modelIds.isEmpty()) return ModelFallbackPolicy.NONE
         ProviderRepository.ensureBuiltInsMerged()
         val providers = ProviderRepository.allProviders()
-        val configs = settings.modelIds.mapNotNull { id ->
+        val configs = modelIds.mapNotNull { id ->
             providers.enabledModel(id)?.let { (provider, model) -> buildRuntimeConfig(provider, model) }
         }.filterNot { it.providerId == primary.providerId && it.model == primary.model }
             .map { config ->

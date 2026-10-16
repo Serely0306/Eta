@@ -1274,6 +1274,9 @@
   <string name="mcp_device_server_redact_summary">工具结果里的手机号、邮箱、身份证号、银行卡号与验证码替换为 [PHONE_1] 这类占位符，电脑端传回占位符时在手机上还原；不覆盖姓名、地址</string>
   <string name="mcp_device_server_allow_images">允许返回截图与图片</string>
   <string name="mcp_device_server_allow_images_summary">关闭时不发送屏幕截图、网页截图与图片文件，界面操作依靠 UI 树；开启后图片内容不做脱敏</string>
+  <string name="mcp_device_server_models_title">电脑端可调用的模型</string>
+  <string name="mcp_device_server_models_summary">经 eta_task_start 委托的任务只能使用勾选的模型，靠前的为默认，备用模型也只换用勾选范围内的；都不勾选时使用 Eta 的默认模型</string>
+  <string name="mcp_device_server_models_empty">还没有已启用的模型，请先在模型提供商中添加</string>
   <string name="mcp_device_server_copy_token">复制访问令牌</string>
   <string name="mcp_device_server_regenerate_token">重新生成令牌</string>
   <string name="mcp_device_server_regenerate_summary">已配置的电脑端需要更新为新令牌</string>

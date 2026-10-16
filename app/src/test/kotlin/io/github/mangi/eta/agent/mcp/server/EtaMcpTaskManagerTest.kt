@@ -23,14 +23,17 @@ class EtaMcpTaskManagerTest {
         val answers = LinkedBlockingQueue<AgentUserAnswer>()
         val cancelled = CountDownLatch(1)
         val prompts = mutableListOf<Pair<String, String>>()
+        val modelIds = LinkedBlockingQueue<String>()
 
         override fun run(
             runId: String,
             conversationKey: String,
             prompt: String,
+            modelId: String?,
             onEvent: (AgentEvent) -> Unit,
         ): AgentRuntimeWire.RunResult {
             synchronized(prompts) { prompts += conversationKey to prompt }
+            modelIds.put(modelId ?: DEFAULT_MODEL_MARKER)
             while (true) {
                 val step = steps.poll(5, TimeUnit.SECONDS) ?: return AgentRuntimeWire.RunResult(runId, false, "", "timeout")
                 step(onEvent)?.let { return it.copy(runId = runId) }
@@ -48,13 +51,63 @@ class EtaMcpTaskManagerTest {
     }
 
     private val runner = ScriptedRunner()
-    private val manager = EtaMcpTaskManager(runner)
+    private var modelChoices = EtaMcpTaskManager.ModelChoices.DEFAULT_MODEL
+    private val manager = EtaMcpTaskManager(runner, models = { modelChoices })
 
     @After
     fun tearDown() {
         // 让仍在等待脚本的运行线程尽快结束。
         repeat(4) { runner.steps.put { AgentRuntimeWire.RunResult("", false, "", "test finished") } }
     }
+
+    @Test
+    fun withoutModelSelectionTasksUseTheDefaultModel() {
+        val schema = startSchema()
+        assertFalse(schema.getJSONObject("properties").has("model"))
+        val rejected = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("model", "m-1"))
+        assertEquals("INVALID_ARGUMENT", rejected.getString("code"))
+
+        runner.steps.put { AgentRuntimeWire.RunResult("", ok = true, content = "ok") }
+        val done = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("wait_seconds", 5))
+        assertEquals("completed", done.getString("status"))
+        assertFalse(done.has("model"))
+        assertEquals(DEFAULT_MODEL_MARKER, runner.modelIds.poll(5, TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun restrictedModelsAreListedDefaultedAndEnforced() {
+        modelChoices = EtaMcpTaskManager.ModelChoices(
+            restricted = true,
+            options = listOf(
+                EtaMcpTaskManager.ModelOption("m-local", "Local / Qwen"),
+                EtaMcpTaskManager.ModelOption("m-cloud", "Cloud / GPT"),
+            ),
+        )
+        val model = startSchema().getJSONObject("properties").getJSONObject("model")
+        assertEquals(listOf("m-local", "m-cloud"), model.getJSONArray("enum").let { e -> (0 until e.length()).map(e::getString) })
+
+        runner.steps.put { AgentRuntimeWire.RunResult("", ok = true, content = "ok") }
+        val defaulted = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("wait_seconds", 5))
+        assertEquals("m-local", defaulted.getJSONObject("model").getString("id"))
+        assertEquals("m-local", runner.modelIds.poll(5, TimeUnit.SECONDS))
+
+        runner.steps.put { AgentRuntimeWire.RunResult("", ok = true, content = "ok") }
+        manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("model", "m-cloud").put("wait_seconds", 5))
+        assertEquals("m-cloud", runner.modelIds.poll(5, TimeUnit.SECONDS))
+
+        val unknown = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("model", "m-other"))
+        assertEquals("INVALID_ARGUMENT", unknown.getString("code"))
+
+        modelChoices = EtaMcpTaskManager.ModelChoices(restricted = true, options = emptyList())
+        assertFalse(startSchema().getJSONObject("properties").has("model"))
+        val unavailable = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x"))
+        assertEquals("MODEL_UNAVAILABLE", unavailable.getString("code"))
+        // 被拒绝的请求都没有启动任务。
+        assertTrue(runner.modelIds.isEmpty())
+    }
+
+    private fun startSchema(): JSONObject =
+        manager.tools().first { it.name == EtaMcpTaskManager.START }.inputSchema
 
     @Test
     fun startReturnsRunningThenStatusWaitsForCompletion() {
@@ -167,5 +220,9 @@ class EtaMcpTaskManagerTest {
     fun toolCatalogCoversAllTaskTools() {
         assertEquals(EtaMcpTaskManager.TOOL_NAMES, manager.tools().map { it.name }.toSet())
         manager.tools().forEach { tool -> assertEquals("object", tool.inputSchema.getString("type")) }
+    }
+
+    private companion object {
+        const val DEFAULT_MODEL_MARKER = "<default>"
     }
 }

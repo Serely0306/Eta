@@ -113,7 +113,10 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
         /** 委托任务跨 MCP 会话与服务重启保留，进程内共用一份。 */
         private fun sharedTaskManager(context: Context): EtaMcpTaskManager =
             taskManager ?: synchronized(this) {
-                taskManager ?: EtaMcpTaskManager(EtaMcpRuntimeTaskRunner(context)).also { taskManager = it }
+                taskManager ?: EtaMcpTaskManager(
+                    runner = EtaMcpRuntimeTaskRunner(context),
+                    models = { runBlocking { EtaMcpModelAccess.choices() } },
+                ).also { taskManager = it }
             }
 
         private val IMAGE_ONLY_TOOLS = setOf("read_image")

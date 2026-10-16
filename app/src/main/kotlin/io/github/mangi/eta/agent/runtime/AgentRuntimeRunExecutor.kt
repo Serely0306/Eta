@@ -21,6 +21,7 @@ import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.agent.mcp.McpRunSnapshot
 import io.github.mangi.eta.agent.mcp.McpToolExecutor
 import io.github.mangi.eta.agent.mcp.RoutingToolExecutor
+import io.github.mangi.eta.agent.mcp.server.EtaMcpModelAccess
 import io.github.mangi.eta.agent.overlay.AgentOverlayVisibilityPolicy
 import io.github.mangi.eta.agent.skill.SkillCompatibilityChecker
 import io.github.mangi.eta.agent.skill.SkillContext
@@ -255,13 +256,15 @@ internal class AgentRuntimeRunExecutor(
                 ModelFallbackPolicy.NONE
             } else {
                 val resolved = runBlocking {
-                    runCatching { RuntimeConfigRepository.modelFallbackPolicy(request.config) }
-                        .getOrElse { throwable ->
-                            AndroidAgentLogger.warnThrottled("agent_model_fallback_unavailable") {
-                                "Model fallback settings unavailable: type=${throwable.safeLogType()}"
-                            }
-                            ModelFallbackPolicy.NONE
+                    // 电脑端任务限定了可用模型时，备用模型也只在其中选。
+                    runCatching {
+                        RuntimeConfigRepository.modelFallbackPolicy(request.config, EtaMcpModelAccess.fallbackScope(request))
+                    }.getOrElse { throwable ->
+                        AndroidAgentLogger.warnThrottled("agent_model_fallback_unavailable") {
+                            "Model fallback settings unavailable: type=${throwable.safeLogType()}"
                         }
+                        ModelFallbackPolicy.NONE
+                    }
                 }
                 val permissions = currentPermissions()
                 resolved.copy(configs = resolved.configs.map { AgentRuntimePolicy.constrain(it, permissions) })

@@ -1292,6 +1292,9 @@
   <string name="mcp_device_server_redact_summary">Phone numbers, emails, ID numbers, bank cards and verification codes in tool results become placeholders such as [PHONE_1]; placeholders the computer sends back are restored on this phone. Names and addresses are not covered</string>
   <string name="mcp_device_server_allow_images">Allow screenshots and images</string>
   <string name="mcp_device_server_allow_images_summary">Off: screen and web screenshots and image files are not sent, and screen operations rely on the UI tree. Images are never masked</string>
+  <string name="mcp_device_server_models_title">Models the computer can use</string>
+  <string name="mcp_device_server_models_summary">Tasks delegated with eta_task_start can only use the checked models; the first checked one is the default, and fallback models are limited to them. With nothing checked, Eta\'s default model is used</string>
+  <string name="mcp_device_server_models_empty">No enabled models yet. Add one under Model providers first</string>
   <string name="mcp_device_server_copy_token">Copy access token</string>
   <string name="mcp_device_server_regenerate_token">Regenerate token</string>
   <string name="mcp_device_server_regenerate_summary">Configured computers need the new token</string>

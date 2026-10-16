@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import android.util.Base64
 import io.github.mangi.eta.config.Prefs
 import java.security.SecureRandom
+import org.json.JSONArray
 
 /**
  * 设备端 MCP 服务的配置，保存在 App 私有的本地 Agent 配置中，不同步到 Hook 进程。
@@ -74,10 +75,16 @@ internal data class EtaMcpPrivacySettings(
     val redactOutput: Boolean = true,
     /** 是否向电脑端返回屏幕截图、网页截图与图片文件。 */
     val allowImages: Boolean = false,
+    /**
+     * 委托任务可用的模型（Eta 内部模型 id），靠前的为默认。为空时委托任务使用 Eta 的默认模型；
+     * 非空时只能使用其中的模型，回退链也只在其中切换。
+     */
+    val taskModelIds: List<String> = emptyList(),
 ) {
     companion object {
         private const val KEY_REDACT_OUTPUT = "mcp_server_redact_output"
         private const val KEY_ALLOW_IMAGES = "mcp_server_allow_images"
+        private const val KEY_TASK_MODEL_IDS = "mcp_server_task_model_ids"
 
         fun load(preferences: SharedPreferences? = Prefs.localAgentPreferences()): EtaMcpPrivacySettings {
             // 读不到配置时按最严格的默认值处理。
@@ -86,6 +93,7 @@ internal data class EtaMcpPrivacySettings(
                 EtaMcpPrivacySettings(
                     redactOutput = prefs.getBoolean(KEY_REDACT_OUTPUT, true),
                     allowImages = prefs.getBoolean(KEY_ALLOW_IMAGES, false),
+                    taskModelIds = decodeIds(prefs.getString(KEY_TASK_MODEL_IDS, null)),
                 )
             }.getOrDefault(EtaMcpPrivacySettings())
         }
@@ -99,8 +107,15 @@ internal data class EtaMcpPrivacySettings(
                 prefs.edit()
                     .putBoolean(KEY_REDACT_OUTPUT, settings.redactOutput)
                     .putBoolean(KEY_ALLOW_IMAGES, settings.allowImages)
+                    .putString(KEY_TASK_MODEL_IDS, JSONArray(settings.taskModelIds.distinct()).toString())
                     .commit()
             }.getOrDefault(false)
+        }
+
+        /** 读不出的列表视为空（使用默认模型），不因格式问题阻断服务。 */
+        private fun decodeIds(raw: String?): List<String> {
+            val array = raw?.let { runCatching { JSONArray(it) }.getOrNull() } ?: return emptyList()
+            return (0 until array.length()).mapNotNull { index -> array.optString(index).takeIf(String::isNotBlank) }.distinct()
         }
     }
 }

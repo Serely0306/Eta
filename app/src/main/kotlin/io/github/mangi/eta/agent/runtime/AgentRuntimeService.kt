@@ -46,6 +46,7 @@ import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.media.AgentImageCodec
+import io.github.mangi.eta.agent.mcp.server.EtaMcpModelAccess
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentUserAnswer
 import io.github.mangi.eta.agent.model.AgentUserQuestion
@@ -347,7 +348,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     null -> request
                     AgentRuntimeRequestConfigResolver.RuntimeConfigSource.DEFAULT_MODEL -> {
                         val runtimeConfig = runBlocking {
-                            RuntimeConfigRepository.currentRuntimeConfig()
+                            // 电脑端任务可能限定了可用模型，由 MCP 侧策略解析，不可用时不回落到默认模型。
+                            if (request.handoff?.source == AgentRuntimeWire.PC_MCP_HANDOFF_SOURCE) {
+                                EtaMcpModelAccess.runtimeConfig(request)
+                            } else {
+                                RuntimeConfigRepository.currentRuntimeConfig()
+                            }
                         } ?: throw RuntimeConfigUnavailableException()
                         AgentRuntimeRequestConfigResolver.applyRuntimeConfig(request, runtimeConfig)
                     }

@@ -1262,6 +1262,9 @@
   <string name="mcp_device_server_redact_summary">工具結果裡的手機號碼、電子郵件、身分證號、銀行卡號與驗證碼替換為 [PHONE_1] 這類佔位符，電腦端傳回佔位符時在手機上還原；不涵蓋姓名、地址</string>
   <string name="mcp_device_server_allow_images">允許回傳螢幕截圖與圖片</string>
   <string name="mcp_device_server_allow_images_summary">關閉時不傳送螢幕截圖、網頁截圖與圖片檔案，介面操作依靠 UI 樹；開啟後圖片內容不做遮蔽</string>
+  <string name="mcp_device_server_models_title">電腦端可呼叫的模型</string>
+  <string name="mcp_device_server_models_summary">經 eta_task_start 委派的任務只能使用勾選的模型，靠前的為預設，備用模型也只換用勾選範圍內的；都不勾選時使用 Eta 的預設模型</string>
+  <string name="mcp_device_server_models_empty">還沒有已啟用的模型，請先在模型供應商中新增</string>
   <string name="mcp_device_server_copy_token">複製存取權杖</string>
   <string name="mcp_device_server_regenerate_token">重新產生權杖</string>
   <string name="mcp_device_server_regenerate_summary">已設定的電腦端需要更新為新權杖</string>
