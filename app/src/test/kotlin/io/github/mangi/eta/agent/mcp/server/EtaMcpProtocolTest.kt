@@ -169,6 +169,22 @@ class EtaMcpProtocolTest {
     }
 
     @Test
+    fun closedServerReleasesItsPortForAnImmediateRebind() {
+        // 切换局域网开关时先关旧监听、立刻在同一端口换地址重绑。
+        val first = EtaMcpHttpServer(InetAddress.getLoopbackAddress(), 0, protocol::handle)
+        first.start()
+        val port = first.boundPort
+        first.close()
+        val second = EtaMcpHttpServer(InetAddress.getByName("0.0.0.0"), port, protocol::handle)
+        try {
+            second.start()
+            assertEquals(port, second.boundPort)
+        } finally {
+            second.close()
+        }
+    }
+
+    @Test
     fun parserHandlesChunkedBodiesAndRejectsOversizedOnes() {
         val chunked = "POST /mcp HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nabcd\r\n2\r\nef\r\n0\r\n\r\n"
         val request = EtaMcpHttpServer.readRequest(ByteArrayInputStream(chunked.toByteArray()))

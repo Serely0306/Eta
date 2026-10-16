@@ -4,6 +4,7 @@ import android.content.Context
 import io.github.mangi.eta.agent.runtime.AgentExecutionService
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
+import java.net.BindException
 import java.net.Inet4Address
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -31,6 +32,8 @@ internal object EtaMcpServerController {
     }
 
     private const val LEASE_ID = "mcp-server"
+    private const val BIND_ATTEMPTS = 5
+    private const val BIND_RETRY_DELAY_MS = 300L
 
     private val mutableStatus = MutableStateFlow<Status>(Status.Stopped)
     val status: StateFlow<Status> = mutableStatus.asStateFlow()
@@ -78,7 +81,7 @@ internal object EtaMcpServerController {
             },
         )
         try {
-            server.start()
+            startWithRetry(server)
         } catch (failure: Exception) {
             protocol.close()
             AndroidAgentLogger.warn("MCP server start failed: type=${failure.safeLogType()}")
@@ -98,6 +101,21 @@ internal object EtaMcpServerController {
             addresses = if (settings.lanAccess) lanAddresses() else emptyList(),
             keptAlive = keptAlive,
         )
+    }
+
+    /** 刚关闭的监听可能仍短暂占用端口，绑定冲突时稍后重试；端口确被其他进程占用时最终仍报失败。 */
+    private fun startWithRetry(server: EtaMcpHttpServer) {
+        var attempt = 1
+        while (true) {
+            try {
+                server.start()
+                return
+            } catch (failure: BindException) {
+                if (attempt >= BIND_ATTEMPTS) throw failure
+                attempt += 1
+                Thread.sleep(BIND_RETRY_DELAY_MS)
+            }
+        }
     }
 
     private fun stopOnWorker(server: RunningServer) {

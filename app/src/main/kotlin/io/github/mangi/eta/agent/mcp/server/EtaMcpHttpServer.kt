@@ -47,6 +47,7 @@ internal class EtaMcpHttpServer(
     private val onHandlerFailure: (Throwable) -> Unit = {},
 ) : Closeable {
     @Volatile private var serverSocket: ServerSocket? = null
+    @Volatile private var acceptThread: Thread? = null
     @Volatile private var closed = false
     private val workers = ThreadPoolExecutor(
         maxConcurrentRequests, maxConcurrentRequests, 30, TimeUnit.SECONDS, SynchronousQueue<Runnable>(),
@@ -60,12 +61,19 @@ internal class EtaMcpHttpServer(
     @Throws(IOException::class)
     fun start() {
         check(serverSocket == null && !closed) { "MCP 服务已启动或已关闭" }
-        val socket = ServerSocket().apply {
-            reuseAddress = true
-            bind(InetSocketAddress(bindAddress, port), BACKLOG)
+        val socket = ServerSocket()
+        try {
+            socket.reuseAddress = true
+            socket.bind(InetSocketAddress(bindAddress, port), BACKLOG)
+        } catch (failure: IOException) {
+            runCatching { socket.close() }
+            throw failure
         }
         serverSocket = socket
-        Thread({ acceptLoop(socket) }, "eta-mcp-accept").apply { isDaemon = true }.start()
+        acceptThread = Thread({ acceptLoop(socket) }, "eta-mcp-accept").apply {
+            isDaemon = true
+            start()
+        }
     }
 
     private fun acceptLoop(socket: ServerSocket) {
@@ -109,9 +117,16 @@ internal class EtaMcpHttpServer(
         client.use { socket -> runCatching { writeResponse(socket.getOutputStream(), response) } }
     }
 
+    /**
+     * 关闭监听并等待接受线程退出。阻塞在 accept() 中的线程会让内核继续持有旧的监听 socket，
+     * 立即在同一端口重新绑定（如切换局域网开关）会报 Address already in use。
+     */
     override fun close() {
         closed = true
         runCatching { serverSocket?.close() }
+        acceptThread?.takeIf { it !== Thread.currentThread() }?.let { thread ->
+            runCatching { thread.join(CLOSE_JOIN_MS) }
+        }
         workers.shutdownNow()
     }
 
@@ -119,6 +134,7 @@ internal class EtaMcpHttpServer(
 
     internal companion object {
         private const val BACKLOG = 16
+        private const val CLOSE_JOIN_MS = 2_000L
         private const val READ_TIMEOUT_MS = 30_000
         private const val MAX_LINE_BYTES = 8 * 1024
         private const val MAX_HEADER_BYTES = 32 * 1024
