@@ -186,7 +186,7 @@ internal class EtaMcpRedactor(private val capacity: Int = DEFAULT_CAPACITY) {
                 { value -> digitsOnly(value).takeLast(11) },
             ),
             // 带区号的固话，要求连字符，避免命中普通数字。
-            Rule(Kind.PHONE, Regex("""$LEFT0\d{2,3}-\d{7,8}$RIGHT"""), { it }),
+            Rule(Kind.PHONE, Regex("""${LEFT}0\d{2,3}-\d{7,8}$RIGHT"""), { it }),
             // 其他国家的 E.164 号码，要求以 + 开头且不带分隔符。
             Rule(Kind.PHONE, Regex("""(?<![0-9A-Za-z_+])\+[1-9]\d{7,14}$RIGHT"""), ::phone),
             // 关键词在前：“验证码是 123456”“verification code: 123456”。
