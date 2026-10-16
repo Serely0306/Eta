@@ -47,6 +47,8 @@ internal object XiaoAiHooks {
     private val queryCache = XiaoAiQueryCache()
     private val turnTracker = XiaoAiTurnTracker()
     private val claimedDialogIds = XiaoAiRecentIds()
+    private val voiceTakeoverState = XiaoAiVoiceTakeoverState()
+    private val requestClaimLock = Any()
     private val activeRun = XiaoAiRunSlot<ActiveRun>()
     private val latestFloatManager = AtomicReference<Any?>()
     private val rendererSlot = XiaoAiRendererSlot<XiaoAiStreamRenderer>()
@@ -63,6 +65,23 @@ internal object XiaoAiHooks {
             Thread(
                 runnable,
                 "Eta-XiaoAiBridge-${bridgeThreadId.incrementAndGet()}",
+            ).apply { isDaemon = true }
+        },
+        ThreadPoolExecutor.AbortPolicy(),
+    ).apply {
+        allowCoreThreadTimeOut(true)
+    }
+    /** 旧任务的取消请求单独排队：桥接执行器的唯一线程正被旧任务占用。 */
+    private val cancelExecutor = ThreadPoolExecutor(
+        1,
+        1,
+        30L,
+        TimeUnit.SECONDS,
+        ArrayBlockingQueue(BRIDGE_QUEUE_CAPACITY),
+        { runnable ->
+            Thread(
+                runnable,
+                "Eta-XiaoAiCancel-${bridgeThreadId.incrementAndGet()}",
             ).apply { isDaemon = true }
         },
         ThreadPoolExecutor.AbortPolicy(),
@@ -137,6 +156,9 @@ internal object XiaoAiHooks {
         val installation = hooks.install {
             hookQueryCapture(this, classLoader)
             hookAsrFinalResult(this, classLoader, targets)
+            if (hookVoiceInstructionFilter(this, classLoader, targets)) {
+                hookVoiceAsrDispatch(this, classLoader, targets)
+            }
             hookFloatManagerCapture(this, classLoader, targets)
             hookAgentActions(this, classLoader, targets)
             hookOutboundRequest(this, classLoader, targets)
@@ -259,18 +281,204 @@ internal object XiaoAiHooks {
     ) {
         if (invokeString(instruction, "getFullName") != ASR_RESULT_FULL_NAME) return
         val payload = HookSupport.invokeNoArgs(instruction, "getPayload") ?: return
-        if (HookSupport.invokeNoArgs(payload, "isFinal") != true) return
         val results = HookSupport.invokeNoArgs(payload, "getResults") as? Iterable<*> ?: return
-        val query = results.joinToString(separator = "") { item ->
+        val texts = results.map { item ->
             item?.let { invokeString(it, "getText") }.orEmpty()
-        }.trim()
-        if (query.isBlank()) return
-
-        val dialogId = optionalString(HookSupport.invokeNoArgs(instruction, "getDialogId"))
-        turnTracker.capture(dialogId = dialogId, query = query)
-        logger.debug {
-            "捕获超级小爱终态 ASR: dialog=${shortId(dialogId)}, queryChars=${query.length}"
         }
+        val finalAsr = XiaoAiFinalAsr.from(
+            dialogId = optionalString(HookSupport.invokeNoArgs(instruction, "getDialogId")),
+            isFinal = HookSupport.invokeNoArgs(payload, "isFinal") == true,
+            results = texts,
+        ) ?: return
+        val previousTurn = turnTracker.latest()?.takeIf { it.dialogId == finalAsr.dialogId }
+        val queryInfo = queryCache.peek(finalAsr.dialogId)
+        turnTracker.capture(
+            dialogId = finalAsr.dialogId,
+            query = finalAsr.query,
+            hasImage = previousTurn?.hasImage == true || !queryInfo?.imageFileId.isNullOrBlank(),
+            documentInput = previousTurn?.documentInput == true || queryInfo?.documentInput == true,
+        )
+        logger.debug {
+            "捕获超级小爱终态 ASR: dialog=${shortId(finalAsr.dialogId)}, " +
+                "queryChars=${finalAsr.query.length}"
+        }
+    }
+
+    private fun hookVoiceInstructionFilter(
+        hooks: HookRegistrar,
+        classLoader: ClassLoader,
+        targets: XiaoAiTargets,
+    ): Boolean {
+        val filterClassName = targets.instructionFilterClass ?: return false
+        val filterClass = HookSupport.findClassOrNull(classLoader, filterClassName)
+        val instructionClass = HookSupport.findClassOrNull(classLoader, INSTRUCTION_CLASS)
+        val method = if (filterClass != null && instructionClass != null) {
+            HookSupport.findMethod(
+                filterClass,
+                "filterInstruction",
+                instructionClass,
+                String::class.java,
+            )
+        } else {
+            null
+        }
+        if (method == null || method.returnType != Boolean::class.javaPrimitiveType) {
+            hooks.missing(
+                id = "xiaoai.voice-filter",
+                description = "XiaoAi voice instruction filter",
+                detail = "未找到 $filterClassName.filterInstruction(Instruction,String): boolean",
+            )
+            return false
+        }
+        return hooks.intercept(
+            id = "xiaoai.voice-filter",
+            executable = method,
+            description = "XiaoAi claimed voice dialog filter",
+        ) { chain ->
+            val instruction = chain.args.firstOrNull()
+            val dialogId = instruction?.let {
+                optionalString(HookSupport.invokeNoArgs(it, "getDialogId"))
+            }.orEmpty()
+            val fullName = instruction?.let { invokeString(it, "getFullName") }.orEmpty()
+            if (voiceTakeoverState.shouldSuppress(dialogId, fullName)) {
+                hooks.logger.debug {
+                    "已过滤超级小爱原生语音指令: dialog=${shortId(dialogId)}, name=$fullName"
+                }
+                true
+            } else {
+                chain.proceed()
+            }
+        } != null
+    }
+
+    private fun hookVoiceAsrDispatch(
+        hooks: HookRegistrar,
+        classLoader: ClassLoader,
+        targets: XiaoAiTargets,
+    ) {
+        val methodName = targets.asrDispatchMethod ?: return
+        val engineFieldName = targets.asrEngineField ?: return
+        val requestModeFieldName = targets.engineRequestModeField ?: return
+        val processorClass = HookSupport.findClassOrNull(classLoader, targets.asrProcessorClass)
+        val engineClass = HookSupport.findClassOrNull(classLoader, targets.engineClass)
+        val instructionClass = HookSupport.findClassOrNull(classLoader, INSTRUCTION_CLASS)
+        val recognizeResultClass = HookSupport.findClassOrNull(
+            classLoader,
+            "com.xiaomi.ai.api.SpeechRecognizer\$RecognizeResult",
+        )
+        val speechResultClass = targets.asrSpeechResultClass?.let {
+            HookSupport.findClassOrNull(classLoader, it)
+        }
+        val method = if (
+            processorClass != null && instructionClass != null &&
+            recognizeResultClass != null && speechResultClass != null
+        ) {
+            HookSupport.findMethod(
+                processorClass,
+                methodName,
+                instructionClass,
+                recognizeResultClass,
+                List::class.java,
+                speechResultClass,
+                String::class.java,
+            )
+        } else {
+            null
+        }
+        val engineField = processorClass?.let { HookSupport.findField(it, engineFieldName) }
+        val requestModeField = engineClass?.let { HookSupport.findField(it, requestModeFieldName) }
+        if (
+            method == null || method.returnType != Void.TYPE || engineClass == null ||
+            engineField == null || requestModeField == null || engineField.type != engineClass ||
+            requestModeField.type != Int::class.javaPrimitiveType
+        ) {
+            hooks.missing(
+                id = "xiaoai.voice-asr",
+                description = "XiaoAi dispatched voice ASR",
+                detail = "未找到 ${targets.asrProcessorClass}.$methodName 的终态 ASR 分发签名",
+            )
+            return
+        }
+        hooks.intercept(
+            id = "xiaoai.voice-asr",
+            executable = method,
+            description = "XiaoAi dispatched final voice ASR",
+        ) { chain ->
+            try {
+                val payload = chain.args.getOrNull(1)
+                val result = chain.args.getOrNull(3)
+                val finalAsr = XiaoAiFinalAsr.from(
+                    dialogId = chain.args.getOrNull(4) as? String ?: "",
+                    isFinal = payload?.let { HookSupport.invokeNoArgs(it, "isFinal") } == true,
+                    results = listOf(result?.let { invokeString(it, "getQuery") }.orEmpty()),
+                )
+                if (finalAsr != null) {
+                    val engine = chain.thisObject?.let { engineField.get(it) }
+                    val enginePrefix = engine?.let { invokeString(it, "getEnginePrefix") }.orEmpty()
+                    val requestMode = engine?.let { requestModeField.get(it) as? Int }
+                    maybeClaimVoice(
+                        hooks.logger, classLoader, targets, finalAsr, enginePrefix, requestMode,
+                    )
+                }
+            } catch (exception: Exception) {
+                hooks.logger.warnThrottled("xiaoai_voice_claim_failed") {
+                    "小爱语音认领失败，保持原生行为: type=${exception.safeLogType()}"
+                }
+            }
+            chain.proceed()
+        }
+    }
+
+    private fun maybeClaimVoice(
+        logger: ModuleLogger,
+        classLoader: ClassLoader,
+        targets: XiaoAiTargets,
+        finalAsr: XiaoAiFinalAsr,
+        enginePrefix: String,
+        requestMode: Int?,
+    ): Boolean = synchronized(requestClaimLock) {
+        val queryInfo = queryCache.peek(finalAsr.dialogId)
+        val turn = turnTracker.latest()?.takeIf { it.dialogId == finalAsr.dialogId }
+        if (!XiaoAiVoiceInputPolicy.canClaim(
+                enginePrefix = enginePrefix,
+                requestMode = requestMode,
+                hasImage = turn?.hasImage == true || !queryInfo?.imageFileId.isNullOrBlank(),
+                documentInput = turn?.documentInput == true || queryInfo?.documentInput == true,
+            )
+        ) return@synchronized false
+        voiceTakeoverState.tryClaim(finalAsr.dialogId) {
+            startVoiceRun(logger, classLoader, targets, finalAsr)
+        }
+    }
+
+    private fun startVoiceRun(
+        logger: ModuleLogger,
+        classLoader: ClassLoader,
+        targets: XiaoAiTargets,
+        finalAsr: XiaoAiFinalAsr,
+    ): Boolean {
+        if (claimedDialogIds.contains(finalAsr.dialogId)) return true
+        val decision = XiaoAiTakeoverPolicy.decide(
+            query = finalAsr.query,
+            hasImage = false,
+            customModelEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_CUSTOM_MODEL),
+            requirePrefix = Prefs.isEnabled(Prefs.Keys.AGENT_REQUIRE_PREFIX),
+        ) ?: return false
+        val started = startRun(
+            logger = logger,
+            classLoader = classLoader,
+            targets = targets,
+            dialogId = finalAsr.dialogId,
+            prompt = decision.prompt,
+            image = null,
+        )
+        if (started) {
+            logger.info(
+                "已接管超级小爱语音: dialog=${shortId(finalAsr.dialogId)}, " +
+                    "queryChars=${finalAsr.query.length}",
+            )
+        }
+        return started
     }
 
     private fun hookFloatManagerCapture(
@@ -367,7 +575,10 @@ internal object XiaoAiHooks {
         val methods = HookSupport.findDeclaredMethods(managerClass, makeAccessible = true) { method ->
             (method.name == "execute" || method.name == "executeActionsAsync") &&
                 method.returnType == Boolean::class.javaPrimitiveType &&
-                method.parameterTypes.any { it.name.endsWith("Agent\$Action") }
+                method.parameterTypes.any { it.name.endsWith("Agent\$Action") } &&
+                (targets.instructionFilterClass == null ||
+                    (method.parameterTypes.firstOrNull()?.name?.endsWith("Agent\$Action") == true &&
+                        method.parameterTypes.getOrNull(1) == String::class.java))
         }
         if (methods.isEmpty()) {
             hooks.missing(
@@ -383,7 +594,14 @@ internal object XiaoAiHooks {
                 executable = method,
                 description = "XiaoAi ${method.name}(Agent.Action)",
             ) { chain ->
-                if (shouldOwnLatestTurn()) {
+                val ownsAction = if (targets.instructionFilterClass != null) {
+                    val dialogId = chain.args.getOrNull(1) as? String ?: ""
+                    !XiaoAiEtaOutput.isActive() &&
+                        (claimedDialogIds.contains(dialogId) || voiceTakeoverState.isClaimed(dialogId))
+                } else {
+                    shouldOwnLatestTurn()
+                }
+                if (ownsAction) {
                     hooks.logger.info("已拦截超级小爱原生 Agent Action")
                     true
                 } else {
@@ -427,13 +645,22 @@ internal object XiaoAiHooks {
         classLoader: ClassLoader,
         targets: XiaoAiTargets,
         event: Any,
+    ): Boolean = synchronized(requestClaimLock) {
+        maybeClaimRequestLocked(logger, classLoader, targets, event)
+    }
+
+    private fun maybeClaimRequestLocked(
+        logger: ModuleLogger,
+        classLoader: ClassLoader,
+        targets: XiaoAiTargets,
+        event: Any,
     ): Boolean {
         val fullName = invokeString(event, "getFullName")
         if (!XiaoAiTakeoverPolicy.matchesOutboundEvent(fullName)) return false
 
         val dialogId = invokeString(event, "getId").trim()
         if (dialogId.isBlank()) return false
-        if (claimedDialogIds.contains(dialogId)) return true
+        if (claimedDialogIds.contains(dialogId) || voiceTakeoverState.isClaimed(dialogId)) return true
 
         val payload = HookSupport.invokeNoArgs(event, "getPayload")
         val eventQuery = payload?.let { invokeString(it, "getQuery") }.orEmpty()
@@ -500,6 +727,17 @@ internal object XiaoAiHooks {
             query = query,
             hasImage = image != null,
         )
+        return startRun(logger, classLoader, targets, dialogId, decision.prompt, image)
+    }
+
+    private fun startRun(
+        logger: ModuleLogger,
+        classLoader: ClassLoader,
+        targets: XiaoAiTargets,
+        dialogId: String,
+        prompt: String,
+        image: AgentModelClient.ModelImage?,
+    ): Boolean {
         val context = AgentAppContext.resolve() ?: return false
         val renderer = XiaoAiStreamRenderer(
             context = context,
@@ -514,7 +752,7 @@ internal object XiaoAiHooks {
         val run = ActiveRun(
             runId = UUID.randomUUID().toString(),
             dialogId = dialogId,
-            prompt = decision.prompt,
+            prompt = prompt,
             image = image,
             renderer = renderer,
         )
@@ -528,11 +766,29 @@ internal object XiaoAiHooks {
         run.future.set(future)
         rendererSlot.attach(renderer)?.cancel()
         val previous = activeRun.replace(run)
-        previous?.cancel(logger, classLoader)
+        // 先登记并激活新任务，再收尾旧任务：旧任务的取消失败不能让新任务悬空。
         claimedDialogIds.add(dialogId)
         run.activate()
+        previous?.let { old ->
+            runCatching { old.cancel(logger, classLoader) }.onFailure { exception ->
+                logger.warnThrottled("xiaoai_previous_cancel_failed") {
+                    "超级小爱上一轮取消失败: type=${exception.safeLogType()}"
+                }
+            }
+        }
         logger.info("已接管超级小爱请求: images=${if (image == null) 0 else 1}")
         return true
+    }
+
+    private fun cancelInBackground(logger: ModuleLogger, block: () -> Unit) {
+        try {
+            cancelExecutor.execute { runCatching(block) }
+        } catch (_: RejectedExecutionException) {
+            // 被打断的旧任务线程在 AgentRuntimeClient.run 中仍会自行发送取消。
+            logger.warnThrottled("xiaoai_cancel_rejected") {
+                "超级小爱取消队列繁忙，依赖旧任务线程中断后的取消"
+            }
+        }
     }
 
     private fun shouldOwnLatestTurn(): Boolean {
@@ -551,7 +807,11 @@ internal object XiaoAiHooks {
         context: Context,
         run: ActiveRun,
     ) {
-        if (!run.awaitActivation() || activeRun.get() !== run) return
+        if (!run.awaitActivation() || activeRun.get() !== run) {
+            // 未激活就退出时同样释放占位，避免后续判断一直看到一个永远不会运行的任务。
+            activeRun.clear(run)
+            return
+        }
         val client = AgentRuntimeClient(context, logger)
         run.client.set(client)
         var resultRunId: String? = null
@@ -737,10 +997,14 @@ internal object XiaoAiHooks {
         fun awaitActivation(): Boolean =
             activation.await(ACTIVATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
+        /**
+         * 只做非阻塞收尾：调用方可能持有认领锁或处在小爱指令线程上，Runtime 取消请求需要
+         * 绑定服务（主线程上直接拒绝），放到独立线程发出。
+         */
         fun cancel(logger: ModuleLogger, classLoader: ClassLoader) {
             if (!cancelled.compareAndSet(false, true)) return
             activation.countDown()
-            client.get()?.cancelRun(runId)
+            client.get()?.let { runtime -> cancelInBackground(logger) { runtime.cancelRun(runId) } }
             future.get()?.cancel(true)
             renderer.cancel(classLoader)
             logger.debug { "超级小爱请求已取消" }

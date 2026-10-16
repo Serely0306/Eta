@@ -27,6 +27,14 @@ class XiaoAiHookStateTest {
         assertEquals("p31.o0", hyperOs4.engineClass)
         assertEquals("D0", hyperOs4.engineSendMethod)
         assertEquals("W", hyperOs4.engineClearMethod)
+        assertNull(legacy.instructionFilterClass)
+        assertNull(legacy.asrDispatchMethod)
+        assertNull(legacy.asrSpeechResultClass)
+        assertEquals("f41.d", hyperOs4.instructionFilterClass)
+        assertEquals("d", hyperOs4.asrDispatchMethod)
+        assertEquals("t51.b", hyperOs4.asrSpeechResultClass)
+        assertEquals("b", hyperOs4.asrEngineField)
+        assertEquals("A", hyperOs4.engineRequestModeField)
         assertNull(XiaoAiTargets.forVersion(508002053L))
     }
 
@@ -113,6 +121,19 @@ class XiaoAiHookStateTest {
         now = 101L
         assertNull(cache.take("three"))
         assertEquals(0, cache.size())
+    }
+
+    @Test
+    fun queryCachePeekPreservesMultimodalMetadataWithoutConsumingIt() {
+        var now = 0L
+        val cache = XiaoAiQueryCache(ttlMillis = 100L, clock = { now })
+        cache.put("round", "query", "image", documentInput = true)
+        assertEquals("image", cache.peek("round")?.imageFileId)
+        assertTrue(cache.peek("round")?.documentInput == true)
+        assertEquals("query", cache.take("round")?.query)
+        cache.put("expired", "query", null)
+        now = 101L
+        assertNull(cache.peek("expired"))
     }
 
     @Test

@@ -63,6 +63,11 @@ internal data class XiaoAiTargets(
     val floatManagerClass: String,
     val flowToastCardClass: String,
     val ttsPlayerClass: String,
+    val instructionFilterClass: String? = null,
+    val asrDispatchMethod: String? = null,
+    val asrSpeechResultClass: String? = null,
+    val asrEngineField: String? = null,
+    val engineRequestModeField: String? = null,
 ) {
     companion object {
         private val BY_VERSION = mapOf(
@@ -90,6 +95,11 @@ internal data class XiaoAiTargets(
                 floatManagerClass = "com.xiaomi.voiceassistant.widget.s1",
                 flowToastCardClass = "com.xiaomi.voiceassistant.instruction.card.stream.b",
                 ttsPlayerClass = "xf1.v1",
+                instructionFilterClass = "f41.d",
+                asrDispatchMethod = "d",
+                asrSpeechResultClass = "t51.b",
+                asrEngineField = "b",
+                engineRequestModeField = "A",
             ),
         )
 
@@ -156,6 +166,12 @@ internal class XiaoAiQueryCache(
         )
         trimToCapacity()
         return true
+    }
+
+    @Synchronized
+    fun peek(dialogId: String): QueryInfo? {
+        pruneExpired(clock())
+        return entries[dialogId.trim()]
     }
 
     @Synchronized
