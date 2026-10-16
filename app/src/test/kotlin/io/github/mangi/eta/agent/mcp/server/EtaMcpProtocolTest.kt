@@ -45,7 +45,14 @@ class EtaMcpProtocolTest {
 
     private var clock = 1_000L
     private val host = FakeHost()
-    private val protocol = EtaMcpProtocol(host, token = { TOKEN }, serverVersion = "test", now = { clock })
+    private val activities = mutableListOf<EtaMcpActivity>()
+    private val protocol = EtaMcpProtocol(
+        host,
+        token = { TOKEN },
+        serverVersion = "test",
+        now = { clock },
+        onActivity = { activities += it },
+    )
 
     @After
     fun tearDown() = protocol.close()
@@ -88,6 +95,41 @@ class EtaMcpProtocolTest {
         val expired = protocol.handle(post(call("echo"), session = first))
         assertEquals(404, expired.status)
         assertTrue("mcp:$first" in host.closed)
+    }
+
+    @Test
+    fun activityReportsClientsAndRejectedTokens() {
+        assertTrue(activities.isEmpty())
+        protocol.handle(post(initialize("2025-11-25")))
+        assertEquals(listOf(EtaMcpActivity.Client("test", clock)), activities.last().clients)
+
+        clock += 5_000
+        protocol.handle(
+            post(
+                rpc("tools/list"),
+                extraHeaders = mapOf(
+                    "mcp-protocol-version" to EtaMcpProtocol.LATEST_PROTOCOL_VERSION,
+                    "user-agent" to "claude-code/2.1.301 (cli)",
+                ),
+            ),
+        )
+        assertEquals(listOf("claude-code", "test"), activities.last().clients.map { it.name })
+        assertNull(activities.last().lastRejectedAt)
+
+        clock += 1_000
+        val rejectedAt = clock
+        protocol.handle(post(ping(), token = "wrong"))
+        assertEquals(rejectedAt, activities.last().lastRejectedAt)
+        // 限频：短时间内的重复拒绝不再发布。
+        val published = activities.size
+        clock += 1_000
+        protocol.handle(post(ping(), token = null))
+        assertEquals(published, activities.size)
+
+        clock += 20_000
+        protocol.close()
+        protocol.handle(post(ping(), token = "wrong"))
+        assertEquals(published, activities.size)
     }
 
     @Test

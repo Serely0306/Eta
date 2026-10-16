@@ -38,6 +38,10 @@ internal object EtaMcpServerController {
     private val mutableStatus = MutableStateFlow<Status>(Status.Stopped)
     val status: StateFlow<Status> = mutableStatus.asStateFlow()
 
+    private val mutableActivity = MutableStateFlow(EtaMcpActivity())
+    /** 当前服务的电脑端连接情况；服务停止或重启后清空。 */
+    val activity: StateFlow<EtaMcpActivity> = mutableActivity.asStateFlow()
+
     /** 启停都在单线程上串行执行，避免快速切换开关时两次绑定交错。 */
     private val worker = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "eta-mcp-control").apply { isDaemon = true }
@@ -68,6 +72,7 @@ internal object EtaMcpServerController {
             toolHost = EtaMcpDeviceToolHost(context),
             token = { settings.token },
             serverVersion = appVersion(context),
+            onActivity = { mutableActivity.value = it },
         )
         val bindAddress = if (settings.lanAccess) InetAddress.getByName("0.0.0.0") else InetAddress.getLoopbackAddress()
         val server = EtaMcpHttpServer(
@@ -121,6 +126,7 @@ internal object EtaMcpServerController {
     private fun stopOnWorker(server: RunningServer) {
         server.server.close()
         server.protocol.close()
+        mutableActivity.value = EtaMcpActivity()
         if (running === server) running = null
         AgentExecutionService.release(LEASE_ID)
         AndroidAgentLogger.info("MCP server stopped")

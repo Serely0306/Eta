@@ -22,6 +22,17 @@ internal data class EtaMcpToolOutcome(
     data class Image(val base64: String, val mimeType: String)
 }
 
+/** 电脑端的连接情况，供设置页确认客户端是否连上。 */
+internal data class EtaMcpActivity(
+    /** 最近使用的在前；已空闲超时的会话也可能仍在其中，展示时按 [EtaMcpProtocol.SESSION_IDLE_MS] 过滤。 */
+    val clients: List<Client> = emptyList(),
+    /** 最近一次因令牌缺失或不符被拒绝的时间。 */
+    val lastRejectedAt: Long? = null,
+) {
+    /** [name] 取自客户端声明的 clientInfo，未声明时为 null。 */
+    data class Client(val name: String?, val lastSeenAt: Long)
+}
+
 /** 工具来源与执行环境；每个 MCP 会话独占一个执行会话，便于隔离屏幕观察缓存与资源租约。 */
 internal interface EtaMcpToolHost {
     fun listTools(): List<EtaMcpTool>
@@ -47,10 +58,13 @@ internal class EtaMcpProtocol(
     private val token: () -> String,
     private val serverVersion: String,
     private val now: () -> Long = System::currentTimeMillis,
+    /** 连接情况变化时在会话锁内调用，保证并发请求按顺序发布；只能做非阻塞的发布。 */
+    private val onActivity: (EtaMcpActivity) -> Unit = {},
 ) : AutoCloseable {
     private class Session(
         val id: String,
         @Volatile var lastUsedAt: Long,
+        @Volatile var clientName: String? = null,
     ) {
         /** 同一会话的工具调用串行执行；关闭只取状态锁，能打断正在执行的调用。 */
         private val callLock = Any()
@@ -76,12 +90,23 @@ internal class EtaMcpProtocol(
     }
 
     private val sessions = LinkedHashMap<String, Session>()
-    private val statelessSession = Session("stateless", now())
+    /** 首次使用前 lastUsedAt 为 0，不计入连接情况。 */
+    private val statelessSession = Session("stateless", 0L)
+    // 以下两项由 sessions 锁保护。
+    private var lastRejectedAt: Long? = null
+    private var closed = false
 
     fun handle(request: McpHttpRequest): McpHttpResponse {
         if (request.path.trimEnd('/') != PATH) return text(404, "not found")
         if (request.header("origin") != null) return text(403, "origin not allowed")
         if (!authorized(request.header("authorization"))) {
+            // 未鉴权的请求可能被局域网内任何人反复发送，记录限频，避免频繁刷新设置页。
+            val changed = synchronized(sessions) {
+                val at = now()
+                val previous = lastRejectedAt
+                (previous == null || at - previous >= REJECTED_PUBLISH_INTERVAL_MS).also { if (it) lastRejectedAt = at }
+            }
+            if (changed) publishActivity()
             return McpHttpResponse(401, "unauthorized".toByteArray(), TEXT_PLAIN, mapOf("WWW-Authenticate" to "Bearer"))
         }
         return when (request.method) {
@@ -92,9 +117,24 @@ internal class EtaMcpProtocol(
     }
 
     override fun close() {
-        val all = synchronized(sessions) { sessions.values.toList().also { sessions.clear() } }
+        val all = synchronized(sessions) {
+            closed = true
+            sessions.values.toList().also { sessions.clear() }
+        }
         all.forEach(Session::close)
         statelessSession.close()
+    }
+
+    private fun publishActivity() {
+        synchronized(sessions) {
+            // 关闭后仍在执行的请求不再覆盖新服务的连接情况。
+            if (closed) return
+            val clients = (sessions.values + statelessSession)
+                .filter { it.lastUsedAt > 0L }
+                .sortedByDescending { it.lastUsedAt }
+                .map { EtaMcpActivity.Client(it.clientName, it.lastUsedAt) }
+            onActivity(EtaMcpActivity(clients, lastRejectedAt))
+        }
     }
 
     private fun authorized(header: String?): Boolean {
@@ -108,6 +148,7 @@ internal class EtaMcpProtocol(
         val id = request.header(HEADER_SESSION_ID) ?: return text(400, "missing session id")
         val removed = synchronized(sessions) { sessions.remove(id) } ?: return text(404, "session not found")
         removed.close()
+        publishActivity()
         return McpHttpResponse(204)
     }
 
@@ -131,6 +172,11 @@ internal class EtaMcpProtocol(
 
         val session = resolveSession(request) ?: return rpcError(404, id, SESSION_NOT_FOUND, "session not found")
         session.lastUsedAt = now()
+        if (session === statelessSession) {
+            statelessSession.clientName = clientName(params.optJSONObject("_meta")?.optJSONObject(META_CLIENT_INFO))
+                ?: userAgentProduct(request.header("user-agent"))
+        }
+        publishActivity()
         val latest = request.header(HEADER_PROTOCOL_VERSION) == LATEST_PROTOCOL_VERSION ||
             params.optJSONObject("_meta")?.optString(META_PROTOCOL_VERSION) == LATEST_PROTOCOL_VERSION
         val result = try {
@@ -150,7 +196,7 @@ internal class EtaMcpProtocol(
     private fun initialize(id: Any, params: JSONObject): McpHttpResponse {
         val requested = params.optString("protocolVersion")
         val version = requested.takeIf { it in LEGACY_PROTOCOL_VERSIONS } ?: DEFAULT_LEGACY_PROTOCOL_VERSION
-        val session = Session(UUID.randomUUID().toString(), now())
+        val session = Session(UUID.randomUUID().toString(), now(), clientName(params.optJSONObject("clientInfo")))
         val evicted = synchronized(sessions) {
             val expired = pruneLocked()
             sessions[session.id] = session
@@ -163,6 +209,7 @@ internal class EtaMcpProtocol(
             expired + overflow
         }
         evicted.forEach(Session::close)
+        publishActivity()
         val result = JSONObject()
             .put("protocolVersion", version)
             .put("capabilities", JSONObject().put("tools", JSONObject().put("listChanged", false)))
@@ -245,6 +292,13 @@ internal class EtaMcpProtocol(
     private fun text(status: Int, message: String) =
         McpHttpResponse(status, message.toByteArray(Charsets.UTF_8), TEXT_PLAIN)
 
+    private fun clientName(clientInfo: JSONObject?): String? =
+        clientInfo?.optString("name")?.trim()?.takeIf(String::isNotEmpty)?.take(MAX_CLIENT_NAME)
+
+    /** `claude-code/2.1.0 (...)` 取 `claude-code`。 */
+    private fun userAgentProduct(userAgent: String?): String? =
+        userAgent?.trim()?.substringBefore(' ')?.substringBefore('/')?.takeIf(String::isNotEmpty)?.take(MAX_CLIENT_NAME)
+
     private class InvalidParamsException(message: String) : IllegalArgumentException(message)
 
     internal companion object {
@@ -259,6 +313,9 @@ internal class EtaMcpProtocol(
         private const val HEADER_SESSION_ID = "mcp-session-id"
         private const val HEADER_PROTOCOL_VERSION = "mcp-protocol-version"
         private const val META_PROTOCOL_VERSION = "io.modelcontextprotocol/protocolVersion"
+        private const val META_CLIENT_INFO = "io.modelcontextprotocol/clientInfo"
+        private const val MAX_CLIENT_NAME = 64
+        private const val REJECTED_PUBLISH_INTERVAL_MS = 10_000L
         private const val HEADER_SESSION_ID_OUT = "Mcp-Session-Id"
         private const val JSON = "application/json"
         private const val TEXT_PLAIN = "text/plain; charset=utf-8"

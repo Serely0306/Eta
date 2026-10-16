@@ -4,24 +4,38 @@ Eta 可以作为 MCP 服务器，让电脑上的 Agent（Claude Code、Codex 等
 
 ## 连接
 
-服务默认关闭。开启后自动生成访问令牌，页面上可以复制连接命令或配置。
+服务默认关闭，开启后会自动生成访问令牌。Claude Code 和 Codex 都需要先把 Eta 登记进各自的 MCP 配置，登记一次即可，之后每次启动都会自动连接。页面上的两个复制按钮分别给出这两步需要的内容。
 
-**USB（默认，只监听本机）**
+**1. 打通网络**
+
+- USB（默认，只监听手机本机）：在电脑上执行 `adb forward tcp:18765 tcp:18765`。手机重新插拔或 adb 服务重启后，需要再执行一次。
+- 局域网：打开“允许局域网连接”，页面会显示手机的局域网地址，下文的地址相应换成 `http://<手机 IP>:18765/mcp`。
+
+**2. 登记服务器**
+
+Claude Code：在电脑终端执行“复制 Claude Code 连接命令”得到的内容。USB 模式下复制内容已包含 adb forward。
 
 ```powershell
 adb forward tcp:18765 tcp:18765
-claude mcp add --transport http eta http://127.0.0.1:18765/mcp --header "Authorization: Bearer <令牌>"
+claude mcp add -s user --transport http eta http://127.0.0.1:18765/mcp --header "Authorization: Bearer <令牌>"
 ```
 
-**局域网**：打开“允许局域网连接”，页面显示手机的局域网地址，电脑与手机在同一网络即可连接，地址换成 `http://<手机 IP>:18765/mcp`。
+`-s user` 把服务器写入用户级配置，任意目录启动 Claude Code 都能使用；省略时默认只对当前目录生效。若已登记过同名服务器（例如重新生成令牌后），先执行 `claude mcp remove -s user eta`。
 
-Codex 的 `config.toml`：
+Codex：把“复制 Codex 配置”得到的片段追加到电脑上的 `~/.codex/config.toml`（Windows 为 `%USERPROFILE%\.codex\config.toml`）。同一文件里不能出现两个 `[mcp_servers.eta]`，更新令牌时请直接替换原片段。
 
 ```toml
 [mcp_servers.eta]
 url = "http://127.0.0.1:18765/mcp"
 http_headers = { Authorization = "Bearer <令牌>" }
 ```
+
+如果不想把令牌写进配置文件，也可以先把令牌放进环境变量 `ETA_MCP_TOKEN`，再执行 `codex mcp add eta --url http://127.0.0.1:18765/mcp --bearer-token-env-var ETA_MCP_TOKEN`。启动 Codex 的进程必须能读到这个环境变量。
+
+**3. 确认连接**
+
+- 电脑端：执行 `claude mcp list`（或在 Claude Code 会话中输入 `/mcp`），或执行 `codex mcp list`；也可以用 `claude mcp get eta` 查看单个服务器。令牌不对时，Claude Code 会提示 HTTP 401。
+- 手机端：服务运行时，页面上的“电脑端连接”会列出最近 30 分钟内连接过的客户端，包括客户端声明的名称和最近一次请求的时间；收到令牌缺失或不符的请求时也会显示一条“被拒绝”记录。服务停止或重启后，这些记录会清空。
 
 ## 开放的工具
 
