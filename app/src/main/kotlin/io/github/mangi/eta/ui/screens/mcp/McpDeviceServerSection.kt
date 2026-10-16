@@ -25,6 +25,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.mcp.server.EtaMcpActivity
+import io.github.mangi.eta.agent.mcp.server.EtaMcpPrivacySettings
 import io.github.mangi.eta.agent.mcp.server.EtaMcpProtocol
 import io.github.mangi.eta.agent.mcp.server.EtaMcpServerController
 import io.github.mangi.eta.agent.mcp.server.EtaMcpServerSettings
@@ -50,6 +51,7 @@ internal fun McpDeviceServerSection() {
     val status by EtaMcpServerController.status.collectAsState()
     val activity by EtaMcpServerController.activity.collectAsState()
     var settings by remember { mutableStateOf(EtaMcpServerSettings.load()) }
+    var privacy by remember { mutableStateOf(EtaMcpPrivacySettings.load()) }
     var editingPort by remember { mutableStateOf(false) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -67,6 +69,10 @@ internal fun McpDeviceServerSection() {
             settings = saved
             EtaMcpServerController.applySettings(context)
         }
+    }
+
+    fun updatePrivacy(next: EtaMcpPrivacySettings) {
+        if (EtaMcpPrivacySettings.save(next)) privacy = next
     }
 
     fun copy(text: String) {
@@ -154,6 +160,22 @@ internal fun McpDeviceServerSection() {
                 },
             )
         }
+    }
+
+    EtaPreferenceGroupTitle(stringResource(R.string.mcp_device_server_privacy_title))
+    EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp)) {
+        EtaSwitchPreference(
+            title = stringResource(R.string.mcp_device_server_redact),
+            summary = stringResource(R.string.mcp_device_server_redact_summary),
+            checked = privacy.redactOutput,
+            onCheckedChange = { redact -> updatePrivacy(privacy.copy(redactOutput = redact)) },
+        )
+        EtaSwitchPreference(
+            title = stringResource(R.string.mcp_device_server_allow_images),
+            summary = stringResource(R.string.mcp_device_server_allow_images_summary),
+            checked = privacy.allowImages,
+            onCheckedChange = { allow -> updatePrivacy(privacy.copy(allowImages = allow)) },
+        )
     }
 
     if (editingPort) {

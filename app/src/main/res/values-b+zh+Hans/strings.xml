@@ -1269,6 +1269,11 @@
   <string name="mcp_device_server_just_now">刚刚</string>
   <string name="mcp_device_server_minutes_ago">%1$d 分钟前</string>
   <string name="mcp_device_server_rejected">有请求因令牌缺失或不符被拒绝 · %1$s</string>
+  <string name="mcp_device_server_privacy_title">发给电脑端的数据</string>
+  <string name="mcp_device_server_redact">号码类信息脱敏</string>
+  <string name="mcp_device_server_redact_summary">工具结果里的手机号、邮箱、身份证号、银行卡号与验证码替换为 [PHONE_1] 这类占位符，电脑端传回占位符时在手机上还原；不覆盖姓名、地址</string>
+  <string name="mcp_device_server_allow_images">允许返回截图与图片</string>
+  <string name="mcp_device_server_allow_images_summary">关闭时不发送屏幕截图、网页截图与图片文件，界面操作依靠 UI 树；开启后图片内容不做脱敏</string>
   <string name="mcp_device_server_copy_token">复制访问令牌</string>
   <string name="mcp_device_server_regenerate_token">重新生成令牌</string>
   <string name="mcp_device_server_regenerate_summary">已配置的电脑端需要更新为新令牌</string>

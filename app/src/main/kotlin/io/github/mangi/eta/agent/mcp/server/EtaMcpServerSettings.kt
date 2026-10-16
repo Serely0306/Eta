@@ -65,3 +65,42 @@ internal data class EtaMcpServerSettings(
         }
     }
 }
+
+/**
+ * 只作用于 MCP 出口的隐私设置，Eta 自身的模型调用不受影响。每次调用时读取，修改后不必重启服务。
+ */
+internal data class EtaMcpPrivacySettings(
+    /** 工具结果中的号码类信息替换为可逆占位符后再发给电脑端。 */
+    val redactOutput: Boolean = true,
+    /** 是否向电脑端返回屏幕截图、网页截图与图片文件。 */
+    val allowImages: Boolean = false,
+) {
+    companion object {
+        private const val KEY_REDACT_OUTPUT = "mcp_server_redact_output"
+        private const val KEY_ALLOW_IMAGES = "mcp_server_allow_images"
+
+        fun load(preferences: SharedPreferences? = Prefs.localAgentPreferences()): EtaMcpPrivacySettings {
+            // 读不到配置时按最严格的默认值处理。
+            val prefs = preferences ?: return EtaMcpPrivacySettings()
+            return runCatching {
+                EtaMcpPrivacySettings(
+                    redactOutput = prefs.getBoolean(KEY_REDACT_OUTPUT, true),
+                    allowImages = prefs.getBoolean(KEY_ALLOW_IMAGES, false),
+                )
+            }.getOrDefault(EtaMcpPrivacySettings())
+        }
+
+        fun save(
+            settings: EtaMcpPrivacySettings,
+            preferences: SharedPreferences? = Prefs.localAgentPreferences(),
+        ): Boolean {
+            val prefs = preferences ?: return false
+            return runCatching {
+                prefs.edit()
+                    .putBoolean(KEY_REDACT_OUTPUT, settings.redactOutput)
+                    .putBoolean(KEY_ALLOW_IMAGES, settings.allowImages)
+                    .commit()
+            }.getOrDefault(false)
+        }
+    }
+}

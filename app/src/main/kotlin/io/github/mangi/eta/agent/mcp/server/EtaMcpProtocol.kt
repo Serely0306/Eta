@@ -60,6 +60,10 @@ internal class EtaMcpProtocol(
     private val now: () -> Long = System::currentTimeMillis,
     /** 连接情况变化时在会话锁内调用，保证并发请求按顺序发布；只能做非阻塞的发布。 */
     private val onActivity: (EtaMcpActivity) -> Unit = {},
+    /** 每次调用时读取，默认脱敏且不返回图片。 */
+    private val privacy: () -> EtaMcpPrivacySettings = { EtaMcpPrivacySettings() },
+    /** 占位映射需要跨服务重启保留，由调用方持有。 */
+    private val redactor: EtaMcpRedactor = EtaMcpRedactor(),
 ) : AutoCloseable {
     private class Session(
         val id: String,
@@ -214,7 +218,7 @@ internal class EtaMcpProtocol(
             .put("protocolVersion", version)
             .put("capabilities", JSONObject().put("tools", JSONObject().put("listChanged", false)))
             .put("serverInfo", JSONObject().put("name", SERVER_NAME).put("title", "Eta").put("version", serverVersion))
-            .put("instructions", INSTRUCTIONS)
+            .put("instructions", instructions(privacy()))
         return rpcResult(id, result, mapOf(HEADER_SESSION_ID_OUT to session.id))
     }
 
@@ -266,15 +270,36 @@ internal class EtaMcpProtocol(
         if (params.has("arguments") && params.optJSONObject("arguments") == null && !params.isNull("arguments")) {
             throw InvalidParamsException("arguments must be an object")
         }
-        val arguments = params.optJSONObject("arguments") ?: JSONObject()
+        val rawArguments = params.optJSONObject("arguments") ?: JSONObject()
         if (toolHost.listTools().none { it.name == name }) throw InvalidParamsException("unknown tool: $name")
-        val outcome = session.withTools(toolHost) { tools -> tools.call(name, arguments) }
-        val content = JSONArray().put(JSONObject().put("type", "text").put("text", outcome.text))
-        outcome.images.forEach { image ->
-            content.put(JSONObject().put("type", "image").put("data", image.base64).put("mimeType", image.mimeType))
+        val options = privacy()
+        val arguments = try {
+            redactor.restoreArguments(rawArguments)
+        } catch (failure: EtaMcpRedactor.UnknownPlaceholderException) {
+            val error = JSONObject()
+                .put("ok", false)
+                .put("code", "UNKNOWN_PLACEHOLDER")
+                .put("message", "占位符不存在或已过期（Eta 进程重启后会清空），请重新获取包含它的工具结果")
+                .put("placeholders", JSONArray(failure.placeholders))
+            return toolResult(listOf(textContent(error.toString())), isError = true)
         }
-        return JSONObject().put("content", content).put("isError", outcome.isError)
+        val outcome = session.withTools(toolHost) { tools -> tools.call(name, arguments) }
+        val text = if (options.redactOutput) redactor.redactText(outcome.text) else outcome.text
+        val content = mutableListOf(textContent(text))
+        if (options.allowImages) {
+            outcome.images.forEach { image ->
+                content += JSONObject().put("type", "image").put("data", image.base64).put("mimeType", image.mimeType)
+            }
+        } else if (outcome.images.isNotEmpty()) {
+            content += textContent("已省略 ${outcome.images.size} 张图片：Eta 的 MCP 设置未允许向电脑端返回截图与图片。")
+        }
+        return toolResult(content, outcome.isError)
     }
+
+    private fun textContent(text: String) = JSONObject().put("type", "text").put("text", text)
+
+    private fun toolResult(content: List<JSONObject>, isError: Boolean) =
+        JSONObject().put("content", JSONArray(content)).put("isError", isError)
 
     private fun rpcResult(id: Any, result: JSONObject, headers: Map<String, String> = emptyMap()): McpHttpResponse =
         json(200, JSONObject().put("jsonrpc", "2.0").put("id", id).put("result", result), headers)
@@ -333,5 +358,17 @@ internal class EtaMcpProtocol(
                 "工具结果为 JSON 文本，ok=false 时 code 字段给出原因。" +
                 "需要多步完成的手机任务可用 eta_task_start 交给 Eta 自己的 Agent 执行，" +
                 "再用 eta_task_status 等待结果，用 eta_task_answer 回答它提出的问题。"
+        private const val INSTRUCTIONS_REDACTED =
+            "工具结果中的手机号、邮箱、身份证号、银行卡号与验证码已替换为 [PHONE_1] 这类占位符，" +
+                "原值只保存在手机上；需要使用原值时（如给该号码发短信）在参数中原样传回占位符，" +
+                "Eta 会在手机上还原后执行。不要猜测或拼接占位符。"
+        private const val INSTRUCTIONS_NO_IMAGES =
+            "截图与图片不会返回给电脑端，observe_screen 只提供 UI 树，请依据元素信息操作。"
+
+        fun instructions(options: EtaMcpPrivacySettings): String = buildString {
+            append(INSTRUCTIONS)
+            if (options.redactOutput) append(INSTRUCTIONS_REDACTED)
+            if (!options.allowImages) append(INSTRUCTIONS_NO_IMAGES)
+        }
     }
 }

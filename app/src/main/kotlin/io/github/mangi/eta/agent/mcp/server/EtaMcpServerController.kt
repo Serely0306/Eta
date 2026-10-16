@@ -48,6 +48,9 @@ internal object EtaMcpServerController {
     }
     private var running: RunningServer? = null
 
+    /** 占位映射在进程内跨服务重启保留，切换局域网或端口后电脑端手里的占位符仍可还原。 */
+    private val redactor = EtaMcpRedactor()
+
     private class RunningServer(
         val settings: EtaMcpServerSettings,
         val server: EtaMcpHttpServer,
@@ -73,6 +76,8 @@ internal object EtaMcpServerController {
             token = { settings.token },
             serverVersion = appVersion(context),
             onActivity = { mutableActivity.value = it },
+            privacy = { EtaMcpPrivacySettings.load() },
+            redactor = redactor,
         )
         val bindAddress = if (settings.lanAccess) InetAddress.getByName("0.0.0.0") else InetAddress.getLoopbackAddress()
         val server = EtaMcpHttpServer(

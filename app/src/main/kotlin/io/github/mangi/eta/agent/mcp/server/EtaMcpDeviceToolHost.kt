@@ -39,11 +39,14 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
             memoryTools = memoryEnabled(),
             capabilities = AgentToolCapabilities.capture(appContext),
         )
+        val allowImages = EtaMcpPrivacySettings.load().allowImages
         return buildList {
             for (index in 0 until catalog.length()) {
                 val function = catalog.optJSONObject(index)?.optJSONObject("function") ?: continue
                 val name = function.optString("name")
                 if (name.isBlank() || name in disabled || !exposed(name)) continue
+                // 不允许返回图片时，只用于读取图片的工具对电脑端没有意义。
+                if (!allowImages && name in IMAGE_ONLY_TOOLS) continue
                 add(
                     EtaMcpTool(
                         name = name,
@@ -75,11 +78,12 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
                     val result = tasks.call(name, arguments)
                     return EtaMcpToolOutcome(text = result.toString(), isError = !result.optBoolean("ok", false))
                 }
+                val effective = if (EtaMcpPrivacySettings.load().allowImages) arguments else withoutScreenshot(name, arguments)
                 val result = tools.execute(
                     AgentModelClient.ToolCall(
                         id = "mcp-" + UUID.randomUUID().toString(),
                         name = name,
-                        argumentsJson = arguments.toString(),
+                        argumentsJson = effective.toString(),
                     ),
                 )
                 return outcomeOf(result)
@@ -112,8 +116,18 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
                 taskManager ?: EtaMcpTaskManager(EtaMcpRuntimeTaskRunner(context)).also { taskManager = it }
             }
 
+        private val IMAGE_ONLY_TOOLS = setOf("read_image")
+
         /** Skill 工具服务于 Eta 自身的 Agent 指令体系，对电脑端没有意义，不开放。 */
         fun exposed(name: String): Boolean = !name.startsWith("skills_")
+
+        /** 不允许返回图片时根本不截图；只要截图不要 UI 树的观察改为只取 UI 树，避免返回空观察。 */
+        fun withoutScreenshot(name: String, arguments: JSONObject): JSONObject {
+            if (name != "observe_screen" || !arguments.optBoolean("include_screenshot", false)) return arguments
+            return JSONObject(arguments.toString())
+                .put("include_screenshot", false)
+                .put("include_ui_tree", true)
+        }
 
         fun outcomeOf(result: AgentModelClient.ToolResult): EtaMcpToolOutcome {
             val failed = runCatching { JSONObject(result.content).optBoolean("ok", true) == false }

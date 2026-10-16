@@ -1287,6 +1287,11 @@
   <string name="mcp_device_server_just_now">just now</string>
   <string name="mcp_device_server_minutes_ago">%1$d min ago</string>
   <string name="mcp_device_server_rejected">Rejected a request with a missing or wrong token · %1$s</string>
+  <string name="mcp_device_server_privacy_title">Data sent to the computer</string>
+  <string name="mcp_device_server_redact">Mask numbers</string>
+  <string name="mcp_device_server_redact_summary">Phone numbers, emails, ID numbers, bank cards and verification codes in tool results become placeholders such as [PHONE_1]; placeholders the computer sends back are restored on this phone. Names and addresses are not covered</string>
+  <string name="mcp_device_server_allow_images">Allow screenshots and images</string>
+  <string name="mcp_device_server_allow_images_summary">Off: screen and web screenshots and image files are not sent, and screen operations rely on the UI tree. Images are never masked</string>
   <string name="mcp_device_server_copy_token">Copy access token</string>
   <string name="mcp_device_server_regenerate_token">Regenerate token</string>
   <string name="mcp_device_server_regenerate_summary">Configured computers need the new token</string>

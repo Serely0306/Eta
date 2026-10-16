@@ -18,6 +18,7 @@ class EtaMcpProtocolTest {
         val opened = mutableListOf<String>()
         val closed = mutableListOf<String>()
         val calls = mutableListOf<Pair<String, String>>()
+        val arguments = mutableListOf<JSONObject>()
 
         override fun listTools() = listOf(
             EtaMcpTool("echo", "回显参数", JSONObject().put("type", "object")),
@@ -29,6 +30,7 @@ class EtaMcpProtocolTest {
             return object : EtaMcpToolHost.Session {
                 override fun call(name: String, arguments: JSONObject): EtaMcpToolOutcome {
                     calls += sessionKey to name
+                    this@FakeHost.arguments += arguments
                     return if (name == "fail") {
                         EtaMcpToolOutcome("""{"ok":false,"code":"X"}""", isError = true)
                     } else {
@@ -46,12 +48,14 @@ class EtaMcpProtocolTest {
     private var clock = 1_000L
     private val host = FakeHost()
     private val activities = mutableListOf<EtaMcpActivity>()
+    private var privacy = EtaMcpPrivacySettings()
     private val protocol = EtaMcpProtocol(
         host,
         token = { TOKEN },
         serverVersion = "test",
         now = { clock },
         onActivity = { activities += it },
+        privacy = { privacy },
     )
 
     @After
@@ -142,7 +146,40 @@ class EtaMcpProtocolTest {
     }
 
     @Test
+    fun defaultPrivacyMasksResultsRestoresArgumentsAndWithholdsImages() {
+        val first = body(protocol.handle(post(call("echo", JSONObject().put("to", "13812345678"))))).getJSONObject("result")
+        val content = first.getJSONArray("content")
+        assertEquals("""{"to":"[PHONE_1]"}""", content.getJSONObject(0).getString("text"))
+        assertEquals("text", content.getJSONObject(1).getString("type"))
+        assertTrue(content.getJSONObject(1).getString("text").contains("1 张图片"))
+        assertEquals("13812345678", host.arguments.last().getString("to"))
+
+        protocol.handle(post(call("echo", JSONObject().put("body", "回电 [PHONE_1]"))))
+        assertEquals("回电 13812345678", host.arguments.last().getString("body"))
+
+        val unknown = body(protocol.handle(post(call("echo", JSONObject().put("to", "[PHONE_7]"))))).getJSONObject("result")
+        assertTrue(unknown.getBoolean("isError"))
+        val error = JSONObject(unknown.getJSONArray("content").getJSONObject(0).getString("text"))
+        assertEquals("UNKNOWN_PLACEHOLDER", error.getString("code"))
+        assertEquals(2, host.arguments.size)
+
+        val instructions = body(protocol.handle(post(initialize("2025-11-25"))))
+            .getJSONObject("result").getString("instructions")
+        assertTrue(instructions.contains("[PHONE_1]"))
+    }
+
+    @Test
+    fun privacyCanBeRelaxedPerCall() {
+        privacy = EtaMcpPrivacySettings(redactOutput = false, allowImages = true)
+        val result = body(protocol.handle(post(call("echo", JSONObject().put("to", "13812345678"))))).getJSONObject("result")
+        val content = result.getJSONArray("content")
+        assertEquals("""{"to":"13812345678"}""", content.getJSONObject(0).getString("text"))
+        assertEquals("image", content.getJSONObject(1).getString("type"))
+    }
+
+    @Test
     fun toolsListAndCallFollowMcpShapes() {
+        privacy = EtaMcpPrivacySettings(allowImages = true)
         val listed = body(protocol.handle(post(rpc("tools/list")))).getJSONObject("result")
         val tools = listed.getJSONArray("tools")
         assertEquals(2, tools.length())
