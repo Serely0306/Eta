@@ -31,9 +31,11 @@ jobs:
 
       # PR 来自 fork 时拿不到 Secrets，这里只做无需签名的检查
       # 提交号取 PR 头部提交，而非 GitHub 生成的临时合并提交
+      # 设置 ETA_SCREENSHOT_DIR 后，界面截图测试随单元测试一起渲染页面，供装机前预览
       - name: Lint、单元测试与 Debug 构建
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ETA_SCREENSHOT_DIR: ${{ github.workspace }}/app/build/ui-preview
         run: >-
           ./gradlew --no-daemon --no-configuration-cache --continue
           "-Peta.buildMetadata=${HEAD_SHA::7}"
@@ -47,5 +49,14 @@ jobs:
           path: |
             app/build/reports/
             app/build/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: 上传界面截图
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ui-preview
+          path: app/build/ui-preview/
           if-no-files-found: ignore
           retention-days: 7
