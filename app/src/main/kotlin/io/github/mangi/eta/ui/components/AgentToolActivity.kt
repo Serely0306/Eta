@@ -48,6 +48,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.browser.AgentBrowserSession
 import io.github.mangi.eta.agent.browser.BrowserSessionSnapshot
 import io.github.mangi.eta.agent.overlay.toolDisplayName
+import io.github.mangi.eta.agent.runtime.AgentSubagentTool
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import io.github.mangi.eta.ui.model.ToolCallDetails
@@ -121,7 +122,8 @@ internal fun ToolActivityRow(
             else -> null
         }
     }
-    val subtitle = browserLine ?: outcome
+    val subagentLine = if (message.subagents.isEmpty()) null else subagentCountsLine(message.subagents)
+    val subtitle = browserLine ?: subagentLine ?: outcome
     // 每个工具都能展开：至少有“详情”入口，完整参数与结果从会话记录读取。
     var showDetail by remember(message.id) { mutableStateOf(false) }
     var detailComposed by remember(message.id) { mutableStateOf(false) }
@@ -319,7 +321,9 @@ private fun ToolActivityDetail(
             ToolCommandBlock(command = message.command, context = message.argumentsSummary)
         }
         val result = message.resultSummary?.takeIf(String::isNotBlank)
-        if (terminal != null) {
+        if (message.toolName == AgentSubagentTool.TOOL_NAME) {
+            SubagentList(message, detail)
+        } else if (terminal != null) {
             TerminalOutputBlock(terminal)
         } else if (result != null) {
             SelectionContainer {

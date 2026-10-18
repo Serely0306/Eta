@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.runtime
 
 import io.github.mangi.eta.agent.mcp.RoutingToolExecutor
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentModelExecutionException
 import io.github.mangi.eta.agent.model.AgentTaskPlan
 import io.github.mangi.eta.agent.model.AgentToolCatalog
 import io.github.mangi.eta.agent.model.AgentUserQuestion
@@ -20,7 +21,8 @@ import org.json.JSONObject
  * 使用与主 run 相同的模型和非界面工具，只把结论交回主 Agent，中间的读取与检索不占主上下文。
  *
  * 子 Agent 不能操作界面（屏幕只有一块，由主 Agent 串行使用）、不能提问、不能再派子 Agent；
- * 主 run 取消时一并取消。进度以 [AgentEvent.SubagentUpdate] 汇总，内部事件不进入主 run 的消息流。
+ * 主 run 取消时一并取消。进度以 [AgentEvent.SubagentUpdate] 汇总，内部事件不进入主 run 的消息流；
+ * 每个子 Agent 的完整过程结束后交给 [saveTranscript] 另存，供界面查看。
  */
 internal class AgentSubagentTool(
     private val parentController: AgentRunController,
@@ -35,10 +37,17 @@ internal class AgentSubagentTool(
     private val newExecutor: (ownerId: String) -> RoutingToolExecutor,
     private val emit: (AgentEvent) -> Unit,
     private val fallback: ModelFallbackPolicy = ModelFallbackPolicy.NONE,
+    /** 子 Agent 结束后保存它的完整过程（已脱敏），供界面查看。 */
+    private val saveTranscript: (SubagentTranscriptStore.Record) -> Unit = {},
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     private class Task(val task: String, val context: String)
 
-    private class Outcome(val ok: Boolean, val text: String)
+    private class Outcome(
+        val ok: Boolean,
+        val text: String,
+        val transcript: List<AgentModelClient.ConversationMessage> = emptyList(),
+    )
 
     private val emitLock = Any()
 
@@ -54,16 +63,31 @@ internal class AgentSubagentTool(
         // 子 Agent 在新线程上运行，用量账本的归属要显式带过去。
         val usageContext = ModelUsageScope.current()
         val workers = tasks.mapIndexed { index, task ->
-            emitSafely(AgentEvent.SubagentUpdate(call.id, index, tasks.size, AgentEvent.SubagentUpdate.PHASE_STARTED))
+            emitSafely(
+                AgentEvent.SubagentUpdate(
+                    call.id, index, tasks.size, AgentEvent.SubagentUpdate.PHASE_STARTED,
+                    detail = task.task.take(TASK_ECHO_CHARS),
+                ),
+            )
             thread(name = "agent-subagent-$index", isDaemon = true) {
                 val outcome = ModelUsageScope.run(usageContext?.copy(subagentIndex = index)) {
                     runSubagent(call.id, index, tasks.size, task, excluded)
                 }
                 outcomes[index] = outcome
+                runCatching {
+                    saveTranscript(
+                        SubagentTranscriptStore.Record(
+                            runId = runId, toolCallId = call.id, index = index, total = tasks.size,
+                            task = task.task, ok = outcome.ok, result = outcome.text, createdAt = now(),
+                            transcript = outcome.transcript,
+                        ),
+                    )
+                }
                 emitSafely(
                     AgentEvent.SubagentUpdate(
                         call.id, index, tasks.size,
                         if (outcome.ok) AgentEvent.SubagentUpdate.PHASE_FINISHED else AgentEvent.SubagentUpdate.PHASE_FAILED,
+                        detail = outcome.text.take(CONCLUSION_ECHO_CHARS),
                     ),
                 )
             }
@@ -99,6 +123,8 @@ internal class AgentSubagentTool(
         val roundLimitHit = AtomicBoolean(false)
         var rounds = 0
         val executor = newExecutor("$runId-sub-$index")
+        // 失败或取消时 complete 不返回结果，用最近一次的过程快照。
+        var latestTranscript = emptyList<AgentModelClient.ConversationMessage>()
         return try {
             val response = AgentModelClient.complete(
                 config = config,
@@ -119,6 +145,7 @@ internal class AgentSubagentTool(
                 disabledToolsProvider = { disabledTools() + excluded },
                 sessionId = "$parentSessionId:sub:$toolCallId:$index",
                 operationId = "$runId-sub-$index",
+                onTranscript = { latestTranscript = it },
                 fallback = fallback,
             ) { event ->
                 when (event) {
@@ -126,17 +153,22 @@ internal class AgentSubagentTool(
                         child.cancel()
                     }
                     is AgentEvent.ToolStarted -> emitSafely(
-                        AgentEvent.SubagentUpdate(toolCallId, index, total, AgentEvent.SubagentUpdate.PHASE_TOOL, event.name),
+                        AgentEvent.SubagentUpdate(
+                            toolCallId, index, total, AgentEvent.SubagentUpdate.PHASE_TOOL, event.name,
+                            detail = event.argsPreview,
+                        ),
                     )
                     else -> Unit
                 }
             }
-            Outcome(true, response.content.trim().take(MAX_RESULT_CHARS))
+            Outcome(true, response.content.trim().take(MAX_RESULT_CHARS), response.transcript.ifEmpty { latestTranscript })
         } catch (throwable: Throwable) {
+            val transcript = (throwable as? AgentModelExecutionException)?.transcript?.takeIf { it.isNotEmpty() }
+                ?: latestTranscript
             when {
-                roundLimitHit.get() -> Outcome(false, "超过 $MAX_ROUNDS 轮仍未完成，已停止该子任务")
-                parentController.isCancelled -> Outcome(false, "已停止")
-                else -> Outcome(false, (throwable.cause ?: throwable).message ?: throwable.javaClass.simpleName)
+                roundLimitHit.get() -> Outcome(false, "超过 $MAX_ROUNDS 轮仍未完成，已停止该子任务", transcript)
+                parentController.isCancelled -> Outcome(false, "已停止", transcript)
+                else -> Outcome(false, (throwable.cause ?: throwable).message ?: throwable.javaClass.simpleName, transcript)
             }
         } finally {
             binding.close()
@@ -168,6 +200,7 @@ internal class AgentSubagentTool(
         private const val MAX_CONTEXT_CHARS = 8_000
         private const val MAX_RESULT_CHARS = 8_000
         private const val TASK_ECHO_CHARS = 120
+        private const val CONCLUSION_ECHO_CHARS = 200
 
         /** 只属于主 Agent 的协作工具；列入停用集合，子 Agent 的提示词也不会提到它们。 */
         private val COORDINATOR_TOOLS = setOf(AgentUserQuestion.TOOL_NAME, AgentTaskPlan.TOOL_NAME, TOOL_NAME)

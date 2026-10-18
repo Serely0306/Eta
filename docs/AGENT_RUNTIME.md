@@ -82,7 +82,8 @@ pending steering
   - 子 Agent 不开放界面类工具、Agent 浏览器、Skill 管理，也不能提问、建计划或再派子 Agent；需要界面操作或用户决定的步骤写进结论，由主 Agent 处理。
   - 每个子 Agent 有独立的工具执行器，租约与浏览器归属用 `<runId>-sub-<n>`，关闭时不影响主 run 持有的屏幕租约。
   - 主 run 取消时子 Agent 一并取消；单个子 Agent 超过 40 轮未完成即停止并报告。
-  - 进度以 `SubagentUpdate` 汇总：胶囊显示“子 Agent n：正在执行的工具”，子 Agent 的内部事件不进入主 run 的消息流。
+  - 进度以 `SubagentUpdate` 汇总：胶囊显示“子 Agent n：正在执行的工具”，子 Agent 的内部事件不进入主 run 的消息流。事件的 `detail` 带任务摘要、当前工具的参数摘要和结论开头，只给界面显示，不进日志行；`run_subagents` 工具行展开后按子 Agent 列出状态与当前步骤。
+  - 每个子 Agent 结束（成功、失败或取消）后，它的完整过程（与主会话同样已脱敏）存为 `files/subagent_transcripts/<runId>/<调用 id>-<序号>.json`，过大时逐条截短；界面“查看过程”读取它，显示思考、正文与工具行（工具同样可看详情）。30 天后清理，删除会话时按会话的 run 一并删除；不进 Eta 备份。
 
 ## 自动任务
 

@@ -532,6 +532,16 @@
   <string name="tool_status_running">Running</string>
   <string name="tool_status_success">Completed</string>
   <string name="tool_status_failed">Failed</string>
+  <string name="subagent_title">Subagent %1$d of %2$d</string>
+  <string name="subagent_view_process">View process</string>
+  <string name="subagent_task">Task</string>
+  <string name="subagent_conclusion">Conclusion</string>
+  <string name="subagent_current_tool">Now: %1$s</string>
+  <string name="subagent_count_done">%1$d done</string>
+  <string name="subagent_count_running">%1$d running</string>
+  <string name="subagent_count_failed">%1$d failed</string>
+  <string name="subagent_transcript_loading">Loading…</string>
+  <string name="subagent_transcript_unavailable">No saved process for this subagent. It may come from an older version, or it was cleaned up after 30 days.</string>
   <string name="tool_detail_open">Details</string>
   <string name="tool_detail_arguments">Arguments</string>
   <string name="tool_detail_result">Result</string>

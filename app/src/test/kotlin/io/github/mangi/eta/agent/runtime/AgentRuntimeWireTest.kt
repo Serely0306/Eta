@@ -53,7 +53,7 @@ class AgentRuntimeWireTest {
             AgentEvent.UserQuestionAsked("run:call", "call", """{"questions":[]}""", 600_000L),
             AgentEvent.UserQuestionResolved("run:call", "answered"),
             AgentEvent.PlanUpdated("call", """{"steps":[{"step":"读取日志","status":"in_progress"}]}"""),
-            AgentEvent.SubagentUpdate("call", 1, 3, AgentEvent.SubagentUpdate.PHASE_TOOL, "terminal"),
+            AgentEvent.SubagentUpdate("call", 1, 3, AgentEvent.SubagentUpdate.PHASE_TOOL, "terminal", "查看日志 · Android"),
             AgentEvent.HostedToolFinished(1, "ws_1", "网页搜索", true, "存储清理", listOf("https://a.example/1")),
         )) {
             assertEquals(event, AgentRuntimeWire.eventFromBundle(AgentRuntimeWire.eventToBundle(event)))

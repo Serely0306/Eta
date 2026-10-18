@@ -150,7 +150,20 @@ data class ToolActivityMessageUi(
     val command: String? = null,
     val resultSummary: String? = null,
     val imageCount: Int = 0,
+    /** run_subagents 运行中的各子 Agent 进度；只在运行期存在，结束后从会话记录与过程文件读取。 */
+    val subagents: List<SubagentProgressUi> = emptyList(),
 ) : AgentChatMessageUi
+
+@Immutable
+data class SubagentProgressUi(
+    val index: Int,
+    val total: Int,
+    val status: ToolActivityStatusUi,
+    val task: String = "",
+    val currentTool: String = "",
+    val currentDetail: String = "",
+    val conclusion: String = "",
+)
 
 enum class ToolActivityStatusUi {
     Running,

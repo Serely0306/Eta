@@ -557,6 +557,31 @@ class AgentRunMessageProjectorTest {
     }
 
     @Test
+    fun subagentProgressAttachesToRunSubagentsRow() {
+        val projector = AgentRunMessageProjector(nowElapsedRealtime = { 1_000L })
+        var messages = projector.applyEvent(
+            "run",
+            AgentEvent.ToolStarted(round = 1, toolCallId = "call_s", name = "run_subagents", argsPreview = "派出 2 个子 Agent"),
+            emptyList(),
+        )
+        listOf(
+            AgentEvent.SubagentUpdate("call_s", 0, 2, AgentEvent.SubagentUpdate.PHASE_STARTED, detail = "查日志"),
+            AgentEvent.SubagentUpdate("call_s", 1, 2, AgentEvent.SubagentUpdate.PHASE_STARTED, detail = "查网页"),
+            AgentEvent.SubagentUpdate("call_s", 0, 2, AgentEvent.SubagentUpdate.PHASE_TOOL, "terminal", detail = "查看日志 · Android"),
+            AgentEvent.SubagentUpdate("call_s", 1, 2, AgentEvent.SubagentUpdate.PHASE_FAILED, detail = "超时"),
+        ).forEach { messages = projector.applyEvent("run", it, messages) }
+
+        val subagents = (messages.single() as ToolActivityMessageUi).subagents
+        assertEquals(listOf(ToolActivityStatusUi.Running, ToolActivityStatusUi.Failed), subagents.map { it.status })
+        assertEquals(listOf("查日志", "查网页"), subagents.map { it.task })
+        assertEquals("terminal", subagents[0].currentTool)
+        assertEquals("查看日志 · Android", subagents[0].currentDetail)
+        assertEquals("超时", subagents[1].conclusion)
+        // 别的调用 id 不影响这一行。
+        assertSame(messages, projector.applyEvent("run", AgentEvent.SubagentUpdate("other", 0, 1, AgentEvent.SubagentUpdate.PHASE_STARTED), messages))
+    }
+
+    @Test
     fun hostedSearchShowsQueryAsTitleAndKeepsSourcesInSummary() {
         val projector = AgentRunMessageProjector(nowElapsedRealtime = { 1_000L })
         val runId = "run-hosted"

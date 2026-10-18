@@ -5,6 +5,7 @@ import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
+import io.github.mangi.eta.ui.model.SubagentProgressUi
 import io.github.mangi.eta.ui.model.SystemNoticeCode
 import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
@@ -64,12 +65,12 @@ internal class AgentRunMessageProjector(
             ensureCompletedThinking(runId, event.round, event.reasoningContent, messages)
         }
         is AgentEvent.RunFinished -> finalizeText(runId, finalizeThinking(runId, messages))
+        is AgentEvent.SubagentUpdate -> updateSubagent(runId, event, messages)
         // 待回答问题由会话状态承载，问答结论随 ask_user 的工具结果进入消息流。
         is AgentEvent.UserQuestionAsked,
         is AgentEvent.UserQuestionResolved,
-        // 计划与子 Agent 进度随各自的工具卡片展示，不单独产生消息。
+        // 计划随自己的工具卡片展示，不单独产生消息。
         is AgentEvent.PlanUpdated,
-        is AgentEvent.SubagentUpdate,
         is AgentEvent.UserSupplementReceived,
         is AgentEvent.RunStarted,
         is AgentEvent.ProviderRequestStarted,
@@ -519,6 +520,37 @@ internal class AgentRunMessageProjector(
                 message
             }
         }
+    }
+
+    /** 子 Agent 进度挂在 run_subagents 的工具行上；找不到对应工具行时不改动。 */
+    fun updateSubagent(
+        runId: String,
+        event: AgentEvent.SubagentUpdate,
+        messages: List<AgentChatMessageUi>,
+    ): List<AgentChatMessageUi> {
+        val suffix = "-${event.toolCallId.ifBlank { "unknown" }}"
+        val targetIndex = messages.indexOfLast {
+            it is ToolActivityMessageUi && it.id.startsWith("$runId-tool-") && it.id.endsWith(suffix)
+        }
+        if (targetIndex < 0 || event.index !in 0 until event.total) return messages
+        val target = messages[targetIndex] as ToolActivityMessageUi
+        val current = (0 until event.total).map { index ->
+            target.subagents.getOrNull(index)?.copy(total = event.total)
+                ?: SubagentProgressUi(index = index, total = event.total, status = ToolActivityStatusUi.Running)
+        }
+        val previous = current[event.index]
+        val updated = when (event.phase) {
+            AgentEvent.SubagentUpdate.PHASE_STARTED -> previous.copy(status = ToolActivityStatusUi.Running, task = event.detail)
+            AgentEvent.SubagentUpdate.PHASE_TOOL ->
+                previous.copy(currentTool = event.toolName, currentDetail = event.detail)
+            AgentEvent.SubagentUpdate.PHASE_FINISHED ->
+                previous.copy(status = ToolActivityStatusUi.Success, conclusion = event.detail, currentDetail = "")
+            AgentEvent.SubagentUpdate.PHASE_FAILED ->
+                previous.copy(status = ToolActivityStatusUi.Failed, conclusion = event.detail, currentDetail = "")
+            else -> previous
+        }
+        val subagents = current.toMutableList().also { it[event.index] = updated }
+        return messages.toMutableList().also { it[targetIndex] = target.copy(subagents = subagents) }
     }
 
     fun failRunningTools(

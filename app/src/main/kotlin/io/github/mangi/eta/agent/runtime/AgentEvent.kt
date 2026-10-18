@@ -197,6 +197,8 @@ internal sealed interface AgentEvent {
         val total: Int,
         val phase: String,
         val toolName: String = "",
+        /** 开始时为任务摘要，工具阶段为参数摘要，结束时为结论开头；只给界面显示，不进日志行。 */
+        val detail: String = "",
     ) : AgentEvent {
         override fun toLogLine(): String =
             "subagent_update index=$index, total=$total, phase=${phase.toSafeLogToken()}, tool=${toolName.toSafeLogToken()}"

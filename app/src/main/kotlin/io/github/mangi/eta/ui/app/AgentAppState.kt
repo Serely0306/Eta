@@ -34,6 +34,7 @@ import io.github.mangi.eta.data.repository.CharacterRepository
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentExecutionService
 import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
+import io.github.mangi.eta.agent.runtime.SubagentTranscriptStore
 import io.github.mangi.eta.agent.runtime.AgentRunArchiveStore
 import io.github.mangi.eta.agent.runtime.AgentRunCheckpointStore
 import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
@@ -789,6 +790,10 @@ internal class AgentAppState(
 
     fun deleteConversation(conversationId: String) {
         val wasSelected = selectedConversationId == conversationId
+        // 子 Agent 的过程文件按 run 保存，随会话一并删除。
+        conversationsById[conversationId]?.appliedRuntimeRunIds?.takeIf { it.isNotEmpty() }?.let { runIds ->
+            scope.launch(Dispatchers.IO) { SubagentTranscriptStore.deleteRuns(appContext, runIds) }
+        }
         conversationsById = conversationsById - conversationId
         conversationTitles = conversationTitles - conversationId
         conversationUpdatedAt = conversationUpdatedAt - conversationId

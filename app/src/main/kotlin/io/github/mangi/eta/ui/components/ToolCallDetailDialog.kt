@@ -9,10 +9,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -25,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -36,14 +40,23 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.OpenAiResponsesProvider
 import io.github.mangi.eta.agent.overlay.toolDisplayName
+import io.github.mangi.eta.agent.runtime.SubagentTranscriptStore
+import io.github.mangi.eta.ui.markdown.MarkdownTone
+import io.github.mangi.eta.ui.markdown.StaticMarkdown
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
+import io.github.mangi.eta.ui.model.AgentMessageUi
+import io.github.mangi.eta.ui.model.SubagentDetails
+import io.github.mangi.eta.ui.model.SubagentProgressUi
 import io.github.mangi.eta.ui.model.TerminalOutput
+import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import io.github.mangi.eta.ui.model.ToolCallDetail
 import io.github.mangi.eta.ui.model.ToolCallDetails
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -180,9 +193,7 @@ internal fun ToolCallDetailDialog(
                 detail.sensitive -> Note(stringResource(R.string.tool_detail_sensitive))
                 else -> {
                     detail.argumentsJson?.let { arguments ->
-                        DetailSection(stringResource(R.string.tool_detail_arguments), remember(arguments) {
-                            ToolCallDetails.pretty(arguments)
-                        })
+                        DetailSection(stringResource(R.string.tool_detail_arguments), ToolCallDetails.pretty(arguments))
                     }
                     ToolResultSections(message, detail, terminal)
                     Note(stringResource(R.string.tool_detail_source_note))
@@ -362,6 +373,171 @@ private fun Note(text: String) {
         style = MiuixTheme.textStyles.footnote2,
         color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.8f),
     )
+}
+
+/** run_subagents 展开后的子 Agent 列表：运行中显示当前步骤，结束后可查看每个子 Agent 的完整过程。 */
+@Composable
+internal fun SubagentList(message: ToolActivityMessageUi, detail: ToolCallDetail?) {
+    val restored = remember(detail) { SubagentDetails.fromDetail(detail) }
+    val subagents = message.subagents.ifEmpty { restored }
+    val ids = remember(message.id) { SubagentDetails.runAndCallId(message.id) }
+    var opened by remember(message.id) { mutableStateOf<SubagentProgressUi?>(null) }
+    var show by remember(message.id) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        subagents.forEach { subagent ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .squircleSurface(color = MiuixTheme.colorScheme.surfaceContainer, cornerRadius = 10.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.subagent_title, subagent.index + 1, subagent.total) + " · " +
+                            stringResource(subagent.status.labelRes()),
+                        style = MiuixTheme.textStyles.body2,
+                        color = if (subagent.status == ToolActivityStatusUi.Failed) StatusError else MiuixTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (ids != null && subagent.status != ToolActivityStatusUi.Running) {
+                        TextButton(
+                            text = stringResource(R.string.subagent_view_process),
+                            onClick = {
+                                opened = subagent
+                                show = true
+                            },
+                            colors = ButtonDefaults.textButtonColorsPrimary(),
+                            minHeight = 28.dp,
+                            textStyle = MiuixTheme.textStyles.footnote1,
+                        )
+                    }
+                }
+                if (subagent.task.isNotBlank()) {
+                    Text(
+                        text = subagent.task,
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                val currentTool = toolDisplayName(subagent.currentTool)
+                val step = if (subagent.status == ToolActivityStatusUi.Running && subagent.currentTool.isNotBlank()) {
+                    stringResource(R.string.subagent_current_tool, subagent.currentDetail.ifBlank { currentTool })
+                } else {
+                    subagent.conclusion
+                }
+                if (step.isNotBlank()) {
+                    Text(
+                        text = step,
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.8f),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+    val target = opened
+    if (target != null && ids != null) {
+        SubagentTranscriptDialog(
+            runId = ids.first,
+            toolCallId = ids.second,
+            progress = target,
+            show = show,
+            onDismissRequest = { show = false },
+            onDismissFinished = { opened = null },
+        )
+    }
+}
+
+/** 运行中的子 Agent 计数，例如“完成 1 · 运行中 1 · 失败 1”。 */
+@Composable
+internal fun subagentCountsLine(subagents: List<SubagentProgressUi>): String = buildList {
+    val done = subagents.count { it.status == ToolActivityStatusUi.Success }
+    val running = subagents.count { it.status == ToolActivityStatusUi.Running }
+    val failed = subagents.count { it.status == ToolActivityStatusUi.Failed }
+    if (done > 0) add(stringResource(R.string.subagent_count_done, done))
+    if (running > 0) add(stringResource(R.string.subagent_count_running, running))
+    if (failed > 0) add(stringResource(R.string.subagent_count_failed, failed))
+}.joinToString(" · ")
+
+/** 一个子 Agent 的完整过程：任务、思考、正文与工具行（工具同样可展开、看详情），最后是结论。 */
+@Composable
+private fun SubagentTranscriptDialog(
+    runId: String,
+    toolCallId: String,
+    progress: SubagentProgressUi,
+    show: Boolean,
+    onDismissRequest: () -> Unit,
+    onDismissFinished: () -> Unit,
+) {
+    val context = LocalContext.current
+    var record by remember { mutableStateOf<SubagentTranscriptStore.Record?>(null) }
+    var loaded by remember { mutableStateOf(false) }
+    LaunchedEffect(runId, toolCallId, progress.index) {
+        record = withContext(Dispatchers.IO) {
+            SubagentTranscriptStore.load(context, runId, toolCallId, progress.index)
+        }
+        loaded = true
+    }
+    val current = record
+    val timeline = remember(current) { current?.let { SubagentDetails.timeline(it.transcript) }.orEmpty() }
+    val source = remember(current, timeline) { current?.let { ToolCallDetailSource(it.transcript, timeline, runInProgress = false) } }
+    EtaWindowDialog(
+        show = show,
+        title = stringResource(R.string.subagent_title, progress.index + 1, progress.total),
+        onDismissRequest = onDismissRequest,
+        onDismissFinished = onDismissFinished,
+    ) {
+        val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.75f).dp
+        CompositionLocalProvider(LocalToolCallDetailSource provides source) {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                item(key = "task") {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Pill(stringResource(((current?.ok)?.let { if (it) ToolActivityStatusUi.Success else ToolActivityStatusUi.Failed }
+                            ?: progress.status).labelRes()))
+                        DetailSection(
+                            stringResource(R.string.subagent_task),
+                            current?.task ?: progress.task,
+                            monospace = false,
+                        )
+                    }
+                }
+                when {
+                    !loaded -> item(key = "loading") { Note(stringResource(R.string.subagent_transcript_loading)) }
+                    current == null -> item(key = "missing") { Note(stringResource(R.string.subagent_transcript_unavailable)) }
+                    else -> items(timeline, key = { it.id }) { message ->
+                        when (message) {
+                            is ThinkingMessageUi -> ThinkingRow(message = message, retainedStreamingState = null, compact = true)
+                            is AgentMessageUi -> StaticMarkdown(
+                                content = message.content,
+                                tone = MarkdownTone.Answer,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            )
+                            is ToolActivityMessageUi -> ToolActivityRow(
+                                message = message,
+                                onOpenBrowser = {},
+                                showBrowserShortcut = false,
+                            )
+                            else -> Unit
+                        }
+                    }
+                }
+                val conclusion = current?.result ?: progress.conclusion
+                if (conclusion.isNotBlank()) {
+                    item(key = "conclusion") {
+                        DetailSection(stringResource(R.string.subagent_conclusion), conclusion, monospace = false)
+                    }
+                }
+            }
+        }
+    }
 }
 
 private fun ToolActivityStatusUi.labelRes(): Int = when (this) {

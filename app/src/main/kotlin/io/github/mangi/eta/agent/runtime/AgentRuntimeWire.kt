@@ -816,6 +816,7 @@ internal object AgentRuntimeWire {
                 putInt("total", event.total)
                 putString("phase", event.phase)
                 putString("tool_name", event.toolName)
+                putString("detail", event.detail)
             }
 
             is AgentEvent.ToolStarted -> {
@@ -994,6 +995,7 @@ internal object AgentRuntimeWire {
             total = bundle.getInt("total"),
             phase = bundle.getString("phase").orEmpty(),
             toolName = bundle.getString("tool_name").orEmpty(),
+            detail = bundle.getString("detail").orEmpty(),
         )
 
         "tool_started" -> AgentEvent.ToolStarted(

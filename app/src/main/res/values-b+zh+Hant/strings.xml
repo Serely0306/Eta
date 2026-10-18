@@ -509,6 +509,16 @@
   <string name="tool_status_running">執行中</string>
   <string name="tool_status_success">已完成</string>
   <string name="tool_status_failed">失敗</string>
+  <string name="subagent_title">子 Agent %1$d / %2$d</string>
+  <string name="subagent_view_process">查看過程</string>
+  <string name="subagent_task">任務</string>
+  <string name="subagent_conclusion">結論</string>
+  <string name="subagent_current_tool">目前：%1$s</string>
+  <string name="subagent_count_done">完成 %1$d</string>
+  <string name="subagent_count_running">執行中 %1$d</string>
+  <string name="subagent_count_failed">失敗 %1$d</string>
+  <string name="subagent_transcript_loading">正在讀取…</string>
+  <string name="subagent_transcript_unavailable">找不到這個子 Agent 的過程記錄：可能來自舊版本，或已超過 30 天被清理。</string>
   <string name="tool_detail_open">詳情</string>
   <string name="tool_detail_arguments">呼叫參數</string>
   <string name="tool_detail_result">結果</string>
