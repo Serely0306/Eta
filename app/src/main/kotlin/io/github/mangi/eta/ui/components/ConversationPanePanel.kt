@@ -28,6 +28,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccountTree
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Delete
@@ -63,7 +64,9 @@ import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.ui.model.ConversationEntrySource
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
+import io.github.mangi.eta.ui.model.ConversationSubagentUi
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
+import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.DropdownItem
@@ -98,6 +101,8 @@ private object ConversationPanelMetrics {
     val RowVerticalPadding = 12.dp
     val ActiveDotSize = 6.dp
     val ActiveDotGap = 10.dp
+    val SubagentIndent = 16.dp
+    val SubagentToggleSize = 32.dp
     val EmptyVerticalPadding = 28.dp
     val DockTopGap = 2.dp
     val DockEntryCornerRadius = 12.dp
@@ -133,12 +138,18 @@ internal fun ConversationPanePanel(
     onOpenCharacters: () -> Unit,
     onOpenPermissions: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 初始展开子 Agent 的会话；界面预览用。 */
+    initialExpandedSubagents: Set<String> = emptySet(),
 ) {
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
     val groups = remember(state.conversations) { state.conversations.groupForDrawer() }
     // 厂商入口分组默认收起，避免每次唤醒新建的会话挤占普通对话；搜索或选中其中的会话时自动展开。
     var expandedEntrySources by remember { mutableStateOf(emptySet<ConversationEntrySource>()) }
+    // 有子 Agent 的会话可在侧栏展开，列出它派出过的子 Agent；点开查看过程。
+    var expandedSubagents by remember { mutableStateOf(initialExpandedSubagents) }
+    var openedSubagent by remember { mutableStateOf<ConversationSubagentUi?>(null) }
+    var showSubagent by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier
@@ -207,14 +218,33 @@ internal fun ConversationPanePanel(
                             items = if (expanded) group.items else emptyList(),
                             key = { it.id },
                         ) { conversation ->
-                            ConversationTextRow(
-                                conversation = conversation,
-                                selected = conversation.id == state.selectedConversationId,
-                                onClick = { onConversationSelected(conversation.id) },
-                                onRename = { onConversationRename(conversation) },
-                                onExport = { onConversationExport(conversation) },
-                                onDelete = { onConversationDelete(conversation) },
-                            )
+                            val subagentsOpen = conversation.id in expandedSubagents
+                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                ConversationTextRow(
+                                    conversation = conversation,
+                                    selected = conversation.id == state.selectedConversationId,
+                                    subagentsExpanded = subagentsOpen,
+                                    onToggleSubagents = {
+                                        expandedSubagents = if (subagentsOpen) {
+                                            expandedSubagents - conversation.id
+                                        } else {
+                                            expandedSubagents + conversation.id
+                                        }
+                                    },
+                                    onClick = { onConversationSelected(conversation.id) },
+                                    onRename = { onConversationRename(conversation) },
+                                    onExport = { onConversationExport(conversation) },
+                                    onDelete = { onConversationDelete(conversation) },
+                                )
+                                if (subagentsOpen) {
+                                    conversation.subagents.forEach { subagent ->
+                                        SubagentPaneRow(subagent = subagent, onClick = {
+                                            openedSubagent = subagent
+                                            showSubagent = true
+                                        })
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -238,6 +268,65 @@ internal fun ConversationPanePanel(
                     )
                     Spacer(Modifier.height(ConversationPanelMetrics.BottomInset))
                 }
+            }
+        }
+    }
+    openedSubagent?.let { subagent ->
+        SubagentTranscriptDialog(
+            runId = subagent.runId,
+            toolCallId = subagent.toolCallId,
+            progress = subagent.progress,
+            show = showSubagent,
+            onDismissRequest = { showSubagent = false },
+            onDismissFinished = { openedSubagent = null },
+        )
+    }
+}
+
+/** 侧栏里会话下的一个子 Agent：状态点、序号与状态、任务；运行中的还没有过程可看，不可点。 */
+@Composable
+private fun SubagentPaneRow(subagent: ConversationSubagentUi, onClick: () -> Unit) {
+    val progress = subagent.progress
+    val running = progress.status == ToolActivityStatusUi.Running
+    val failed = progress.status == ToolActivityStatusUi.Failed
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = ConversationPanelMetrics.SubagentIndent)
+            .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
+            .then(if (running) Modifier else Modifier.clickable(onClick = onClick))
+            .padding(horizontal = ConversationPanelMetrics.RowHorizontalPadding, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(ConversationPanelMetrics.ActiveDotSize)
+                .clip(CircleShape)
+                .background(
+                    when {
+                        running -> StatusRunning
+                        failed -> StatusError
+                        else -> MiuixTheme.colorScheme.onSurfaceVariantActions
+                    },
+                ),
+        )
+        Spacer(modifier = Modifier.width(ConversationPanelMetrics.SectionIconGap))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = stringResource(R.string.subagent_title, progress.index + 1, progress.total) + " · " +
+                    stringResource(progress.status.labelRes()),
+                style = MiuixTheme.textStyles.footnote1,
+                color = if (failed) StatusError else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+            )
+            if (progress.task.isNotBlank()) {
+                Text(
+                    text = progress.task,
+                    style = MiuixTheme.textStyles.body2,
+                    color = MiuixTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -346,6 +435,8 @@ private fun ConversationSectionHeader(
 private fun ConversationTextRow(
     conversation: ConversationSummaryUi,
     selected: Boolean,
+    subagentsExpanded: Boolean,
+    onToggleSubagents: () -> Unit,
     onClick: () -> Unit,
     onRename: () -> Unit,
     onExport: () -> Unit,
@@ -408,6 +499,40 @@ private fun ConversationTextRow(
                         .clip(CircleShape)
                         .background(MiuixTheme.colorScheme.primary),
                 )
+            }
+            if (conversation.subagents.isNotEmpty()) {
+                // 展开按钮单独接收点击，不切换会话。
+                Row(
+                    modifier = Modifier
+                        .padding(start = ConversationPanelMetrics.ActiveDotGap)
+                        .heightIn(min = ConversationPanelMetrics.SubagentToggleSize)
+                        .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
+                        .clickable(
+                            onClickLabel = stringResource(R.string.conversation_subagents_toggle),
+                            onClick = onToggleSubagents,
+                        )
+                        .padding(horizontal = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.AccountTree,
+                        contentDescription = null,
+                        modifier = Modifier.size(ConversationPanelMetrics.SectionIconSize),
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    )
+                    Text(
+                        text = conversation.subagents.size.toString(),
+                        style = MiuixTheme.textStyles.footnote1,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                        modifier = Modifier.padding(start = 3.dp),
+                    )
+                    Icon(
+                        imageVector = if (subagentsExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = stringResource(R.string.conversation_subagents_toggle),
+                        modifier = Modifier.size(ConversationPanelMetrics.SectionIconSize),
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                    )
+                }
             }
         }
 

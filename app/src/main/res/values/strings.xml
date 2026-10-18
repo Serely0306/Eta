@@ -266,6 +266,7 @@
   <string name="automation_delete">Delete</string>
   <string name="automation_save">Save</string>
   <string name="conversation_section_toggle">Expand or collapse %1$s</string>
+  <string name="conversation_subagents_toggle">Show or hide subagents</string>
   <string name="conversation_dock_models">Models</string>
   <string name="conversation_preview_reasoning">Eta is reasoning</string>
   <string name="conversation_preview_tool_call">Tool call: %1$s</string>

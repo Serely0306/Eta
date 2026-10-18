@@ -103,6 +103,7 @@ class UiPreviewScreenshotTest {
         capture("usage-logs-$locale") { UsageLogsScreen(onBack = {}) }
         capture("usage-pricing-$locale") { UsagePricingScreen(onBack = {}) }
         capture("agent-timeline-$locale") { AgentTimelinePreview() }
+        capture("conversation-pane-$locale") { ConversationPanePreview() }
     }
 
     private fun capture(name: String, content: @Composable () -> Unit) {

@@ -342,6 +342,7 @@
   <string name="automation_delete">删除</string>
   <string name="automation_save">保存</string>
   <string name="conversation_section_toggle">展开或收起%1$s</string>
+  <string name="conversation_subagents_toggle">展开或收起子 Agent</string>
   <string name="conversation_dock_models">模型</string>
   <string name="conversation_preview_reasoning">Eta 正在思考</string>
   <string name="conversation_preview_tool_call">调用工具：%1$s</string>

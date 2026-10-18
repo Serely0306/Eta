@@ -35,6 +35,33 @@ class SubagentDetailsTest {
     }
 
     @Test
+    fun conversationListsLiveAndFinishedSubagentsInCallOrder() {
+        val call = JSONObject().put("id", "call_s").put("type", "function").put("function", JSONObject()
+            .put("name", "run_subagents").put("arguments", """{"tasks":[{"task":"查日志"},{"task":"查网页"}]}"""))
+        val journal = listOf(
+            ConversationMessage(role = "assistant", toolCallsJson = JSONArray().put(call).toString()),
+            ConversationMessage(role = "tool", toolCallId = "call_s",
+                content = """{"ok":true,"results":[{"index":1,"ok":true,"result":"无异常"},{"index":2,"ok":false,"error":"超时"}]}"""),
+        )
+        val finished = ToolActivityMessageUi("run-a-tool-1-call_s", "run_subagents", ToolActivityStatusUi.Success, "")
+        val live = ToolActivityMessageUi(
+            "run-b-tool-2-call_t", "run_subagents", ToolActivityStatusUi.Running, "",
+            subagents = listOf(SubagentProgressUi(0, 1, ToolActivityStatusUi.Running, "统计占用")),
+        )
+        val other = ToolActivityMessageUi("run-b-tool-1-call_x", "terminal", ToolActivityStatusUi.Success, "")
+
+        val subagents = SubagentDetails.forConversation(listOf(finished, other, live), journal)
+
+        assertEquals(listOf("run-a", "run-a", "run-b"), subagents.map { it.runId })
+        assertEquals(listOf("call_s", "call_s", "call_t"), subagents.map { it.toolCallId })
+        assertEquals(listOf("查日志", "查网页", "统计占用"), subagents.map { it.progress.task })
+        assertEquals(
+            listOf(ToolActivityStatusUi.Success, ToolActivityStatusUi.Failed, ToolActivityStatusUi.Running),
+            subagents.map { it.progress.status },
+        )
+    }
+
+    @Test
     fun finishedSubagentsAreRestoredFromArgumentsAndResults() {
         val detail = ToolCallDetail(
             argumentsJson = """{"tasks":[{"task":"查日志"},{"task":"查网页"}]}""",

@@ -3,6 +3,7 @@ package io.github.mangi.eta.ui.model
 import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentTraceFormatter
+import io.github.mangi.eta.agent.runtime.AgentSubagentTool
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -36,6 +37,19 @@ internal object SubagentDetails {
             )
         }
     }
+
+    /** 一个会话里派出过的全部子 Agent（按调用顺序）；运行中的取实时进度，结束的从会话记录还原。 */
+    fun forConversation(
+        messages: List<AgentChatMessageUi>,
+        journal: List<AgentModelClient.ConversationMessage>,
+    ): List<ConversationSubagentUi> =
+        messages.filterIsInstance<ToolActivityMessageUi>()
+            .filter { it.toolName == AgentSubagentTool.TOOL_NAME }
+            .flatMap { message ->
+                val ids = runAndCallId(message.id) ?: return@flatMap emptyList()
+                message.subagents.ifEmpty { fromDetail(ToolCallDetails.find(journal, messages, message)) }
+                    .map { ConversationSubagentUi(ids.first, ids.second, it) }
+            }
 
     /** 子 Agent 过程转成与主会话相同的思考、正文与工具行；首条用户消息是任务，不重复显示。 */
     fun timeline(

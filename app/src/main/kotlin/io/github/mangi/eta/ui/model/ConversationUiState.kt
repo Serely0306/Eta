@@ -22,6 +22,16 @@ data class ConversationSummaryUi(
     val characterName: String? = null,
     /** 厂商助手入口归档的会话在侧栏单独归组；null 表示普通会话。 */
     val entrySource: ConversationEntrySource? = null,
+    /** 会话里派出过的子 Agent，侧栏展开该会话时列出，可点开查看过程。 */
+    val subagents: List<ConversationSubagentUi> = emptyList(),
+)
+
+/** 侧栏里的一个子 Agent：所属 run 与 run_subagents 调用，以及它的任务与状态。 */
+@Immutable
+data class ConversationSubagentUi(
+    val runId: String,
+    val toolCallId: String,
+    val progress: SubagentProgressUi,
 )
 
 @Immutable

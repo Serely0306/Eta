@@ -60,10 +60,12 @@ import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import io.github.mangi.eta.ui.model.ConversationEntrySource
 import io.github.mangi.eta.ui.model.ConversationModeUi
 import io.github.mangi.eta.ui.model.ConversationPaneUiState
+import io.github.mangi.eta.ui.model.ConversationSubagentUi
 import io.github.mangi.eta.ui.model.ConversationSummaryUi
 import io.github.mangi.eta.ui.model.MessageEditUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
 import io.github.mangi.eta.ui.model.PendingImageUi
+import io.github.mangi.eta.ui.model.SubagentDetails
 import io.github.mangi.eta.ui.model.SystemNoticeCode
 import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
@@ -1920,6 +1922,7 @@ internal class AgentAppState(
                     characterName = state.roleplay?.characterName,
                     isActiveRun = state.isStreaming,
                     entrySource = conversationEntrySource(id, conversationTitles[id].orEmpty()),
+                    subagents = conversationSubagents(id, state),
                 )
             }
         val query = conversationPaneState.searchQuery.trim()
@@ -1936,6 +1939,20 @@ internal class AgentAppState(
                 }
             },
         )
+    }
+
+    // 侧栏的子 Agent 列表按（消息, 记录）引用缓存：摘要随每个流式事件刷新，只有变化的会话重算。
+    private val subagentCache = mutableMapOf<String, Triple<List<AgentChatMessageUi>, List<AgentModelClient.ConversationMessage>, List<ConversationSubagentUi>>>()
+
+    private fun conversationSubagents(conversationId: String, state: AgentChatHomeUiState): List<ConversationSubagentUi> {
+        val journal = state.journal.ifEmpty { state.history }
+        subagentCache[conversationId]?.let { (messages, cachedJournal, subagents) ->
+            if (messages === state.messages && cachedJournal === journal) return subagents
+        }
+        val subagents = SubagentDetails.forConversation(state.messages, journal)
+        subagentCache.keys.retainAll(conversationsById.keys)
+        subagentCache[conversationId] = Triple(state.messages, journal, subagents)
+        return subagents
     }
 
     // 内容匹配按（查询词, 会话状态引用）缓存：刷新摘要时未变化的会话不重复全文扫描。

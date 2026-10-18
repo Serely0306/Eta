@@ -477,7 +477,7 @@ internal fun subagentCountsLine(subagents: List<SubagentProgressUi>): String = b
 
 /** 一个子 Agent 的完整过程：任务、思考、正文与工具行（工具同样可展开、看详情），最后是结论。 */
 @Composable
-private fun SubagentTranscriptDialog(
+internal fun SubagentTranscriptDialog(
     runId: String,
     toolCallId: String,
     progress: SubagentProgressUi,
@@ -551,7 +551,7 @@ private fun SubagentTranscriptDialog(
     }
 }
 
-private fun ToolActivityStatusUi.labelRes(): Int = when (this) {
+internal fun ToolActivityStatusUi.labelRes(): Int = when (this) {
     ToolActivityStatusUi.Running -> R.string.tool_status_running
     ToolActivityStatusUi.Success -> R.string.tool_status_success
     ToolActivityStatusUi.Failed -> R.string.tool_status_failed
