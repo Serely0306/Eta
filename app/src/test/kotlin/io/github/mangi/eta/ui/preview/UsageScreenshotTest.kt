@@ -3,6 +3,7 @@ package io.github.mangi.eta.ui.preview
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Looper
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
@@ -92,12 +93,23 @@ class UsageScreenshotTest {
                 content = content,
             )
         }
+        val view = activity.window.decorView
+        // Robolectric 不会给窗口真实尺寸，按配置的屏幕大小手动布局。
+        val metrics = activity.resources.displayMetrics
+        fun layout() {
+            view.measure(
+                View.MeasureSpec.makeMeasureSpec(metrics.widthPixels, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(metrics.heightPixels, View.MeasureSpec.EXACTLY),
+            )
+            view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+        }
         // Room 的 Flow 在后台线程查询，主线程循环推进几帧，等数据到达后再截图。
         repeat(40) {
+            layout()
             Thread.sleep(25)
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50))
         }
-        val view = activity.window.decorView
+        layout()
         val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
         view.draw(Canvas(bitmap))
         File(outputDir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
