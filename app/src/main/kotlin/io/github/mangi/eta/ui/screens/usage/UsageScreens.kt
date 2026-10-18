@@ -149,7 +149,8 @@ internal fun UsageScreen(onNavigate: (AppRoute) -> Unit, onBack: () -> Unit) {
         item(key = "quota") {
             EtaPreferenceGroupTitle(stringResource(R.string.usage_quota_title))
             EtaPreferenceGroup {
-                providers.filter { it.isEnabled }.forEachIndexed { index, provider ->
+                val usedProviderIds = records.mapTo(mutableSetOf()) { it.providerId }
+                providers.filter { it.isEnabled && it.inUse(pricing, usedProviderIds) }.forEachIndexed { index, provider ->
                     if (index > 0) EtaPreferenceDivider(hasLeading = false)
                     val usage = quotaUsages.firstOrNull { it.quota.providerId == provider.id }
                     QuotaRow(provider = provider, usage = usage, onEdit = { editingQuotaProvider = provider })
@@ -390,6 +391,15 @@ private fun CostChart(report: UsageReport, range: UsageRange, selected: Int, onS
         }
     }
 }
+
+/**
+ * 用量页只列用户在用的服务商：自己添加的、填了 API Key 的，或已经有额度、倍率、自填价格或本期用量的。
+ * 内置服务商默认是启用的，不筛选会把没配置过的都列出来。
+ */
+private fun ProviderSetting.inUse(pricing: UsagePricingSettings, usedProviderIds: Set<String> = emptySet()): Boolean =
+    !isBuiltIn || apiKey.isNotBlank() || id in usedProviderIds ||
+        pricing.quotas.any { it.providerId == id } || id in pricing.providerMultipliers ||
+        pricing.priceOverrides.keys.any { it.startsWith(UsagePricingSettings.priceKey(id, "")) }
 
 @Composable
 private fun QuotaRow(provider: ProviderSetting, usage: QuotaUsage?, onEdit: () -> Unit) {
@@ -679,7 +689,7 @@ internal fun UsagePricingScreen(onBack: () -> Unit) {
     fun save(next: UsagePricingSettings) {
         scope.launch { SettingsDataStore.setUsagePricing(next) }
     }
-    val enabled = providers.filter { it.isEnabled }
+    val enabled = providers.filter { it.isEnabled && it.inUse(pricing) }
     MiuixScaffoldPage(title = stringResource(R.string.usage_pricing), onBack = onBack) {
         item(key = "fx") {
             EtaPreferenceGroupTitle(stringResource(R.string.usage_fx_title))
