@@ -10,7 +10,8 @@ import kotlinx.serialization.json.Json
 
 /**
  * 子 Agent 的完整过程。主会话只保存子 Agent 的结论，过程按 run 存成文件供界面查看：
- * 内容与主会话同样已脱敏（敏感工具结果、图片不保存），30 天后清理，删除会话时一并删除。
+ * 运行中每轮覆盖写入一次快照，结束时写入最终结果；内容与主会话同样已脱敏（敏感工具结果、图片不保存），
+ * 30 天后清理，删除会话时一并删除。
  */
 internal object SubagentTranscriptStore {
     @Serializable
@@ -24,6 +25,8 @@ internal object SubagentTranscriptStore {
         val result: String,
         val createdAt: Long,
         val transcript: List<AgentModelClient.ConversationMessage>,
+        /** 运行中按轮写入的快照；结束时用最终结果覆盖为 false。 */
+        val running: Boolean = false,
     )
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }

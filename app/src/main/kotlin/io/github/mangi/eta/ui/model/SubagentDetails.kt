@@ -51,9 +51,13 @@ internal object SubagentDetails {
                     .map { ConversationSubagentUi(ids.first, ids.second, it) }
             }
 
-    /** 子 Agent 过程转成与主会话相同的思考、正文与工具行；首条用户消息是任务，不重复显示。 */
+    /**
+     * 子 Agent 过程转成与主会话相同的思考、正文与工具行；首条用户消息是任务，不重复显示。
+     * [running] 为真时，还没出结果的工具显示为执行中，否则为结果未知。
+     */
     fun timeline(
         transcript: List<AgentModelClient.ConversationMessage>,
+        running: Boolean = false,
         formatter: AgentTraceFormatter = AgentTraceFormatter(),
     ): List<AgentChatMessageUi> {
         val results = transcript.filter { it.role == "tool" }
@@ -81,6 +85,7 @@ internal object SubagentDetails {
                     id = "sub-tool-$round-${call.id}",
                     toolName = call.name,
                     status = when {
+                        result == null && running -> ToolActivityStatusUi.Running
                         result == null -> ToolActivityStatusUi.Unknown
                         formatter.isSuccessResult(result) -> ToolActivityStatusUi.Success
                         else -> ToolActivityStatusUi.Failed

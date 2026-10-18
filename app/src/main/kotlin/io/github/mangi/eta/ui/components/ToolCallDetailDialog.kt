@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -20,6 +21,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.remember
@@ -395,7 +397,8 @@ internal fun SubagentList(message: ToolActivityMessageUi, detail: ToolCallDetail
     val restored = remember(detail) { SubagentDetails.fromDetail(detail) }
     val subagents = message.subagents.ifEmpty { restored }
     val ids = remember(message.id) { SubagentDetails.runAndCallId(message.id) }
-    var opened by remember(message.id) { mutableStateOf<SubagentProgressUi?>(null) }
+    // 记序号而不是进度快照，弹窗打开期间的状态与当前步骤随进度更新。
+    var openedIndex by remember(message.id) { mutableStateOf<Int?>(null) }
     var show by remember(message.id) { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         subagents.forEach { subagent ->
@@ -414,11 +417,11 @@ internal fun SubagentList(message: ToolActivityMessageUi, detail: ToolCallDetail
                         color = if (subagent.status == ToolActivityStatusUi.Failed) StatusError else MiuixTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f),
                     )
-                    if (ids != null && subagent.status != ToolActivityStatusUi.Running) {
+                    if (ids != null) {
                         LinkButton(
                             text = stringResource(R.string.subagent_view_process),
                             onClick = {
-                                opened = subagent
+                                openedIndex = subagent.index
                                 show = true
                             },
                         )
@@ -451,7 +454,7 @@ internal fun SubagentList(message: ToolActivityMessageUi, detail: ToolCallDetail
             }
         }
     }
-    val target = opened
+    val target = openedIndex?.let { index -> subagents.firstOrNull { it.index == index } }
     if (target != null && ids != null) {
         SubagentTranscriptDialog(
             runId = ids.first,
@@ -459,7 +462,7 @@ internal fun SubagentList(message: ToolActivityMessageUi, detail: ToolCallDetail
             progress = target,
             show = show,
             onDismissRequest = { show = false },
-            onDismissFinished = { opened = null },
+            onDismissFinished = { openedIndex = null },
         )
     }
 }
@@ -475,7 +478,10 @@ internal fun subagentCountsLine(subagents: List<SubagentProgressUi>): String = b
     if (failed > 0) add(stringResource(R.string.subagent_count_failed, failed))
 }.joinToString(" · ")
 
-/** 一个子 Agent 的完整过程：任务、思考、正文与工具行（工具同样可展开、看详情），最后是结论。 */
+/**
+ * 一个子 Agent 的过程：任务、思考、正文与工具行（工具同样可展开、看详情），最后是结论。
+ * 运行中按轮读取快照，每隔一会儿刷新，并在看到末尾时跟随到最新一轮。
+ */
 @Composable
 internal fun SubagentTranscriptDialog(
     runId: String,
@@ -488,15 +494,35 @@ internal fun SubagentTranscriptDialog(
     val context = LocalContext.current
     var record by remember { mutableStateOf<SubagentTranscriptStore.Record?>(null) }
     var loaded by remember { mutableStateOf(false) }
-    LaunchedEffect(runId, toolCallId, progress.index) {
-        record = withContext(Dispatchers.IO) {
-            SubagentTranscriptStore.load(context, runId, toolCallId, progress.index)
+    val liveRun = progress.status == ToolActivityStatusUi.Running
+    LaunchedEffect(runId, toolCallId, progress.index, liveRun) {
+        while (true) {
+            val next = withContext(Dispatchers.IO) {
+                SubagentTranscriptStore.load(context, runId, toolCallId, progress.index)
+            }
+            record = next
+            loaded = true
+            // 结束时最终结果先写入、再通知界面，所以界面认为已结束时文件里已是最终结果。
+            if (!liveRun || next?.running == false) break
+            delay(LIVE_REFRESH_MS)
         }
-        loaded = true
     }
     val current = record
-    val timeline = remember(current) { current?.let { SubagentDetails.timeline(it.transcript) }.orEmpty() }
+    val running = liveRun && current?.running != false
+    val timeline = remember(current, running) {
+        current?.let { SubagentDetails.timeline(it.transcript, running = running) }.orEmpty()
+    }
     val source = remember(current, timeline) { current?.let { ToolCallDetailSource(it.transcript, timeline, runInProgress = false) } }
+    val listState = rememberLazyListState()
+    var followedSize by remember { mutableIntStateOf(0) }
+    LaunchedEffect(timeline.size) {
+        val previous = followedSize
+        followedSize = timeline.size
+        if (!running || timeline.size <= previous) return@LaunchedEffect
+        // 第 0 项是任务；用户已经看到上次的最后一条时才跟随到底，往回翻看时不打断。
+        val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+        if (previous == 0 || lastVisible >= previous) listState.animateScrollToItem(timeline.size)
+    }
     EtaWindowDialog(
         show = show,
         title = stringResource(R.string.subagent_title, progress.index + 1, progress.total),
@@ -506,13 +532,21 @@ internal fun SubagentTranscriptDialog(
         val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.75f).dp
         CompositionLocalProvider(LocalToolCallDetailSource provides source) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 item(key = "task") {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Pill(stringResource(((current?.ok)?.let { if (it) ToolActivityStatusUi.Success else ToolActivityStatusUi.Failed }
-                            ?: progress.status).labelRes()))
+                        val status = when {
+                            running -> ToolActivityStatusUi.Running
+                            current == null -> progress.status
+                            // 进程中断时文件停在“运行中”，而界面上这一轮已经结束。
+                            current.running -> ToolActivityStatusUi.Unknown
+                            current.ok -> ToolActivityStatusUi.Success
+                            else -> ToolActivityStatusUi.Failed
+                        }
+                        Pill(stringResource(status.labelRes()))
                         DetailSection(
                             stringResource(R.string.subagent_task),
                             current?.task ?: progress.task,
@@ -522,6 +556,7 @@ internal fun SubagentTranscriptDialog(
                 }
                 when {
                     !loaded -> item(key = "loading") { Note(stringResource(R.string.subagent_transcript_loading)) }
+                    current == null && running -> item(key = "waiting") { Note(stringResource(R.string.subagent_live_waiting)) }
                     current == null -> item(key = "missing") { Note(stringResource(R.string.subagent_transcript_unavailable)) }
                     else -> items(timeline, key = { it.id }) { message ->
                         when (message) {
@@ -540,7 +575,19 @@ internal fun SubagentTranscriptDialog(
                         }
                     }
                 }
-                val conclusion = current?.result ?: progress.conclusion
+                if (running) {
+                    item(key = "live") {
+                        val toolName = toolDisplayName(progress.currentTool)
+                        val step = progress.currentDetail.ifBlank { toolName }
+                        Note(
+                            listOfNotNull(
+                                step.takeIf(String::isNotBlank)?.let { stringResource(R.string.subagent_current_tool, it) },
+                                stringResource(R.string.subagent_live_note),
+                            ).joinToString("\n"),
+                        )
+                    }
+                }
+                val conclusion = current?.result?.takeIf(String::isNotBlank) ?: progress.conclusion
                 if (conclusion.isNotBlank()) {
                     item(key = "conclusion") {
                         DetailSection(stringResource(R.string.subagent_conclusion), conclusion, monospace = false)
@@ -564,6 +611,7 @@ private fun formatSeconds(durationMs: Long): String =
     if (durationMs < 10_000) "%.1f".format(Locale.ROOT, durationMs / 1_000.0) else (durationMs / 1_000).toString()
 
 internal val TERMINAL_TOOLS = setOf("terminal", "run_command")
+private const val LIVE_REFRESH_MS = 2_000L
 private const val PREVIEW_LINES = 6
 private const val MAX_INLINE_LINES = 200
 private const val MAX_DETAIL_CHARS = 20_000

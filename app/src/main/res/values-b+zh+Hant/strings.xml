@@ -520,6 +520,8 @@
   <string name="subagent_count_failed">失敗 %1$d</string>
   <string name="subagent_transcript_loading">正在讀取…</string>
   <string name="subagent_transcript_unavailable">找不到這個子 Agent 的過程記錄：可能來自舊版本，或已超過 30 天被清理。</string>
+  <string name="subagent_live_waiting">子 Agent 剛開始，模型第一次回覆後這裡會出現過程。</string>
+  <string name="subagent_live_note">執行中，每 2 秒重新整理一次；最新一輪在模型回覆或工具出結果後出現。</string>
   <string name="tool_detail_open">詳情</string>
   <string name="tool_detail_arguments">呼叫參數</string>
   <string name="tool_detail_result">結果</string>

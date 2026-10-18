@@ -148,6 +148,7 @@ internal fun ConversationPanePanel(
     var expandedEntrySources by remember { mutableStateOf(emptySet<ConversationEntrySource>()) }
     // 有子 Agent 的会话可在侧栏展开，列出它派出过的子 Agent；点开查看过程。
     var expandedSubagents by remember { mutableStateOf(initialExpandedSubagents) }
+    // 记住是哪一个子 Agent，弹窗打开期间从最新的会话摘要里取它的状态，运行中的进度随之更新。
     var openedSubagent by remember { mutableStateOf<ConversationSubagentUi?>(null) }
     var showSubagent by remember { mutableStateOf(false) }
 
@@ -271,7 +272,10 @@ internal fun ConversationPanePanel(
             }
         }
     }
-    openedSubagent?.let { subagent ->
+    openedSubagent?.let { opened ->
+        val subagent = state.conversations.asSequence().flatMap { it.subagents.asSequence() }.firstOrNull {
+            it.runId == opened.runId && it.toolCallId == opened.toolCallId && it.progress.index == opened.progress.index
+        } ?: opened
         SubagentTranscriptDialog(
             runId = subagent.runId,
             toolCallId = subagent.toolCallId,
@@ -283,7 +287,7 @@ internal fun ConversationPanePanel(
     }
 }
 
-/** 侧栏里会话下的一个子 Agent：状态点、序号与状态、任务；运行中的还没有过程可看，不可点。 */
+/** 侧栏里会话下的一个子 Agent：状态点、序号与状态、任务；点开查看过程，运行中的看实时进度。 */
 @Composable
 private fun SubagentPaneRow(subagent: ConversationSubagentUi, onClick: () -> Unit) {
     val progress = subagent.progress
@@ -294,7 +298,7 @@ private fun SubagentPaneRow(subagent: ConversationSubagentUi, onClick: () -> Uni
             .fillMaxWidth()
             .padding(start = ConversationPanelMetrics.SubagentIndent)
             .clip(RoundedCornerShape(ConversationPanelMetrics.RowCornerRadius))
-            .then(if (running) Modifier else Modifier.clickable(onClick = onClick))
+            .clickable(onClick = onClick)
             .padding(horizontal = ConversationPanelMetrics.RowHorizontalPadding, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

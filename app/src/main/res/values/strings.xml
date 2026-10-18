@@ -543,6 +543,8 @@
   <string name="subagent_count_failed">%1$d failed</string>
   <string name="subagent_transcript_loading">Loading…</string>
   <string name="subagent_transcript_unavailable">No saved process for this subagent. It may come from an older version, or it was cleaned up after 30 days.</string>
+  <string name="subagent_live_waiting">The subagent has just started. Its process appears after the first model reply.</string>
+  <string name="subagent_live_note">Running. Refreshes every 2 seconds; the latest round appears once the model replies or the tool returns.</string>
   <string name="tool_detail_open">Details</string>
   <string name="tool_detail_arguments">Arguments</string>
   <string name="tool_detail_result">Result</string>

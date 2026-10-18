@@ -32,6 +32,13 @@ class SubagentDetailsTest {
         // 时间线的工具行 id 与主会话同一格式，工具详情能按调用 id 找回完整结果。
         assertEquals("""{"ok":true,"exit_code":0,"stdout":"/data 92%"}""",
             ToolCallDetails.find(transcript, timeline, tool)?.result)
+
+        // 运行中的快照：工具还没出结果时显示执行中；结束后的记录显示结果未知。
+        val inFlight = transcript.take(2)
+        assertEquals(ToolActivityStatusUi.Running,
+            (SubagentDetails.timeline(inFlight, running = true).last() as ToolActivityMessageUi).status)
+        assertEquals(ToolActivityStatusUi.Unknown,
+            (SubagentDetails.timeline(inFlight).last() as ToolActivityMessageUi).status)
     }
 
     @Test

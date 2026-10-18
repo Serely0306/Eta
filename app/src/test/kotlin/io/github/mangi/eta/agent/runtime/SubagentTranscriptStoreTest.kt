@@ -23,6 +23,12 @@ class SubagentTranscriptStoreTest {
         assertEquals(record, SubagentTranscriptStore.load(context, "run/1", "call:1", 0))
         assertNull(SubagentTranscriptStore.load(context, "run/1", "call:1", 1))
 
+        // 运行中的快照被最终结果覆盖。
+        SubagentTranscriptStore.save(context, record.copy(running = true, ok = false, result = ""))
+        assertTrue(SubagentTranscriptStore.load(context, "run/1", "call:1", 0)!!.running)
+        SubagentTranscriptStore.save(context, record)
+        assertEquals(record, SubagentTranscriptStore.load(context, "run/1", "call:1", 0))
+
         SubagentTranscriptStore.deleteRuns(context, listOf("run/1"))
         assertNull(SubagentTranscriptStore.load(context, "run/1", "call:1", 0))
     }

@@ -22,7 +22,7 @@ import org.json.JSONObject
  *
  * 子 Agent 不能操作界面（屏幕只有一块，由主 Agent 串行使用）、不能提问、不能再派子 Agent；
  * 主 run 取消时一并取消。进度以 [AgentEvent.SubagentUpdate] 汇总，内部事件不进入主 run 的消息流；
- * 每个子 Agent 的完整过程结束后交给 [saveTranscript] 另存，供界面查看。
+ * 每个子 Agent 的过程在运行中每轮、结束时各交给 [saveTranscript] 另存一次，供界面查看。
  */
 internal class AgentSubagentTool(
     private val parentController: AgentRunController,
@@ -37,7 +37,7 @@ internal class AgentSubagentTool(
     private val newExecutor: (ownerId: String) -> RoutingToolExecutor,
     private val emit: (AgentEvent) -> Unit,
     private val fallback: ModelFallbackPolicy = ModelFallbackPolicy.NONE,
-    /** 子 Agent 结束后保存它的完整过程（已脱敏），供界面查看。 */
+    /** 保存子 Agent 的过程（已脱敏）：运行中每轮一次快照，结束时一次最终结果。 */
     private val saveTranscript: (SubagentTranscriptStore.Record) -> Unit = {},
     private val now: () -> Long = System::currentTimeMillis,
 ) {
@@ -145,7 +145,19 @@ internal class AgentSubagentTool(
                 disabledToolsProvider = { disabledTools() + excluded },
                 sessionId = "$parentSessionId:sub:$toolCallId:$index",
                 operationId = "$runId-sub-$index",
-                onTranscript = { latestTranscript = it },
+                onTranscript = { transcript ->
+                    latestTranscript = transcript
+                    // 过程每更新一次（模型回复、工具结果）就覆盖写一次快照，运行中也能在界面查看。
+                    runCatching {
+                        saveTranscript(
+                            SubagentTranscriptStore.Record(
+                                runId = runId, toolCallId = toolCallId, index = index, total = total,
+                                task = task.task, ok = false, result = "", createdAt = now(),
+                                transcript = transcript, running = true,
+                            ),
+                        )
+                    }
+                },
                 fallback = fallback,
             ) { event ->
                 when (event) {
