@@ -30,11 +30,28 @@ internal data class ModelPrice(
 }
 
 /**
+ * 匹配价格前先规整模型 ID，规则与 CC Switch 相同：小写；去掉最后一个 `/` 之前的前缀、`:` 之后的后缀
+ * 与末尾的 `[1m]`；`@` 换成 `-`；去掉 `-YYYY-MM-DD`、`-YYYYMMDD` 日期后缀。
+ * 中转站常给模型名加厂商前缀或日期，规整后才能对上价格。
+ */
+internal object ModelIds {
+    private val DATE_SUFFIX = Regex("-(\\d{4}-\\d{2}-\\d{2}|\\d{8})$")
+
+    fun normalize(raw: String): String = raw.trim().lowercase()
+        .substringAfterLast('/')
+        .substringBefore(':')
+        .removeSuffix("[1m]")
+        .replace('@', '-')
+        .replace(DATE_SUFFIX, "")
+        .trim()
+}
+
+/**
  * 内置价格：只收录在官方价格页核对过的模型，每条记来源和日期，查不到的不预置。
  * 官方服务商只匹配自己的条目；自定义服务商（中转站）按模型名匹配原厂价格，再乘服务商倍率。
  */
 internal object BuiltinModelPrices {
-    private data class Entry(val sourceType: String, val modelId: String, val price: ModelPrice)
+    internal data class Entry(val sourceType: String, val modelId: String, val price: ModelPrice)
 
     private const val OPENAI_SOURCE = "OpenAI 价格页 developers.openai.com/api/docs/pricing（2026-10-17 核对）"
     private const val ANTHROPIC_SOURCE = "Anthropic 一方 API 价格（Claude API 资料 2026-10-06；缓存写为 5 分钟档）"
@@ -56,7 +73,8 @@ internal object BuiltinModelPrices {
         ModelPrice(ModelPrice.USD, input, cached, input * 1.25, output, source = ANTHROPIC_SOURCE),
     )
 
-    private val entries = listOf(
+    /** 全部内置条目，价格页按厂商分组列出。 */
+    val entries = listOf(
         openAi("gpt-6-astra", 10.0, 1.0, 12.5, 50.0, 20.0, 2.0, 25.0, 75.0),
         openAi("gpt-6-sol", 2.0, 0.2, 2.5, 10.0, 4.0, 0.4, 5.0, 15.0),
         openAi("gpt-6-luna", 0.1, 0.01, 0.125, 0.5, 0.2, 0.02, 0.25, 0.75),
@@ -94,7 +112,7 @@ internal object BuiltinModelPrices {
      * 自定义服务商按模型名找原厂条目。
      */
     fun find(sourceType: String, modelId: String): ModelPrice? {
-        val model = modelId.trim().lowercase()
+        val model = ModelIds.normalize(modelId)
         if (sourceType in officialSources) {
             return entries.firstOrNull { it.sourceType == sourceType && it.modelId == model }?.price
         }

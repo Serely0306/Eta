@@ -1567,7 +1567,6 @@
   <string name="usage_recharge_result">倍率約 %1$s，中轉站有分組倍率時再乘上它</string>
   <string name="usage_prices_title">模型價格（每百萬 token）</string>
   <string name="usage_price_custom">自填</string>
-  <string name="usage_price_missing">未預置：沒有價格的模型只統計 token，不計費</string>
   <string name="usage_price_line">輸入 %1$s · 快取讀 %2$s · 輸出 %3$s %4$s</string>
   <string name="usage_price_dialog_title">%1$s 的價格</string>
   <string name="usage_price_currency">幣別</string>
@@ -1576,6 +1575,20 @@
   <string name="usage_price_write">快取寫（留空按輸入價）</string>
   <string name="usage_price_output">輸出</string>
   <string name="usage_price_reset">恢復預置價格</string>
+  <string name="usage_price_search">搜尋模型 ID</string>
+  <string name="usage_price_scope_note">價格按模型 ID 對所有服務商生效，中轉站按服務商倍率換算。模型名稱裡的廠商前綴和日期後綴會先去掉再比對。</string>
+  <string name="usage_price_add">新增定價</string>
+  <string name="usage_price_no_match">沒有符合的模型</string>
+  <plurals name="usage_price_group_count">
+    <item quantity="other">%d 個模型</item>
+  </plurals>
+  <string name="usage_price_unset">未定價，只統計 token</string>
+  <string name="usage_price_group_unpriced">使用中但未定價</string>
+  <string name="usage_price_group_custom">自訂</string>
+  <string name="usage_price_model_id">模型 ID</string>
+  <string name="usage_price_normalized">按 %1$s 比對</string>
+  <string name="usage_price_long_context">單次輸入超過 %1$s token 時整次按長上下文價：輸入 %2$s · 輸出 %3$s</string>
+  <string name="usage_price_delete">刪除這條定價</string>
   <string name="usage_quota_dialog_title">%1$s 的額度</string>
   <string name="usage_quota_period">週期</string>
   <string name="usage_quota_period_five_hours">5 小時滾動</string>

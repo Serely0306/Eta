@@ -9,6 +9,7 @@ import java.time.ZoneId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UsagePricingTest {
@@ -52,7 +53,7 @@ class UsagePricingTest {
     }
 
     @Test
-    fun overridesWinAndDeletedProvidersFallBackToRelayMatching() {
+    fun overridesApplyToEveryProviderByModelIdAndDeletedProvidersFallBackToRelayMatching() {
         val relay = CustomProviderSetting(id = "relay", name = "Relay", baseUrl = "https://relay.example.com/v1")
         val official = OpenAiCompatibleProviderSetting(
             id = "builtin-openai", name = "OpenAI", baseUrl = "https://api.openai.com/v1", sourceType = ProviderSourceTypes.OPENAI,
@@ -60,12 +61,45 @@ class UsagePricingTest {
         val override = ModelPrice(ModelPrice.USD, input = 1.0, output = 2.0)
         val settings = UsagePricingSettings(
             providerMultipliers = mapOf("relay" to 0.5),
-            priceOverrides = mapOf(UsagePricingSettings.priceKey("relay", "gpt-6.1-sol") to override),
+            priceOverrides = mapOf(ModelIds.normalize("gpt-6.1-sol") to override),
         )
         val resolver = UsagePriceResolver(listOf(relay, official), settings)
-        assertEquals(override, resolver.price(record(providerId = "relay", model = "GPT-6.1-Sol")))
+        // 自填价按模型 ID 对所有服务商生效，中转站的模型名带前缀或日期也能对上。
+        assertEquals(override, resolver.price(record(providerId = "relay", model = "openai/GPT-6.1-Sol-2026-09-30")))
+        assertEquals(override, resolver.price(record(providerId = "builtin-openai", model = "gpt-6.1-sol")))
         assertNotNull(resolver.price(record(providerId = "deleted", model = "gpt-6-sol")))
         assertEquals(1_000_000 * 1.0 / 1e6 * 0.5, resolver.cost(record(providerId = "relay", model = "gpt-6.1-sol", prompt = 1_000_000))!!, 1e-12)
+    }
+
+    @Test
+    fun priceCatalogGroupsUnpricedCustomAndVendorsAndFilters() {
+        val settings = UsagePricingSettings(priceOverrides = mapOf(
+            "my-model" to ModelPrice(ModelPrice.USD, input = 1.0, output = 2.0),
+            "gpt-6-sol" to ModelPrice(ModelPrice.USD, input = 3.0, output = 4.0),
+        ))
+        val groups = PriceCatalog.groups(settings, unpricedModels = listOf("relay/Mystery-1", "my-model"))
+        assertEquals(PriceCatalog.UNPRICED, groups[0].key)
+        assertEquals(listOf("mystery-1"), groups[0].rows.map { it.modelId })
+        assertEquals(listOf("my-model"), groups[1].rows.map { it.modelId })
+        val openAi = groups.first { it.key == ProviderSourceTypes.OPENAI }.rows
+        assertEquals(3.0, openAi.first { it.modelId == "gpt-6-sol" }.price!!.input, 0.0)
+        assertTrue(openAi.first { it.modelId == "gpt-6-sol" }.custom)
+        assertEquals(10.0, PriceCatalog.builtinPrice("gpt-6-astra")!!.input, 0.0)
+
+        val searched = PriceCatalog.groups(settings, emptyList(), query = "SOL")
+        assertTrue(searched.all { group -> group.rows.all { "sol" in it.modelId } })
+        assertTrue(searched.none { it.key == PriceCatalog.CUSTOM })
+    }
+
+    @Test
+    fun modelIdsAreNormalizedLikeCcSwitch() {
+        assertEquals("step-3.5-flash", ModelIds.normalize("stepfun-ai/step-3.5-flash"))
+        assertEquals("kimi-k2-0905", ModelIds.normalize("moonshotai/kimi-k2-0905:exa"))
+        assertEquals("gpt-5.2-codex-low", ModelIds.normalize("gpt-5.2-codex@low"))
+        assertEquals("gpt-5.5", ModelIds.normalize("OpenAI/GPT-5.5-2026-05-14"))
+        assertEquals("claude-haiku-4-5", ModelIds.normalize("claude-haiku-4-5-20251001"))
+        assertEquals("claude-opus-4-8", ModelIds.normalize("claude-opus-4-8[1m]"))
+        assertEquals(10.0, BuiltinModelPrices.find(ProviderSourceTypes.CUSTOM, "openai/gpt-6-astra")!!.input, 0.0)
     }
 
     @Test

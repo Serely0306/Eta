@@ -11,16 +11,19 @@ internal data class UsagePricingSettings(
     val cnyPerUsd: Double = DEFAULT_CNY_PER_USD,
     /** 服务商 id → 倍率；没有条目时为 1。 */
     val providerMultipliers: Map<String, Double> = emptyMap(),
-    /** [priceKey] → 用户填写的价格，优先于内置价格。 */
+    /**
+     * 规整后的模型 ID（[ModelIds.normalize]）→ 用户填写的价格，对所有服务商生效、优先于内置价格；
+     * 中转站与官方价不同的部分用服务商倍率表达（与 CC Switch 的定价表一致）。
+     */
     val priceOverrides: Map<String, ModelPrice> = emptyMap(),
     val quotas: List<UsageQuota> = emptyList(),
 ) {
     fun multiplier(providerId: String): Double = providerMultipliers[providerId] ?: 1.0
 
+    fun override(model: String): ModelPrice? = priceOverrides[ModelIds.normalize(model)]
+
     companion object {
         const val DEFAULT_CNY_PER_USD = 7.10
-
-        fun priceKey(providerId: String, model: String): String = "$providerId/${model.trim().lowercase()}"
     }
 }
 

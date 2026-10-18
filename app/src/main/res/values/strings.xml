@@ -1619,7 +1619,6 @@
   <string name="usage_recharge_result">Multiplier ≈ %1$s; multiply by the relay group multiplier if it has one</string>
   <string name="usage_prices_title">Model prices (per 1M tokens)</string>
   <string name="usage_price_custom">Entered by you</string>
-  <string name="usage_price_missing">No built-in price: tokens are counted but not charged</string>
   <string name="usage_price_line">Input %1$s · cache read %2$s · output %3$s %4$s</string>
   <string name="usage_price_dialog_title">Price of %1$s</string>
   <string name="usage_price_currency">Currency</string>
@@ -1628,6 +1627,21 @@
   <string name="usage_price_write">Cache write (blank uses the input price)</string>
   <string name="usage_price_output">Output</string>
   <string name="usage_price_reset">Restore built-in price</string>
+  <string name="usage_price_search">Search model ID</string>
+  <string name="usage_price_scope_note">Prices apply to every provider by model ID; relays are converted with the provider multiplier. Vendor prefixes and date suffixes in model names are removed before matching.</string>
+  <string name="usage_price_add">Add pricing</string>
+  <string name="usage_price_no_match">No matching models</string>
+  <plurals name="usage_price_group_count">
+    <item quantity="one">%d model</item>
+    <item quantity="other">%d models</item>
+  </plurals>
+  <string name="usage_price_unset">No price. Only tokens are counted</string>
+  <string name="usage_price_group_unpriced">In use, no price</string>
+  <string name="usage_price_group_custom">Custom</string>
+  <string name="usage_price_model_id">Model ID</string>
+  <string name="usage_price_normalized">Matched as %1$s</string>
+  <string name="usage_price_long_context">Requests with more than %1$s input tokens use the long-context rate: input %2$s · output %3$s</string>
+  <string name="usage_price_delete">Delete this price</string>
   <string name="usage_quota_dialog_title">Quota for %1$s</string>
   <string name="usage_quota_period">Period</string>
   <string name="usage_quota_period_five_hours">Rolling 5 hours</string>

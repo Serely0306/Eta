@@ -1593,7 +1593,6 @@
   <string name="usage_recharge_result">倍率约 %1$s，中转站有分组倍率时再乘上它</string>
   <string name="usage_prices_title">模型价格（每百万 token）</string>
   <string name="usage_price_custom">自填</string>
-  <string name="usage_price_missing">未预置：没有价格的模型只统计 token，不计费</string>
   <string name="usage_price_line">输入 %1$s · 缓存读 %2$s · 输出 %3$s %4$s</string>
   <string name="usage_price_dialog_title">%1$s 的价格</string>
   <string name="usage_price_currency">币种</string>
@@ -1602,6 +1601,20 @@
   <string name="usage_price_write">缓存写（留空按输入价）</string>
   <string name="usage_price_output">输出</string>
   <string name="usage_price_reset">恢复预置价格</string>
+  <string name="usage_price_search">搜索模型 ID</string>
+  <string name="usage_price_scope_note">价格按模型 ID 对所有服务商生效，中转站按服务商倍率换算。模型名里的厂商前缀和日期后缀会先去掉再匹配。</string>
+  <string name="usage_price_add">新增定价</string>
+  <string name="usage_price_no_match">没有匹配的模型</string>
+  <plurals name="usage_price_group_count">
+    <item quantity="other">%d 个模型</item>
+  </plurals>
+  <string name="usage_price_unset">未定价，只统计 token</string>
+  <string name="usage_price_group_unpriced">在用但未定价</string>
+  <string name="usage_price_group_custom">自定义</string>
+  <string name="usage_price_model_id">模型 ID</string>
+  <string name="usage_price_normalized">按 %1$s 匹配</string>
+  <string name="usage_price_long_context">单次输入超过 %1$s token 时整次按长上下文价：输入 %2$s · 输出 %3$s</string>
+  <string name="usage_price_delete">删除这条定价</string>
   <string name="usage_quota_dialog_title">%1$s 的额度</string>
   <string name="usage_quota_period">周期</string>
   <string name="usage_quota_period_five_hours">5 小时滚动</string>

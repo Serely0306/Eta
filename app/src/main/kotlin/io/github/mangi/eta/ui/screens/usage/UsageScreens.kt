@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -44,9 +46,12 @@ import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.db.ModelUsageRecordEntity
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.repository.ProviderRepository
+import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import io.github.mangi.eta.data.usage.ModelCostCalculator
+import io.github.mangi.eta.data.usage.ModelIds
 import io.github.mangi.eta.data.usage.ModelPrice
 import io.github.mangi.eta.data.usage.ModelUsageLedger
+import io.github.mangi.eta.data.usage.PriceCatalog
 import io.github.mangi.eta.data.usage.QuotaUsage
 import io.github.mangi.eta.data.usage.UsageGroup
 import io.github.mangi.eta.data.usage.UsagePriceResolver
@@ -394,13 +399,12 @@ private fun CostChart(report: UsageReport, range: UsageRange, selected: Int, onS
 }
 
 /**
- * 用量页只列用户在用的服务商：自己添加的、填了 API Key 的，或已经有额度、倍率、自填价格或本期用量的。
+ * 用量页只列用户在用的服务商：自己添加的、填了 API Key 的，或已经有额度、倍率或本期用量的。
  * 内置服务商默认是启用的，不筛选会把没配置过的都列出来。
  */
 private fun ProviderSetting.inUse(pricing: UsagePricingSettings, usedProviderIds: Set<String> = emptySet()): Boolean =
     !isBuiltIn || apiKey.isNotBlank() || id in usedProviderIds ||
-        pricing.quotas.any { it.providerId == id } || id in pricing.providerMultipliers ||
-        pricing.priceOverrides.keys.any { it.startsWith(UsagePricingSettings.priceKey(id, "")) }
+        pricing.quotas.any { it.providerId == id } || id in pricing.providerMultipliers
 
 @Composable
 private fun QuotaRow(provider: ProviderSetting, usage: QuotaUsage?, onEdit: () -> Unit) {
@@ -728,13 +732,28 @@ internal fun UsagePricingScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val providers by remember { ProviderRepository.providersFlow() }.collectAsState(initial = emptyList())
     val pricing by remember { SettingsDataStore.usagePricingFlow() }.collectAsState(initial = UsagePricingSettings())
-    var editing by remember { mutableStateOf<Pair<ProviderSetting, String>?>(null) }
+    // 正在编辑的模型 ID；空串表示新增定价。
+    var editing by remember { mutableStateOf<String?>(null) }
     var paid by remember { mutableStateOf("1") }
     var credit by remember { mutableStateOf("1") }
+    var query by rememberSaveable { mutableStateOf("") }
+    var expandedGroups by remember { mutableStateOf(setOf(PriceCatalog.UNPRICED, PriceCatalog.CUSTOM)) }
     fun save(next: UsagePricingSettings) {
         scope.launch { SettingsDataStore.setUsagePricing(next) }
     }
     val enabled = providers.filter { it.isEnabled && it.inUse(pricing) }
+    val since = remember { System.currentTimeMillis() - UNPRICED_LOOKBACK_MS }
+    val recent by remember(since) { ModelUsageLedger.recordsFlow(since, Long.MAX_VALUE) }.collectAsState(initial = emptyList())
+    val resolver = remember(providers, pricing) { UsagePriceResolver(providers, pricing) }
+    // 在用的模型：近 30 天账本里出现过的，加上在用服务商里启用的模型；查不到价格的列进“未定价”。
+    val unpriced = remember(recent, enabled, resolver) {
+        (recent.map { it.providerId to it.model } +
+            enabled.flatMap { provider -> provider.models.filter { it.isEnabled }.map { provider.id to it.modelId } })
+            .distinct()
+            .filter { (providerId, model) -> resolver.price(probe(providerId, model)) == null }
+            .map { it.second }
+    }
+    val groups = remember(pricing, unpriced, query) { PriceCatalog.groups(pricing, unpriced, query) }
     MiuixScaffoldPage(title = stringResource(R.string.usage_pricing), onBack = onBack) {
         item(key = "fx") {
             EtaPreferenceGroupTitle(stringResource(R.string.usage_fx_title))
@@ -812,39 +831,93 @@ internal fun UsagePricingScreen(onBack: () -> Unit) {
         }
         item(key = "prices") {
             EtaPreferenceGroupTitle(stringResource(R.string.usage_prices_title))
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                TextField(
+                    value = query,
+                    onValueChange = { query = it.take(80) },
+                    label = stringResource(R.string.usage_price_search),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = stringResource(R.string.usage_price_scope_note),
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                EtaTextButton(text = stringResource(R.string.usage_price_add), onClick = { editing = "" })
+            }
         }
-        enabled.forEach { provider ->
-            item(key = "prices-${provider.id}") {
-                val resolver = UsagePriceResolver(providers, pricing)
+        if (groups.isEmpty()) {
+            item(key = "prices-empty") {
+                EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    EtaPreference(summary = stringResource(R.string.usage_price_no_match))
+                }
+            }
+        }
+        groups.forEach { group ->
+            item(key = "price-group-${group.key}") {
+                // 搜索时全部展开；否则“未定价”“自定义”默认展开，各厂商默认收起。
+                val open = query.isNotBlank() || group.key in expandedGroups
                 EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
-                    EtaPreference(title = provider.name)
-                    provider.models.filter { it.isEnabled }.sortedBy { it.sortOrder }.forEach { model ->
-                        EtaPreferenceDivider(hasLeading = false)
-                        val price = resolver.price(probe(provider.id, model.modelId))
-                        EtaArrowPreference(
-                            title = model.displayName.ifBlank { model.modelId },
-                            summary = price?.let { priceSummary(it) } ?: stringResource(R.string.usage_price_missing),
-                            onClick = { editing = provider to model.modelId },
-                        )
+                    EtaPreference(
+                        title = priceGroupLabel(group.key, providers),
+                        summary = pluralStringResource(R.plurals.usage_price_group_count, group.rows.size, group.rows.size),
+                        onClick = {
+                            expandedGroups = if (group.key in expandedGroups) expandedGroups - group.key else expandedGroups + group.key
+                        },
+                        endActions = {
+                            Icon(
+                                imageVector = if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                                contentDescription = null,
+                                tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                            )
+                        },
+                    )
+                    if (open) {
+                        group.rows.forEach { row ->
+                            EtaPreferenceDivider(hasLeading = false)
+                            EtaPreference(
+                                title = row.modelId,
+                                summary = row.price?.let { priceLine(it) + if (row.custom) " · " + stringResource(R.string.usage_price_custom) else "" }
+                                    ?: stringResource(R.string.usage_price_unset),
+                                onClick = { editing = row.modelId },
+                            )
+                        }
                     }
                 }
             }
         }
     }
-    editing?.let { (provider, modelId) ->
-        val key = UsagePricingSettings.priceKey(provider.id, modelId)
+    editing?.let { modelId ->
+        val builtin = PriceCatalog.builtinPrice(modelId)
         PriceDialog(
-            title = modelId,
-            initial = UsagePriceResolver(providers, pricing).price(probe(provider.id, modelId)),
-            hasOverride = key in pricing.priceOverrides,
+            modelId = modelId,
+            initial = pricing.override(modelId) ?: builtin,
+            builtin = builtin,
+            hasOverride = modelId.isNotEmpty() && pricing.override(modelId) != null,
             onDismiss = { editing = null },
-            onSave = { price ->
+            onSave = { id, price ->
                 editing = null
-                val overrides = if (price == null) pricing.priceOverrides - key else pricing.priceOverrides + (key to price)
-                save(pricing.copy(priceOverrides = overrides))
+                val key = ModelIds.normalize(id)
+                if (key.isNotEmpty()) {
+                    val overrides = if (price == null) pricing.priceOverrides - key else pricing.priceOverrides + (key to price)
+                    save(pricing.copy(priceOverrides = overrides))
+                }
             },
         )
     }
+}
+
+@Composable
+private fun priceGroupLabel(key: String, providers: List<ProviderSetting>): String = when (key) {
+    PriceCatalog.UNPRICED -> stringResource(R.string.usage_price_group_unpriced)
+    PriceCatalog.CUSTOM -> stringResource(R.string.usage_price_group_custom)
+    // 预置价格按厂商来源分组，组名用对应内置服务商的名字。
+    else -> providers.firstOrNull { it.isBuiltIn && ProviderSourceRegistry.resolve(it) == key }?.name ?: key
 }
 
 /** 只用于查价格的占位记录。 */
@@ -856,17 +929,13 @@ private fun probe(providerId: String, model: String) = ModelUsageRecordEntity(
 )
 
 @Composable
-private fun priceSummary(price: ModelPrice): String {
-    val line = stringResource(
-        R.string.usage_price_line,
-        formatNumber(price.input),
-        price.cachedInput?.let(::formatNumber) ?: "—",
-        formatNumber(price.output),
-        price.currency,
-    )
-    val origin = price.source.ifBlank { stringResource(R.string.usage_price_custom) }
-    return "$line\n$origin"
-}
+private fun priceLine(price: ModelPrice): String = stringResource(
+    R.string.usage_price_line,
+    formatNumber(price.input),
+    price.cachedInput?.let(::formatNumber) ?: "—",
+    formatNumber(price.output),
+    price.currency,
+)
 
 /** 文本框只在输入有效时保存；外部值变化（[key]）时重置内容。 */
 @Composable
@@ -885,14 +954,20 @@ private fun NumberField(label: String, initial: String, key: Any, onValid: (Doub
     )
 }
 
+/**
+ * 编辑一个模型 ID 的价格（对所有服务商生效）。[modelId] 为空时是新增，先填模型 ID；
+ * 预置模型显示价格来源，改过的可以恢复预置价，自定义的可以删除。
+ */
 @Composable
 private fun PriceDialog(
-    title: String,
+    modelId: String,
     initial: ModelPrice?,
+    builtin: ModelPrice?,
     hasOverride: Boolean,
     onDismiss: () -> Unit,
-    onSave: (ModelPrice?) -> Unit,
+    onSave: (String, ModelPrice?) -> Unit,
 ) {
+    var id by remember { mutableStateOf(modelId) }
     var currency by remember { mutableStateOf(initial?.currency ?: ModelPrice.USD) }
     var input by remember { mutableStateOf(initial?.input?.let(::formatNumber).orEmpty()) }
     var cached by remember { mutableStateOf(initial?.cachedInput?.let(::formatNumber).orEmpty()) }
@@ -901,12 +976,47 @@ private fun PriceDialog(
     val inputValue = input.toDoubleOrNull()?.takeIf { it >= 0 }
     val outputValue = output.toDoubleOrNull()?.takeIf { it >= 0 }
     val currencies = listOf(ModelPrice.USD, ModelPrice.CNY)
+    val normalizedId = ModelIds.normalize(id)
     EtaWindowDialog(
         show = true,
-        title = stringResource(R.string.usage_price_dialog_title, title),
+        title = if (modelId.isEmpty()) stringResource(R.string.usage_price_add)
+            else stringResource(R.string.usage_price_dialog_title, modelId),
         onDismissRequest = onDismiss,
     ) {
         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (modelId.isEmpty()) {
+                TextField(
+                    value = id,
+                    onValueChange = { id = it.take(120) },
+                    label = stringResource(R.string.usage_price_model_id),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (normalizedId.isNotEmpty() && normalizedId != id.trim()) {
+                    Text(
+                        text = stringResource(R.string.usage_price_normalized, normalizedId),
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                }
+            }
+            builtin?.let { price ->
+                Text(
+                    text = listOfNotNull(
+                        price.source.takeIf(String::isNotBlank),
+                        price.longContextThreshold?.let { threshold ->
+                            stringResource(
+                                R.string.usage_price_long_context,
+                                compactTokens(threshold),
+                                formatNumber(price.longInput ?: price.input),
+                                formatNumber(price.longOutput ?: price.output),
+                            )
+                        },
+                    ).joinToString("\n"),
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
             EtaDropdownPreference(
                 title = stringResource(R.string.usage_price_currency),
                 items = currencies.map { DropdownItem(text = it) },
@@ -918,14 +1028,18 @@ private fun PriceDialog(
             PriceField(stringResource(R.string.usage_price_write), write) { write = it }
             PriceField(stringResource(R.string.usage_price_output), output) { output = it }
             if (hasOverride) {
-                EtaTextButton(text = stringResource(R.string.usage_price_reset), onClick = { onSave(null) })
+                EtaTextButton(
+                    text = stringResource(if (builtin != null) R.string.usage_price_reset else R.string.usage_price_delete),
+                    onClick = { onSave(modelId, null) },
+                )
             }
             MiuixDialogActions(
                 confirmText = stringResource(R.string.usage_save),
-                confirmEnabled = inputValue != null && outputValue != null,
+                confirmEnabled = inputValue != null && outputValue != null && normalizedId.isNotEmpty(),
                 onCancel = onDismiss,
                 onConfirm = {
                     onSave(
+                        id,
                         ModelPrice(
                             currency = currency,
                             input = inputValue ?: return@MiuixDialogActions,
@@ -953,6 +1067,9 @@ private fun PriceField(label: String, value: String, onChange: (String) -> Unit)
 }
 
 private const val LOG_ROWS = 500
+
+/** “在用但未定价”看近 30 天的账本。 */
+private const val UNPRICED_LOOKBACK_MS = 30L * 24 * 60 * 60 * 1_000
 
 /** 用途筛选的显示顺序。 */
 private val PURPOSE_ORDER = listOf("chat", UsageReports.PURPOSE_SUBAGENT, "compaction", "reply_rewrite", "transcript_refine")

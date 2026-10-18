@@ -19,7 +19,7 @@ internal class UsagePriceResolver(
     private val sourceTypes = providers.associate { it.id to ProviderSourceRegistry.resolve(it) }
 
     fun price(record: ModelUsageRecordEntity): ModelPrice? =
-        settings.priceOverrides[UsagePricingSettings.priceKey(record.providerId, record.model)]
+        settings.override(record.model)
             ?: BuiltinModelPrices.find(sourceTypes[record.providerId] ?: ProviderSourceTypes.CUSTOM, record.model)
 
     fun cost(record: ModelUsageRecordEntity): Double? =
