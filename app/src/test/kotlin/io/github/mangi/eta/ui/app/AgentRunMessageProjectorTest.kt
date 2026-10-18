@@ -9,6 +9,7 @@ import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
+import io.github.mangi.eta.ui.model.ToolCallDetails
 import io.github.mangi.eta.ui.model.UserMessageUi
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -534,6 +535,36 @@ class AgentRunMessageProjectorTest {
         assertEquals(ToolActivityStatusUi.Success, (messages[3] as ToolActivityMessageUi).status)
         assertFalse((messages[4] as ThinkingMessageUi).isStreaming)
         assertTrue((messages[5] as AgentMessageUi).isStreaming)
+    }
+
+    @Test
+    fun hostedSearchShowsQueryAsTitleAndKeepsSourcesInSummary() {
+        val projector = AgentRunMessageProjector(nowElapsedRealtime = { 1_000L })
+        val runId = "run-hosted"
+        var messages: List<AgentChatMessageUi> = projector.startHostedTool(
+            runId,
+            AgentEvent.HostedToolStarted(round = 1, toolCallId = "ws_1", name = "网页搜索"),
+            emptyList(),
+        )
+        messages = projector.finishHostedTool(
+            runId,
+            AgentEvent.HostedToolFinished(
+                round = 1,
+                toolCallId = "ws_1",
+                name = "网页搜索",
+                success = true,
+                query = "HyperOS 存储清理",
+                sources = listOf("https://a.example/1", "https://b.example/2"),
+            ),
+            messages,
+        )
+        val tool = messages.single() as ToolActivityMessageUi
+        assertEquals("HyperOS 存储清理", tool.argumentsSummary)
+        assertEquals("2 个来源\nhttps://a.example/1\nhttps://b.example/2", tool.resultSummary)
+        assertEquals(
+            listOf("https://a.example/1", "https://b.example/2"),
+            ToolCallDetails.hostedSources(tool.resultSummary),
+        )
     }
 
     @Test

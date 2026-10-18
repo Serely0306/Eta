@@ -106,6 +106,12 @@ internal object ToolCallDetails {
         }
     }
 
+    /** 服务商托管搜索的来源链接：界面把它们写在摘要第一行之后。 */
+    fun hostedSources(summary: String?): List<String> =
+        summary?.lines().orEmpty().map(String::trim).filter {
+            it.startsWith("https://", ignoreCase = true) || it.startsWith("http://", ignoreCase = true)
+        }
+
     fun webPage(result: String?): WebPageContent? {
         val json = result?.let(::jsonObject) ?: return null
         if (!json.has("text")) return null

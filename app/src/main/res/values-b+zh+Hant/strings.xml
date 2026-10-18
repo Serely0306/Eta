@@ -532,6 +532,10 @@
     <item quantity="other">展開全部（%d 行）</item>
   </plurals>
   <string name="tool_output_collapse">收起</string>
+  <string name="tool_detail_hosted_search">服務商託管的網頁搜尋只回傳查詢詞和來源連結，搜尋結果內文由模型直接使用，不保存。</string>
+  <plurals name="tool_detail_sources">
+    <item quantity="other">%d 個來源</item>
+  </plurals>
   <string name="tool_browser_loading">載入中 · %1$d%%</string>
   <string name="tool_browser_preview">頁面預覽</string>
   <plurals name="work_processing_step">

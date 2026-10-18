@@ -558,6 +558,11 @@
     <item quantity="other">Show all (%d lines)</item>
   </plurals>
   <string name="tool_output_collapse">Collapse</string>
+  <string name="tool_detail_hosted_search">Provider-hosted web search only returns the query and source links. The model uses the result text directly; it is not saved.</string>
+  <plurals name="tool_detail_sources">
+    <item quantity="one">%d source</item>
+    <item quantity="other">%d sources</item>
+  </plurals>
   <string name="tool_browser_loading">Loading · %1$d%%</string>
   <string name="tool_browser_preview">Page preview</string>
   <plurals name="work_processing_step">

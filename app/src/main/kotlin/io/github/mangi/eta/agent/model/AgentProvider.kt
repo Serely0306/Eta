@@ -126,6 +126,9 @@ internal sealed interface ProviderEvent {
         val id: String,
         val name: String,
         val success: Boolean,
+        /** 托管网页搜索的查询词与来源链接；只用于界面，不写日志。 */
+        val query: String = "",
+        val sources: List<String> = emptyList(),
     ) : ProviderEvent
 
     data class Completed(

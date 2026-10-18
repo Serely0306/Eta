@@ -472,9 +472,12 @@ internal class AgentRunMessageProjector(
         val targetId = toolActivityMessageId(runId, event.round, event.toolCallId)
         return messages.map { message ->
             if (message is ToolActivityMessageUi && message.id == targetId) {
+                // 托管工具不进会话记录，查询词作为标题、来源链接写进摘要（首行为来源数），详情从摘要里读取。
                 message.copy(
                     status = if (event.success) ToolActivityStatusUi.Success else ToolActivityStatusUi.Failed,
-                    resultSummary = null,
+                    argumentsSummary = event.query.trim().ifBlank { message.argumentsSummary },
+                    resultSummary = event.sources.takeIf { it.isNotEmpty() }
+                        ?.let { sources -> (listOf("${sources.size} 个来源") + sources).joinToString("\n") },
                 )
             } else {
                 message

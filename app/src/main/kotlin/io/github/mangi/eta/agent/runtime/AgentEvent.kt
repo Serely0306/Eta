@@ -250,6 +250,9 @@ internal sealed interface AgentEvent {
         val toolCallId: String,
         val name: String,
         val success: Boolean,
+        /** 托管网页搜索的查询词与来源，只给界面显示，不进日志行。 */
+        val query: String = "",
+        val sources: List<String> = emptyList(),
     ) : AgentEvent {
         override fun toLogLine(): String =
             "hosted_tool_finished round=$round, name=${name.toSafeLogToken()}, success=$success"

@@ -544,6 +544,10 @@
     <item quantity="other">展开全部（%d 行）</item>
   </plurals>
   <string name="tool_output_collapse">收起</string>
+  <string name="tool_detail_hosted_search">服务商托管的网页搜索只返回查询词和来源链接，搜索结果正文由模型直接使用，不保存。</string>
+  <plurals name="tool_detail_sources">
+    <item quantity="other">%d 个来源</item>
+  </plurals>
   <string name="tool_browser_loading">正在加载 · %1$d%%</string>
   <string name="tool_browser_preview">页面预览</string>
   <plurals name="work_processing_step">

@@ -34,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.OpenAiResponsesProvider
 import io.github.mangi.eta.agent.overlay.toolDisplayName
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.TerminalOutput
@@ -156,6 +157,17 @@ internal fun ToolCallDetailDialog(
                 Pill(message.toolName)
             }
             when {
+                detail == null && message.toolName == OpenAiResponsesProvider.HOSTED_WEB_SEARCH -> {
+                    Note(stringResource(R.string.tool_detail_hosted_search))
+                    message.argumentsSummary.takeIf(String::isNotBlank)?.let {
+                        DetailSection(stringResource(R.string.tool_detail_search_query), it, monospace = false)
+                    }
+                    val sources = remember(message.resultSummary) { ToolCallDetails.hostedSources(message.resultSummary) }
+                    if (sources.isNotEmpty()) {
+                        SectionTitle(pluralStringResource(R.plurals.tool_detail_sources, sources.size, sources.size))
+                        sources.forEach { url -> LinkCard(hostOf(url), url, "") }
+                    }
+                }
                 detail == null -> {
                     Note(stringResource(
                         if (source?.runInProgress == true) R.string.tool_detail_pending else R.string.tool_detail_unavailable,
@@ -358,6 +370,8 @@ private fun ToolActivityStatusUi.labelRes(): Int = when (this) {
     ToolActivityStatusUi.Failed -> R.string.tool_status_failed
     ToolActivityStatusUi.Unknown -> R.string.tool_status_unknown
 }
+
+private fun hostOf(url: String): String = runCatching { java.net.URI(url).host }.getOrNull().orEmpty()
 
 private fun formatSeconds(durationMs: Long): String =
     if (durationMs < 10_000) "%.1f".format(Locale.ROOT, durationMs / 1_000.0) else (durationMs / 1_000).toString()

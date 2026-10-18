@@ -10,6 +10,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 internal object OpenAiResponsesProvider : AgentProviderClient {
+    /** 服务商托管网页搜索在时间线上的工具名。 */
+    const val HOSTED_WEB_SEARCH = "网页搜索"
+    private const val MAX_HOSTED_SOURCES = 20
     private const val MAX_ERROR_CHARS = 600
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
@@ -194,11 +197,17 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
             }
         }
 
-        fun finishHostedTool(id: String, name: String, success: Boolean) {
+        fun finishHostedTool(
+            id: String,
+            name: String,
+            success: Boolean,
+            query: String = "",
+            sources: List<String> = emptyList(),
+        ) {
             startHostedTool(id, name)
             if (hostedTools[id] != true) {
                 hostedTools[id] = true
-                onEvent(ProviderEvent.HostedToolFinished(id, name, success))
+                onEvent(ProviderEvent.HostedToolFinished(id, name, success, query, sources))
             }
         }
 
@@ -318,10 +327,13 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
                             }
                         }
                         else -> itemType.hostedToolDisplayName()?.let { name ->
+                            val action = item.optJSONObject("action")
                             finishHostedTool(
                                 itemId,
                                 name,
                                 item.optString("status") != "failed",
+                                query = action?.optString("query").orEmpty(),
+                                sources = action?.let(::webSearchSources).orEmpty(),
                             )
                         }
                     }
@@ -329,15 +341,16 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
                 "response.web_search_call.in_progress",
                 "response.web_search_call.searching" -> {
                     val itemId = event.hostedToolId("web_search")
-                    startHostedTool(itemId, "网页搜索")
+                    startHostedTool(itemId, HOSTED_WEB_SEARCH)
                 }
+                // 查询词与来源随后在 output_item.done 里给出，到那时再结束；没有 done 时由流结束时补齐。
                 "response.web_search_call.completed" -> {
                     val itemId = event.hostedToolId("web_search")
-                    finishHostedTool(itemId, "网页搜索", success = true)
+                    startHostedTool(itemId, HOSTED_WEB_SEARCH)
                 }
                 "response.web_search_call.failed" -> {
                     val itemId = event.hostedToolId("web_search")
-                    finishHostedTool(itemId, "网页搜索", success = false)
+                    finishHostedTool(itemId, HOSTED_WEB_SEARCH, success = false)
                 }
                 "response.completed", "response.incomplete", "response.failed" -> {
                     terminalType = type
@@ -434,7 +447,7 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
             }
         }
         hostedTools.filterValues { !it }.forEach { (id, _) ->
-            onEvent(ProviderEvent.HostedToolFinished(id, "网页搜索", success = true))
+            onEvent(ProviderEvent.HostedToolFinished(id, HOSTED_WEB_SEARCH, success = true))
         }
 
         parseUsage(finalResponse.optJSONObject("usage"))?.let { onEvent(ProviderEvent.Usage(it)) }
@@ -662,8 +675,21 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
             .ifBlank { optJSONObject("item")?.optString("id").orEmpty() }
             .ifBlank { "${fallbackPrefix}_${optInt("output_index", 0)}" }
 
+    /** 搜索动作的来源（需要请求 include web_search_call.action.sources）；打开网页动作只有一个 url。 */
+    private fun webSearchSources(action: JSONObject): List<String> {
+        val urls = mutableListOf<String>()
+        action.optJSONArray("sources")?.let { sources ->
+            for (index in 0 until sources.length()) {
+                val url = sources.optJSONObject(index)?.optString("url") ?: sources.optString(index)
+                if (url.isNotBlank()) urls += url
+            }
+        }
+        action.optString("url").takeIf(String::isNotBlank)?.let(urls::add)
+        return urls.distinct().take(MAX_HOSTED_SOURCES)
+    }
+
     private fun String.hostedToolDisplayName(): String? = when (this) {
-        "web_search_call" -> "网页搜索"
+        "web_search_call" -> HOSTED_WEB_SEARCH
         "file_search_call" -> "文件搜索"
         "code_interpreter_call" -> "代码执行"
         "computer_call" -> "计算机操作"

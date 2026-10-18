@@ -42,6 +42,46 @@ class OpenAiResponsesProviderTest {
     }
 
     @Test
+    fun hostedSearchRequestsSourcesAndReportsQueryWithSources() {
+        val functions = JSONArray().also { AgentWebToolCatalog.appendTo(it) }
+        val withUserInclude = config("https://example.com/v1").copy(
+            hostedWebSearchEnabled = true,
+            extraBodyJson = """{"include":["reasoning.encrypted_content"]}""",
+        )
+        val include = OpenAiResponsesProvider.buildRequestJson(withUserInclude, JSONArray(), functions)
+            .getJSONArray("include")
+        assertEquals(listOf("reasoning.encrypted_content", "web_search_call.action.sources"),
+            (0 until include.length()).map(include::getString))
+        assertFalse(OpenAiResponsesProvider.buildRequestJson(config("https://example.com/v1"), JSONArray(), functions)
+            .has("include"))
+
+        val item = JSONObject().put("id", "ws_1").put("type", "web_search_call").put("status", "completed")
+            .put("action", JSONObject().put("type", "search").put("query", "HyperOS 存储清理")
+                .put("sources", JSONArray()
+                    .put(JSONObject().put("type", "url").put("url", "https://a.example/1"))
+                    .put(JSONObject().put("type", "url").put("url", "https://b.example/2"))))
+        val body = buildString {
+            append(event("response.output_item.added", JSONObject().put("item", JSONObject().put("id", "ws_1").put("type", "web_search_call"))))
+            // completed 先于 output_item.done 到达，不能提前结束，否则查询词与来源会丢失。
+            append(event("response.web_search_call.completed", JSONObject().put("item_id", "ws_1")))
+            append(event("response.output_item.done", JSONObject().put("item", item)))
+            append(event("response.output_text.delta", JSONObject().put("delta", "好")))
+            append(event("response.completed", JSONObject().put("response", JSONObject().put("status", "completed"))))
+        }
+        withSseServer(body) { baseUrl ->
+            val events = mutableListOf<ProviderEvent>()
+            OpenAiResponsesProvider.complete(
+                ProviderRequest(config(baseUrl), JSONArray().put(JSONObject().put("role", "user").put("content", "搜")), JSONArray()),
+                AgentRunController(),
+                events::add,
+            )
+            val finished = events.filterIsInstance<ProviderEvent.HostedToolFinished>().single()
+            assertEquals("HyperOS 存储清理", finished.query)
+            assertEquals(listOf("https://a.example/1", "https://b.example/2"), finished.sources)
+        }
+    }
+
+    @Test
     fun nativeReasoningDeltasArriveBeforeDoneAndTypedFinalContentIsNotDuplicated() {
         val firstDeltaDelivered = CountDownLatch(1)
         val completed = CountDownLatch(1)

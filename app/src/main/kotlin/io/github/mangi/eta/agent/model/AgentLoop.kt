@@ -515,6 +515,8 @@ internal class AgentLoop(
                 toolCallId = id,
                 name = name,
                 success = success,
+                query = query,
+                sources = sources,
             )
             is ProviderEvent.Completed -> null
         }

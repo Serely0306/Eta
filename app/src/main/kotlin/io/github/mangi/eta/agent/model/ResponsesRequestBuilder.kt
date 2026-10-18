@@ -26,6 +26,8 @@ internal object ResponsesRequestBuilder {
         if (responseTools.length() > 0) {
             request.put("tools", responseTools)
             request.put("tool_choice", "auto")
+            // 托管搜索默认不返回来源链接，显式请求后界面才能列出来源。
+            if (config.usesHostedWebSearch) addInclude(request, WEB_SEARCH_SOURCES)
         } else {
             request.remove("tools")
             request.remove("tool_choice")
@@ -124,6 +126,14 @@ internal object ResponsesRequestBuilder {
             }
             if (hostedWebSearchEnabled) result.put(JSONObject().put("type", "web_search"))
         }
+
+    /** 追加到 include，保留用户在自定义请求体里写的其他项。 */
+    private fun addInclude(request: JSONObject, value: String) {
+        val include = request.optJSONArray("include") ?: JSONArray().also { request.put("include", it) }
+        if ((0 until include.length()).none { include.optString(it) == value }) include.put(value)
+    }
+
+    private const val WEB_SEARCH_SOURCES = "web_search_call.action.sources"
 
     private fun mergeExtraBody(request: JSONObject, extraBodyJson: String) {
         if (extraBodyJson.isBlank()) return
