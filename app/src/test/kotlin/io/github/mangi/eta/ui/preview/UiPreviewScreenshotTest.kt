@@ -18,7 +18,9 @@ import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.provider.BuiltinProviders
 import io.github.mangi.eta.data.repository.ProviderRepository
+import io.github.mangi.eta.data.usage.ModelPrice
 import io.github.mangi.eta.data.usage.ModelUsageLedger
+import io.github.mangi.eta.data.usage.ModelsDevPrice
 import io.github.mangi.eta.data.usage.UsagePricingSettings
 import io.github.mangi.eta.data.usage.UsageQuota
 import io.github.mangi.eta.ui.app.AgentAppTheme
@@ -75,6 +77,13 @@ class UiPreviewScreenshotTest {
             EtaDatabase.get(context).modelUsageDao().insertAll(sampleRecords(System.currentTimeMillis()))
             SettingsDataStore.setUsagePricing(UsagePricingSettings(
                 providerMultipliers = mapOf(RELAY_ID to 0.3),
+                // 截图用的样例价格：三条按 models.dev 导入、一条手动填写，deepseek-v4-flash 留作“未定价”。
+                priceOverrides = listOf(
+                    samplePrice("openai", "OpenAI", "gpt-6-astra", 10.0, 1.0, 50.0),
+                    samplePrice("openai", "OpenAI", "gpt-6-sol", 2.5, 0.25, 15.0),
+                    samplePrice("anthropic", "Anthropic", "claude-opus-5-5", 4.0, 0.2, 20.0),
+                ).associate { it.normalizedId to it.toModelPrice("2026-10-18") } +
+                    ("gpt-6-astra-mini" to ModelPrice(ModelPrice.USD, input = 0.4, cachedInput = 0.04, output = 1.6)),
                 quotas = listOf(
                     UsageQuota(BuiltinProviders.OPENAI_ID, UsageQuota.PERIOD_DAY, limitUsd = 2.0),
                     UsageQuota(BuiltinProviders.DEEPSEEK_ID, UsageQuota.PERIOD_MONTH, limitTokens = 5_000_000),
@@ -159,6 +168,12 @@ class UiPreviewScreenshotTest {
         scope.cancel()
         controller.pause().stop().destroy()
     }
+
+    private fun samplePrice(providerId: String, providerName: String, model: String, input: Double, cached: Double, output: Double) =
+        ModelsDevPrice(
+            providerId = providerId, providerName = providerName, modelId = model, normalizedId = model, name = model,
+            releaseDate = "2026-08-01", input = input, output = output, cacheRead = cached,
+        )
 
     private fun sampleRecords(now: Long): List<ModelUsageRecordEntity> {
         val hour = 3_600_000L

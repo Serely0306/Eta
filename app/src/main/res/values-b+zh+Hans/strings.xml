@@ -1603,7 +1603,32 @@
   <string name="usage_price_cached">缓存读（留空按输入价）</string>
   <string name="usage_price_write">缓存写（留空按输入价）</string>
   <string name="usage_price_output">输出</string>
-  <string name="usage_price_reset">恢复预置价格</string>
+  <string name="usage_price_import">从 models.dev 导入</string>
+  <string name="usage_price_source_note">models.dev 数据：%1$s 拉取，%2$d 个有价格的模型</string>
+  <string name="usage_price_source_none">与 CC Switch 用同一份公开模型数据，尚未拉取（约 6 MB）</string>
+  <string name="usage_price_fetching">正在拉取 models.dev…</string>
+  <string name="usage_price_fetch_failed">拉取 models.dev 失败，请检查网络后重试</string>
+  <string name="usage_price_fetch_failed_cached">拉取 models.dev 失败，改用 %1$s 的缓存</string>
+  <string name="usage_price_refetch">重新拉取</string>
+  <string name="usage_price_match">为在用模型匹配价格</string>
+  <plurals name="usage_price_match_summary">
+    <item quantity="other">%d 个在用模型没有价格</item>
+  </plurals>
+  <string name="usage_price_match_result">已匹配 %1$d 个，models.dev 上没找到 %2$d 个</string>
+  <string name="usage_price_refresh">更新已导入的价格</string>
+  <plurals name="usage_price_refresh_summary">
+    <item quantity="other">%d 条导入的价格，按原来源拉取最新数据</item>
+  </plurals>
+  <string name="usage_price_refresh_result">已更新 %1$d 条导入的价格（models.dev 数据 %2$s）</string>
+  <string name="usage_price_add_summary">给 models.dev 上没有的模型，或有协议价的模型手动填写</string>
+  <string name="usage_price_group_imported">models.dev · %1$s</string>
+  <string name="usage_price_import_search">搜索模型 ID 或名称</string>
+  <string name="usage_price_import_provider">来源</string>
+  <string name="usage_price_import_existing">已在价格表</string>
+  <string name="usage_price_import_more">还有 %1$d 条，请搜索或按来源筛选</string>
+  <string name="usage_price_import_confirm">导入（%1$d）</string>
+  <string name="usage_price_import_result">已导入 %1$d 条价格</string>
+  <string name="usage_price_edit_note">改动后变为手动填写，更新导入时不再覆盖</string>
   <string name="usage_price_search">搜索模型 ID</string>
   <string name="usage_price_scope_note">价格按模型 ID 对所有服务商生效，中转站按服务商倍率换算。模型名里的厂商前缀和日期后缀会先去掉再匹配。</string>
   <string name="usage_price_add">新增定价</string>
@@ -1613,7 +1638,7 @@
   </plurals>
   <string name="usage_price_unset">未定价，只统计 token</string>
   <string name="usage_price_group_unpriced">在用但未定价</string>
-  <string name="usage_price_group_custom">自定义</string>
+  <string name="usage_price_group_custom">手动填写</string>
   <string name="usage_price_model_id">模型 ID</string>
   <string name="usage_price_normalized">按 %1$s 匹配</string>
   <string name="usage_price_long_context">单次输入超过 %1$s token 时整次按长上下文价：输入 %2$s · 输出 %3$s</string>

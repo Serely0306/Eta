@@ -11,7 +11,6 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.db.EtaDatabase
-import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.ui.MainActivity
 import java.time.ZoneId
 import kotlinx.coroutines.runBlocking
@@ -42,8 +41,7 @@ internal object UsageQuotaMonitor {
         val zone = ZoneId.systemDefault()
         val start = UsageReports.quotaPeriodStart(quota.period, now, zone)
         val records = runBlocking { EtaDatabase.get(context).modelUsageDao().between(start, now + 1, MAX_ROWS) }
-        val providers = runCatching { runBlocking { ProviderRepository.allProviders() } }.getOrDefault(emptyList())
-        val usage = UsageReports.quotaUsage(quota, records, now, zone, UsagePriceResolver(providers, pricing)::cost)
+        val usage = UsageReports.quotaUsage(quota, records, now, zone, UsagePriceResolver(pricing)::cost)
         val threshold = when {
             usage.ratio >= 1.0 && quota.notifyAt100 -> 100
             usage.ratio >= 0.8 && quota.notifyAt80 -> 80
@@ -57,7 +55,7 @@ internal object UsageQuotaMonitor {
         val stillCooling = rolling && now - notifiedAt < ROLLING_COOLDOWN_MS
         if (notified >= threshold && (!rolling || stillCooling)) return
         prefs.edit().putInt("$key:threshold", threshold).putLong("$key:at", now).apply()
-        val name = providers.firstOrNull { it.id == providerId }?.name ?: providerId
+        val name = records.lastOrNull { it.providerId == providerId }?.providerName?.ifBlank { null } ?: providerId
         notify(context, providerId, name, threshold, usage)
     }
 

@@ -1,9 +1,6 @@
 package io.github.mangi.eta.data.usage
 
 import io.github.mangi.eta.data.db.ModelUsageRecordEntity
-import io.github.mangi.eta.data.model.ProviderSetting
-import io.github.mangi.eta.data.model.ProviderSourceTypes
-import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
@@ -11,16 +8,9 @@ import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 
-/** 价格解析：用户填写的价格优先，其次内置价格；服务商已删除时按自定义服务商匹配原厂价。 */
-internal class UsagePriceResolver(
-    providers: List<ProviderSetting>,
-    private val settings: UsagePricingSettings,
-) {
-    private val sourceTypes = providers.associate { it.id to ProviderSourceRegistry.resolve(it) }
-
-    fun price(record: ModelUsageRecordEntity): ModelPrice? =
-        settings.override(record.model)
-            ?: BuiltinModelPrices.find(sourceTypes[record.providerId] ?: ProviderSourceTypes.CUSTOM, record.model)
+/** 价格解析：按规整后的模型 ID 查价格表（从 models.dev 导入或用户填写），对所有服务商生效。 */
+internal class UsagePriceResolver(private val settings: UsagePricingSettings) {
+    fun price(record: ModelUsageRecordEntity): ModelPrice? = settings.override(record.model)
 
     fun cost(record: ModelUsageRecordEntity): Double? =
         ModelCostCalculator.costUsd(record, price(record), settings.multiplier(record.providerId), settings.cnyPerUsd)

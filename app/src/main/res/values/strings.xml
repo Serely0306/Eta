@@ -1629,7 +1629,34 @@
   <string name="usage_price_cached">Cache read (blank uses the input price)</string>
   <string name="usage_price_write">Cache write (blank uses the input price)</string>
   <string name="usage_price_output">Output</string>
-  <string name="usage_price_reset">Restore built-in price</string>
+  <string name="usage_price_import">Import from models.dev</string>
+  <string name="usage_price_source_note">models.dev data from %1$s · %2$d priced models</string>
+  <string name="usage_price_source_none">The same public model data CC Switch uses. Not fetched yet (about 6 MB)</string>
+  <string name="usage_price_fetching">Fetching models.dev…</string>
+  <string name="usage_price_fetch_failed">Couldn\'t fetch models.dev. Check the network and try again</string>
+  <string name="usage_price_fetch_failed_cached">Couldn\'t fetch models.dev; using the copy from %1$s</string>
+  <string name="usage_price_refetch">Fetch again</string>
+  <string name="usage_price_match">Match prices for models in use</string>
+  <plurals name="usage_price_match_summary">
+    <item quantity="one">%d model in use has no price</item>
+    <item quantity="other">%d models in use have no price</item>
+  </plurals>
+  <string name="usage_price_match_result">Matched %1$d · not found on models.dev: %2$d</string>
+  <string name="usage_price_refresh">Update imported prices</string>
+  <plurals name="usage_price_refresh_summary">
+    <item quantity="one">%d imported price; fetches the latest data from the same source</item>
+    <item quantity="other">%d imported prices; fetches the latest data from the same sources</item>
+  </plurals>
+  <string name="usage_price_refresh_result">Imported prices updated: %1$d (models.dev data from %2$s)</string>
+  <string name="usage_price_add_summary">For models not on models.dev, or with a negotiated price</string>
+  <string name="usage_price_group_imported">models.dev · %1$s</string>
+  <string name="usage_price_import_search">Search model ID or name</string>
+  <string name="usage_price_import_provider">Source</string>
+  <string name="usage_price_import_existing">Already in the price list</string>
+  <string name="usage_price_import_more">%1$d more. Search or pick a source to narrow the list</string>
+  <string name="usage_price_import_confirm">Import (%1$d)</string>
+  <string name="usage_price_import_result">Prices imported: %1$d</string>
+  <string name="usage_price_edit_note">Once changed, it becomes a manual price that updates won\'t overwrite</string>
   <string name="usage_price_search">Search model ID</string>
   <string name="usage_price_scope_note">Prices apply to every provider by model ID; relays are converted with the provider multiplier. Vendor prefixes and date suffixes in model names are removed before matching.</string>
   <string name="usage_price_add">Add pricing</string>
@@ -1640,7 +1667,7 @@
   </plurals>
   <string name="usage_price_unset">No price. Only tokens are counted</string>
   <string name="usage_price_group_unpriced">In use, no price</string>
-  <string name="usage_price_group_custom">Custom</string>
+  <string name="usage_price_group_custom">Entered manually</string>
   <string name="usage_price_model_id">Model ID</string>
   <string name="usage_price_normalized">Matched as %1$s</string>
   <string name="usage_price_long_context">Requests with more than %1$s input tokens use the long-context rate: input %2$s · output %3$s</string>

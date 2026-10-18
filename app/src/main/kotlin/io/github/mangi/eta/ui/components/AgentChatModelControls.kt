@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.datastore.SettingsDataStore
-import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.usage.ModelUsageLedger
 import io.github.mangi.eta.data.usage.UsagePriceResolver
 import io.github.mangi.eta.data.usage.UsagePricingSettings
@@ -372,10 +371,9 @@ internal fun AgentContextUsageButton(
 private fun ConversationUsageLines(conversationId: String, color: Color) {
     val records by remember(conversationId) { ModelUsageLedger.sessionRecordsFlow(conversationId) }
         .collectAsState(initial = emptyList())
-    val providers by remember { ProviderRepository.providersFlow() }.collectAsState(initial = emptyList())
     val pricing by remember { SettingsDataStore.usagePricingFlow() }.collectAsState(initial = UsagePricingSettings())
-    val total = remember(records, providers, pricing) {
-        UsageReports.summarize(records, UsagePriceResolver(providers, pricing)::cost)
+    val total = remember(records, pricing) {
+        UsageReports.summarize(records, UsagePriceResolver(pricing)::cost)
     }
     if (total.requests == 0) return
     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

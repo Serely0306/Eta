@@ -13,8 +13,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ExpandLess
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,12 +50,15 @@ import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.db.ModelUsageRecordEntity
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.repository.ProviderRepository
-import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import io.github.mangi.eta.data.usage.ModelCostCalculator
 import io.github.mangi.eta.data.usage.ModelIds
 import io.github.mangi.eta.data.usage.ModelPrice
 import io.github.mangi.eta.data.usage.ModelUsageLedger
+import io.github.mangi.eta.data.usage.ModelsDev
+import io.github.mangi.eta.data.usage.ModelsDevPrice
+import io.github.mangi.eta.data.usage.ModelsDevSnapshot
 import io.github.mangi.eta.data.usage.PriceCatalog
+import io.github.mangi.eta.data.usage.PriceGroup
 import io.github.mangi.eta.data.usage.QuotaUsage
 import io.github.mangi.eta.data.usage.UsageGroup
 import io.github.mangi.eta.data.usage.UsagePriceResolver
@@ -69,14 +76,17 @@ import io.github.mangi.eta.ui.components.EtaPreferenceGroup
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
 import io.github.mangi.eta.ui.components.EtaTextButton
 import io.github.mangi.eta.ui.components.EtaWindowDialog
+import io.github.mangi.eta.ui.components.LinkButton
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.navigation.AppRoute
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -103,7 +113,7 @@ internal fun UsageScreen(onNavigate: (AppRoute) -> Unit, onBack: () -> Unit) {
         .collectAsState(initial = emptyList())
     val providers by remember { ProviderRepository.providersFlow() }.collectAsState(initial = emptyList())
     val pricing by remember { SettingsDataStore.usagePricingFlow() }.collectAsState(initial = UsagePricingSettings())
-    val resolver = remember(providers, pricing) { UsagePriceResolver(providers, pricing) }
+    val resolver = remember(pricing) { UsagePriceResolver(pricing) }
     val report = remember(records, resolver, range, now) { UsageReports.build(records, range, now, zone, resolver::cost) }
     // 额度周期可能比当前时间范围长（例如月额度配“今天”），单独取最早周期起点之后的记录。
     val quotaStart = remember(pricing, now) {
@@ -575,9 +585,8 @@ internal fun UsageLogsScreen(onBack: () -> Unit) {
     val bounds = remember(range, now) { UsageReports.bounds(range, now, zone) }
     val records by remember(bounds) { ModelUsageLedger.recordsFlow(bounds.first, bounds.second, LOG_ROWS) }
         .collectAsState(initial = emptyList())
-    val providers by remember { ProviderRepository.providersFlow() }.collectAsState(initial = emptyList())
     val pricing by remember { SettingsDataStore.usagePricingFlow() }.collectAsState(initial = UsagePricingSettings())
-    val resolver = remember(providers, pricing) { UsagePriceResolver(providers, pricing) }
+    val resolver = remember(pricing) { UsagePriceResolver(pricing) }
     val timeFormat = remember(range) {
         DateTimeFormatter.ofPattern(if (range == UsageRange.TODAY) "HH:mm:ss" else "MM/dd HH:mm").withZone(zone)
     }
@@ -726,33 +735,65 @@ private fun LogDetail(record: ModelUsageRecordEntity, price: ModelPrice?, pricin
     }
 }
 
-/** 价格、倍率与汇率：汇率与倍率即时保存；模型价格可覆盖预置价，或给没有预置的模型填写。 */
+/**
+ * 价格、倍率与汇率：汇率与倍率即时保存。模型价格参照 CC Switch，从 models.dev 导入，也可以手动填写；
+ * 导入的价格可以按原来源更新，手动填写或改过的不会被覆盖。
+ */
 @Composable
 internal fun UsagePricingScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val providers by remember { ProviderRepository.providersFlow() }.collectAsState(initial = emptyList())
     val pricing by remember { SettingsDataStore.usagePricingFlow() }.collectAsState(initial = UsagePricingSettings())
     // 正在编辑的模型 ID；空串表示新增定价。
     var editing by remember { mutableStateOf<String?>(null) }
+    var importing by remember { mutableStateOf(false) }
     var paid by remember { mutableStateOf("1") }
     var credit by remember { mutableStateOf("1") }
     var query by rememberSaveable { mutableStateOf("") }
-    var expandedGroups by remember { mutableStateOf(setOf(PriceCatalog.UNPRICED, PriceCatalog.CUSTOM)) }
+    var expandedGroups by remember { mutableStateOf(setOf(PriceCatalog.UNPRICED, PriceCatalog.MANUAL)) }
+    var snapshot by remember { mutableStateOf<ModelsDevSnapshot?>(null) }
+    var fetching by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { ModelsDev.cached(context) }?.let { cached -> if (snapshot == null) snapshot = cached }
+    }
     fun save(next: UsagePricingSettings) {
         scope.launch { SettingsDataStore.setUsagePricing(next) }
+    }
+    fun toast(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+    // 当天拉过就用缓存，否则重新拉取（完整数据约 6 MB）。拉取失败时，导入与匹配退回旧缓存；
+    // [force]（重新拉取、更新已导入的价格）不退回，免得拿旧数据“更新”。
+    suspend fun loadSnapshot(force: Boolean): ModelsDevSnapshot? {
+        val today = LocalDate.now().toString()
+        snapshot?.takeIf { !force && it.fetchedOn == today }?.let { return it }
+        fetching = true
+        return try {
+            ModelsDev.fetch(context).also { snapshot = it }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            val fallback = snapshot?.takeIf { !force }
+            toast(
+                if (fallback != null) resources.getString(R.string.usage_price_fetch_failed_cached, fallback.fetchedOn)
+                else resources.getString(R.string.usage_price_fetch_failed),
+            )
+            fallback
+        } finally {
+            fetching = false
+        }
     }
     val enabled = providers.filter { it.isEnabled && it.inUse(pricing) }
     val since = remember { System.currentTimeMillis() - UNPRICED_LOOKBACK_MS }
     val recent by remember(since) { ModelUsageLedger.recordsFlow(since, Long.MAX_VALUE) }.collectAsState(initial = emptyList())
-    val resolver = remember(providers, pricing) { UsagePriceResolver(providers, pricing) }
-    // 在用的模型：近 30 天账本里出现过的，加上在用服务商里启用的模型；查不到价格的列进“未定价”。
-    val unpriced = remember(recent, enabled, resolver) {
-        (recent.map { it.providerId to it.model } +
-            enabled.flatMap { provider -> provider.models.filter { it.isEnabled }.map { provider.id to it.modelId } })
+    // 在用的模型：近 30 天账本里出现过的，加上在用服务商里启用的模型；价格表里没有的列进“未定价”。
+    val unpriced = remember(recent, enabled, pricing) {
+        (recent.map { it.model } + enabled.flatMap { provider -> provider.models.filter { it.isEnabled }.map { it.modelId } })
+            .filter { pricing.override(it) == null }
+            .map(ModelIds::normalize)
+            .filter(String::isNotEmpty)
             .distinct()
-            .filter { (providerId, model) -> resolver.price(probe(providerId, model)) == null }
-            .map { it.second }
     }
+    val importedCount = pricing.priceOverrides.values.count { it.importedFrom.isNotEmpty() }
     val groups = remember(pricing, unpriced, query) { PriceCatalog.groups(pricing, unpriced, query) }
     MiuixScaffoldPage(title = stringResource(R.string.usage_pricing), onBack = onBack) {
         item(key = "fx") {
@@ -848,7 +889,53 @@ internal fun UsagePricingScreen(onBack: () -> Unit) {
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
-                EtaTextButton(text = stringResource(R.string.usage_price_add), onClick = { editing = "" })
+            }
+            EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
+                val current = snapshot
+                EtaArrowPreference(
+                    title = stringResource(R.string.usage_price_import),
+                    summary = when {
+                        fetching -> stringResource(R.string.usage_price_fetching)
+                        current != null -> stringResource(R.string.usage_price_source_note, current.fetchedOn, current.prices.size)
+                        else -> stringResource(R.string.usage_price_source_none)
+                    },
+                    enabled = !fetching,
+                    onClick = { scope.launch { if (loadSnapshot(force = false) != null) importing = true } },
+                )
+                EtaPreferenceDivider(hasLeading = false)
+                EtaArrowPreference(
+                    title = stringResource(R.string.usage_price_match),
+                    summary = pluralStringResource(R.plurals.usage_price_match_summary, unpriced.size, unpriced.size),
+                    enabled = !fetching && unpriced.isNotEmpty(),
+                    onClick = {
+                        scope.launch {
+                            val data = loadSnapshot(force = false) ?: return@launch
+                            val (matched, missing) = PriceCatalog.matchUnpriced(data, unpriced)
+                            save(PriceCatalog.applyImport(pricing, data, matched).first)
+                            toast(resources.getString(R.string.usage_price_match_result, matched.size, missing.size))
+                        }
+                    },
+                )
+                EtaPreferenceDivider(hasLeading = false)
+                EtaArrowPreference(
+                    title = stringResource(R.string.usage_price_refresh),
+                    summary = pluralStringResource(R.plurals.usage_price_refresh_summary, importedCount, importedCount),
+                    enabled = !fetching && importedCount > 0,
+                    onClick = {
+                        scope.launch {
+                            val data = loadSnapshot(force = true) ?: return@launch
+                            val (next, changed) = PriceCatalog.applyImport(pricing, data, refreshImported = true)
+                            save(next)
+                            toast(resources.getString(R.string.usage_price_refresh_result, changed, data.fetchedOn))
+                        }
+                    },
+                )
+                EtaPreferenceDivider(hasLeading = false)
+                EtaArrowPreference(
+                    title = stringResource(R.string.usage_price_add),
+                    summary = stringResource(R.string.usage_price_add_summary),
+                    onClick = { editing = "" },
+                )
             }
         }
         if (groups.isEmpty()) {
@@ -860,11 +947,11 @@ internal fun UsagePricingScreen(onBack: () -> Unit) {
         }
         groups.forEach { group ->
             item(key = "price-group-${group.key}") {
-                // 搜索时全部展开；否则“未定价”“自定义”默认展开，各厂商默认收起。
+                // 搜索时全部展开；否则“未定价”“手动填写”默认展开，导入的各来源默认收起。
                 val open = query.isNotBlank() || group.key in expandedGroups
                 EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
                     EtaPreference(
-                        title = priceGroupLabel(group.key, providers),
+                        title = priceGroupLabel(group),
                         summary = pluralStringResource(R.plurals.usage_price_group_count, group.rows.size, group.rows.size),
                         onClick = {
                             expandedGroups = if (group.key in expandedGroups) expandedGroups - group.key else expandedGroups + group.key
@@ -882,8 +969,7 @@ internal fun UsagePricingScreen(onBack: () -> Unit) {
                             EtaPreferenceDivider(hasLeading = false)
                             EtaPreference(
                                 title = row.modelId,
-                                summary = row.price?.let { priceLine(it) + if (row.custom) " · " + stringResource(R.string.usage_price_custom) else "" }
-                                    ?: stringResource(R.string.usage_price_unset),
+                                summary = row.price?.let { priceLine(it) } ?: stringResource(R.string.usage_price_unset),
                                 onClick = { editing = row.modelId },
                             )
                         }
@@ -893,12 +979,9 @@ internal fun UsagePricingScreen(onBack: () -> Unit) {
         }
     }
     editing?.let { modelId ->
-        val builtin = PriceCatalog.builtinPrice(modelId)
         PriceDialog(
             modelId = modelId,
-            initial = pricing.override(modelId) ?: builtin,
-            builtin = builtin,
-            hasOverride = modelId.isNotEmpty() && pricing.override(modelId) != null,
+            initial = modelId.takeIf(String::isNotEmpty)?.let(pricing::override),
             onDismiss = { editing = null },
             onSave = { id, price ->
                 editing = null
@@ -910,23 +993,124 @@ internal fun UsagePricingScreen(onBack: () -> Unit) {
             },
         )
     }
+    snapshot?.takeIf { importing }?.let { data ->
+        ModelsDevImportDialog(
+            snapshot = data,
+            priced = pricing.priceOverrides.keys,
+            fetching = fetching,
+            onRefetch = { scope.launch { loadSnapshot(force = true) } },
+            onDismiss = { importing = false },
+            onImport = { selected ->
+                importing = false
+                val (next, changed) = PriceCatalog.applyImport(pricing, data, selected)
+                save(next)
+                toast(resources.getString(R.string.usage_price_import_result, changed))
+            },
+        )
+    }
 }
 
 @Composable
-private fun priceGroupLabel(key: String, providers: List<ProviderSetting>): String = when (key) {
+private fun priceGroupLabel(group: PriceGroup): String = when (group.key) {
     PriceCatalog.UNPRICED -> stringResource(R.string.usage_price_group_unpriced)
-    PriceCatalog.CUSTOM -> stringResource(R.string.usage_price_group_custom)
-    // 预置价格按厂商来源分组，组名用对应内置服务商的名字。
-    else -> providers.firstOrNull { it.isBuiltIn && ProviderSourceRegistry.resolve(it) == key }?.name ?: key
+    PriceCatalog.MANUAL -> stringResource(R.string.usage_price_group_custom)
+    else -> stringResource(R.string.usage_price_group_imported, group.label)
 }
 
-/** 只用于查价格的占位记录。 */
-private fun probe(providerId: String, model: String) = ModelUsageRecordEntity(
-    createdAt = 0, durationMs = 0, source = "", runId = "", purpose = "chat", subagentIndex = null,
-    providerId = providerId, providerName = "", model = model, modelDisplayName = model, endpoint = "",
-    reasoningEffort = "", status = ModelUsageRecordEntity.STATUS_OK, hasUsage = false,
-    promptTokens = 0, cachedTokens = 0, cacheWriteTokens = 0, outputTokens = 0, reasoningTokens = 0,
-)
+/**
+ * 从 models.dev 选择要导入的价格：可按模型 ID 或名称搜索、按来源服务商筛选，多选后导入。
+ * 同一个规整后的模型 ID 只能选一条；已在价格表里的会标出，导入时覆盖。
+ */
+@Composable
+private fun ModelsDevImportDialog(
+    snapshot: ModelsDevSnapshot,
+    priced: Set<String>,
+    fetching: Boolean,
+    onRefetch: () -> Unit,
+    onDismiss: () -> Unit,
+    onImport: (List<ModelsDevPrice>) -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var providerFilter by remember { mutableStateOf<String?>(null) }
+    // 规整后的模型 ID → 选中的条目（服务商/模型）。
+    var selected by remember { mutableStateOf(mapOf<String, String>()) }
+    val providerOptions = remember(snapshot) {
+        snapshot.prices.distinctBy { it.providerId }.map { it.providerId to it.providerName }
+            .sortedWith(
+                compareBy<Pair<String, String>> { (id, _) ->
+                    ModelsDev.PREFERRED_PROVIDERS.indexOf(id).let { if (it < 0) Int.MAX_VALUE else it }
+                }.thenBy { it.second.lowercase() },
+            )
+    }
+    val matches = remember(snapshot, query, providerFilter) {
+        val needle = query.trim().lowercase()
+        val normalized = ModelIds.normalize(query)
+        snapshot.prices.filter { price ->
+            (providerFilter == null || price.providerId == providerFilter) &&
+                (needle.isEmpty() || needle in price.modelId.lowercase() || needle in price.name.lowercase() ||
+                    (normalized.isNotEmpty() && normalized in price.normalizedId))
+        }
+    }
+    val byKey = remember(snapshot) { snapshot.prices.associateBy { it.key } }
+    EtaWindowDialog(show = true, title = stringResource(R.string.usage_price_import), onDismissRequest = onDismiss) {
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (fetching) stringResource(R.string.usage_price_fetching)
+                        else stringResource(R.string.usage_price_source_note, snapshot.fetchedOn, snapshot.prices.size),
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.weight(1f),
+                )
+                if (!fetching) LinkButton(text = stringResource(R.string.usage_price_refetch), onClick = onRefetch)
+            }
+            TextField(
+                value = query,
+                onValueChange = { query = it.take(80) },
+                label = stringResource(R.string.usage_price_import_search),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            EtaDropdownPreference(
+                title = stringResource(R.string.usage_price_import_provider),
+                items = listOf(DropdownItem(text = stringResource(R.string.usage_filter_all))) +
+                    providerOptions.map { DropdownItem(text = it.second) },
+                selectedIndex = providerOptions.indexOfFirst { it.first == providerFilter } + 1,
+                onSelectedIndexChange = { index -> providerFilter = providerOptions.getOrNull(index - 1)?.first },
+            )
+            LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                items(matches.take(IMPORT_ROWS), key = { it.key }) { price ->
+                    val tags = listOfNotNull(
+                        price.providerName,
+                        stringResource(R.string.usage_price_import_existing).takeIf { price.normalizedId in priced },
+                    ).joinToString(" · ")
+                    EtaCheckboxPreference(
+                        title = price.modelId,
+                        summary = "$tags\n${priceLine(price.toModelPrice(snapshot.fetchedOn))}",
+                        checked = selected[price.normalizedId] == price.key,
+                        onCheckedChange = { checked ->
+                            selected = if (checked) selected + (price.normalizedId to price.key) else selected - price.normalizedId
+                        },
+                    )
+                }
+                if (matches.size > IMPORT_ROWS) {
+                    item(key = "more") {
+                        EtaPreference(summary = stringResource(R.string.usage_price_import_more, matches.size - IMPORT_ROWS))
+                    }
+                }
+                if (matches.isEmpty()) {
+                    item(key = "none") { EtaPreference(summary = stringResource(R.string.usage_price_no_match)) }
+                }
+            }
+            MiuixDialogActions(
+                confirmText = stringResource(R.string.usage_price_import_confirm, selected.size),
+                confirmEnabled = selected.isNotEmpty(),
+                onCancel = onDismiss,
+                onConfirm = { onImport(selected.values.mapNotNull(byKey::get)) },
+            )
+        }
+    }
+}
 
 @Composable
 private fun priceLine(price: ModelPrice): String = stringResource(
@@ -956,14 +1140,12 @@ private fun NumberField(label: String, initial: String, key: Any, onValid: (Doub
 
 /**
  * 编辑一个模型 ID 的价格（对所有服务商生效）。[modelId] 为空时是新增，先填模型 ID；
- * 预置模型显示价格来源，改过的可以恢复预置价，自定义的可以删除。
+ * 导入的价格显示来源与长上下文档，改动后变为手动填写（长上下文档保留），已有的可以删除。
  */
 @Composable
 private fun PriceDialog(
     modelId: String,
     initial: ModelPrice?,
-    builtin: ModelPrice?,
-    hasOverride: Boolean,
     onDismiss: () -> Unit,
     onSave: (String, ModelPrice?) -> Unit,
 ) {
@@ -973,8 +1155,11 @@ private fun PriceDialog(
     var cached by remember { mutableStateOf(initial?.cachedInput?.let(::formatNumber).orEmpty()) }
     var write by remember { mutableStateOf(initial?.cacheWrite?.let(::formatNumber).orEmpty()) }
     var output by remember { mutableStateOf(initial?.output?.let(::formatNumber).orEmpty()) }
-    val inputValue = input.toDoubleOrNull()?.takeIf { it >= 0 }
-    val outputValue = output.toDoubleOrNull()?.takeIf { it >= 0 }
+    // 文本没动过时沿用原值，避免显示时的四舍五入把导入的价格改成“手动填写”。
+    fun parse(text: String, original: Double?): Double? =
+        if (original != null && text == formatNumber(original)) original else text.toDoubleOrNull()?.takeIf { it >= 0 }
+    val inputValue = parse(input, initial?.input)
+    val outputValue = parse(output, initial?.output)
     val currencies = listOf(ModelPrice.USD, ModelPrice.CNY)
     val normalizedId = ModelIds.normalize(id)
     EtaWindowDialog(
@@ -1000,7 +1185,7 @@ private fun PriceDialog(
                     )
                 }
             }
-            builtin?.let { price ->
+            initial?.takeIf { it.source.isNotBlank() || it.longContextThreshold != null }?.let { price ->
                 Text(
                     text = listOfNotNull(
                         price.source.takeIf(String::isNotBlank),
@@ -1012,6 +1197,7 @@ private fun PriceDialog(
                                 formatNumber(price.longOutput ?: price.output),
                             )
                         },
+                        stringResource(R.string.usage_price_edit_note).takeIf { price.importedFrom.isNotEmpty() },
                     ).joinToString("\n"),
                     style = MiuixTheme.textStyles.footnote2,
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -1027,27 +1213,22 @@ private fun PriceDialog(
             PriceField(stringResource(R.string.usage_price_cached), cached) { cached = it }
             PriceField(stringResource(R.string.usage_price_write), write) { write = it }
             PriceField(stringResource(R.string.usage_price_output), output) { output = it }
-            if (hasOverride) {
-                EtaTextButton(
-                    text = stringResource(if (builtin != null) R.string.usage_price_reset else R.string.usage_price_delete),
-                    onClick = { onSave(modelId, null) },
-                )
+            if (initial != null) {
+                EtaTextButton(text = stringResource(R.string.usage_price_delete), onClick = { onSave(modelId, null) })
             }
             MiuixDialogActions(
                 confirmText = stringResource(R.string.usage_save),
                 confirmEnabled = inputValue != null && outputValue != null && normalizedId.isNotEmpty(),
                 onCancel = onDismiss,
                 onConfirm = {
-                    onSave(
-                        id,
-                        ModelPrice(
-                            currency = currency,
-                            input = inputValue ?: return@MiuixDialogActions,
-                            cachedInput = cached.toDoubleOrNull(),
-                            cacheWrite = write.toDoubleOrNull(),
-                            output = outputValue ?: return@MiuixDialogActions,
-                        ),
+                    val edited = (initial ?: ModelPrice(currency = currency, input = 0.0, output = 0.0)).copy(
+                        currency = currency,
+                        input = inputValue ?: return@MiuixDialogActions,
+                        cachedInput = parse(cached, initial?.cachedInput),
+                        cacheWrite = parse(write, initial?.cacheWrite),
+                        output = outputValue ?: return@MiuixDialogActions,
                     )
+                    onSave(id, if (initial != null) PriceCatalog.edited(initial, edited) else edited)
                 },
             )
         }
@@ -1067,6 +1248,9 @@ private fun PriceField(label: String, value: String, onChange: (String) -> Unit)
 }
 
 private const val LOG_ROWS = 500
+
+/** 导入弹窗一次最多列出的条目；更多的请搜索或按来源筛选。 */
+private const val IMPORT_ROWS = 200
 
 /** “在用但未定价”看近 30 天的账本。 */
 private const val UNPRICED_LOOKBACK_MS = 30L * 24 * 60 * 60 * 1_000
