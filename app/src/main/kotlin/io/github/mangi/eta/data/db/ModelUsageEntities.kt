@@ -60,6 +60,10 @@ internal interface ModelUsageDao {
     @Insert
     fun insert(record: ModelUsageRecordEntity)
 
+    /** 备份恢复用，在事务内调用。 */
+    @Insert
+    suspend fun insertAll(records: List<ModelUsageRecordEntity>)
+
     @Query("SELECT * FROM model_usage_records WHERE run_id = :runId ORDER BY id")
     suspend fun forRun(runId: String): List<ModelUsageRecordEntity>
 

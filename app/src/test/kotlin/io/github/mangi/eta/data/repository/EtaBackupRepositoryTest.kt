@@ -6,6 +6,7 @@ import io.github.mangi.eta.data.db.ConversationEntity
 import io.github.mangi.eta.data.db.ConversationMessageEntity
 import io.github.mangi.eta.data.db.ConversationStateEntity
 import io.github.mangi.eta.data.db.EtaDatabase
+import io.github.mangi.eta.data.db.ModelUsageRecordEntity
 import io.github.mangi.eta.data.model.ModelSource
 import io.github.mangi.eta.data.model.withApiKey
 import io.github.mangi.eta.data.provider.BuiltinProviders
@@ -114,6 +115,31 @@ class EtaBackupRepositoryTest {
         assertEquals(provider.models.first().id, restoredSettings.selectedModelId)
         assertEquals("sk-backup-test", ProviderRepository.providerById(provider.id)?.apiKey)
         assertEquals(ModelSource.CATALOG, ProviderRepository.providerById(provider.id)?.models?.first()?.source)
+    }
+
+    @Test
+    fun usageLedgerRoundTripsAndOldBackupKeepsDeviceLedger() = runBlocking {
+        val usageDao = EtaDatabase.get(context).modelUsageDao()
+        suspend fun insert(runId: String) = usageDao.insertAll(listOf(ModelUsageRecordEntity(createdAt = 1L,
+            durationMs = 2L, source = "agent_ui", runId = runId, purpose = "chat", subagentIndex = null,
+            providerId = "p", providerName = "P", model = "m", modelDisplayName = "M", endpoint = "responses",
+            reasoningEffort = "high", status = ModelUsageRecordEntity.STATUS_OK, hasUsage = true,
+            promptTokens = 100, cachedTokens = 80, cacheWriteTokens = 0, outputTokens = 10, reasoningTokens = 4)))
+        insert("backed-up")
+        val output = ByteArrayOutputStream()
+        EtaBackupRepository.export(context, output)
+        usageDao.deleteAll()
+        insert("device-only")
+
+        EtaBackupRepository.import(context, ByteArrayInputStream(output.toByteArray()))
+        assertEquals(listOf("backed-up"), usageDao.page(10, 0).map { it.runId })
+        assertEquals(80L, usageDao.page(10, 0).single().cachedTokens)
+
+        usageDao.deleteAll()
+        insert("device-only")
+        val oldBackup = """{"format":"eta-backup","schemaVersion":3,"exportedAt":0}"""
+        EtaBackupRepository.import(context, ByteArrayInputStream(oldBackup.toByteArray()))
+        assertEquals(listOf("device-only"), usageDao.page(10, 0).map { it.runId })
     }
 
     @Test(expected = EtaBackupException::class)

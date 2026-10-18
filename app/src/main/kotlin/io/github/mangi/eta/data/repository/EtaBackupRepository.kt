@@ -7,6 +7,7 @@ import io.github.mangi.eta.data.db.ConversationEntity
 import io.github.mangi.eta.data.db.ConversationMessageEntity
 import io.github.mangi.eta.data.db.ConversationStateEntity
 import io.github.mangi.eta.data.db.EtaDatabase
+import io.github.mangi.eta.data.db.ModelUsageRecordEntity
 import io.github.mangi.eta.data.db.ProviderEntity
 import io.github.mangi.eta.data.db.ProviderModelEntity
 import io.github.mangi.eta.data.db.ProviderWithModelsSeed
@@ -42,11 +43,13 @@ internal data class EtaBackupDocument(
     val conversationState: ConversationStateEntity? = null,
     val memoryMd: String = "",
     val roleplay: CharacterBackupData? = null,
+    val usageRecords: List<ModelUsageRecordEntity> = emptyList(),
 ) {
     companion object {
         const val FORMAT = "eta-backup"
         // 3：会话记录携带最近使用的模型；旧版本备份缺省该字段，导入后跟随默认模型。
-        const val SCHEMA_VERSION = 3
+        // 4：携带用量账本；旧版本备份没有账本时保留设备上的账本。
+        const val SCHEMA_VERSION = 4
     }
 }
 
@@ -120,6 +123,13 @@ internal object EtaBackupRepository {
                         writer.record(ConversationContextCheckpointEntity.serializer(), dao.restoreCheckpoint(raw))
                     }
                     writer.endArray()
+                    phase = "export_usage"
+                    writer.beginArray(EtaBackupJsonStreams.USAGE_RECORDS)
+                    val usageDao = database.modelUsageDao()
+                    exportRows({ usageDao.page(EXPORT_PAGE_SIZE, it) }) { row ->
+                        writer.record(ModelUsageRecordEntity.serializer(), row)
+                    }
+                    writer.endArray()
                     phase = "export_roleplay"
                     val roleplay = CharacterBackupTransfer.snapshot(appContext, boundAvatars)
                     writer.value("roleplay", CharacterBackupData.serializer().nullable, roleplay)
@@ -170,6 +180,12 @@ internal object EtaBackupRepository {
                         phase = "restore_checkpoints"
                         staged.checkpoints { dao.insertContextCheckpoints(listOf(it)) }
                         document.conversationState?.let { dao.insertState(it) }
+                        if (staged.hasUsageRecords) {
+                            phase = "restore_usage"
+                            val usageDao = database.modelUsageDao()
+                            usageDao.deleteAll()
+                            staged.usageRecords { usageDao.insertAll(listOf(it)) }
+                        }
                         phase = "restore_roleplay"
                         document.roleplay?.let { roleplay ->
                             database.characterDao().replaceAll(

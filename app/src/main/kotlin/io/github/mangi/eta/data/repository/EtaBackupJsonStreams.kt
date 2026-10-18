@@ -8,6 +8,7 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.db.ConversationContextCheckpointEntity
 import io.github.mangi.eta.data.db.ConversationEntity
 import io.github.mangi.eta.data.db.ConversationMessageEntity
+import io.github.mangi.eta.data.db.ModelUsageRecordEntity
 import java.io.File
 import java.io.FilterInputStream
 import java.io.FilterOutputStream
@@ -35,7 +36,8 @@ internal object EtaBackupJsonStreams {
     const val CONVERSATIONS = "conversations"
     const val MESSAGES = "messages"
     const val CHECKPOINTS = "contextCheckpoints"
-    private val recordFields = setOf(CONVERSATIONS, MESSAGES, CHECKPOINTS)
+    const val USAGE_RECORDS = "usageRecords"
+    private val recordFields = setOf(CONVERSATIONS, MESSAGES, CHECKPOINTS, USAGE_RECORDS)
     private val knownFields = EtaBackupDocument.serializer().descriptor.let { descriptor ->
         (0 until descriptor.elementsCount).mapTo(mutableSetOf(), descriptor::getElementName)
     }
@@ -129,6 +131,10 @@ internal object EtaBackupJsonStreams {
         suspend fun conversations(action: suspend (ConversationEntity) -> Unit) = records(CONVERSATIONS, action)
         suspend fun messages(action: suspend (ConversationMessageEntity) -> Unit) = records(MESSAGES, action)
         suspend fun checkpoints(action: suspend (ConversationContextCheckpointEntity) -> Unit) = records(CHECKPOINTS, action)
+        suspend fun usageRecords(action: suspend (ModelUsageRecordEntity) -> Unit) = records(USAGE_RECORDS, action)
+
+        /** 旧版本备份没有用量账本；这时导入保留设备上的账本。 */
+        val hasUsageRecords: Boolean get() = File(directory, "$USAGE_RECORDS.json").exists()
 
         private suspend inline fun <reified T> records(field: String, noinline action: suspend (T) -> Unit) {
             val file = File(directory, "$field.json")
