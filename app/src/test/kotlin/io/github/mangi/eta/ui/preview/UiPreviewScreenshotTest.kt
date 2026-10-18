@@ -6,8 +6,9 @@ import android.os.Looper
 import android.view.PixelCopy
 import android.view.View
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
+import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Recomposer
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -31,8 +32,15 @@ import io.github.mangi.eta.ui.screens.usage.UsagePricingScreen
 import io.github.mangi.eta.ui.screens.usage.UsageScreen
 import java.io.File
 import java.time.Duration
+import androidx.compose.ui.platform.ComposeView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.android.asCoroutineDispatcher
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assume.assumeTrue
@@ -106,14 +114,23 @@ class UiPreviewScreenshotTest {
         val controller = Robolectric.buildActivity(ComponentActivity::class.java)
         controller.get().setTheme(R.style.Theme_Eta)
         val activity = controller.setup().get()
-        activity.setContent {
-            DataProbe(name)
-            AgentAppTheme(
-                appearance = AppearanceSettings(themeMode = AppearanceThemeMode.LIGHT, blurEnabled = false),
-                applyInterfaceScale = false,
-                content = content,
-            )
-        }
+        // 窗口自带的重组器靠 Choreographer 出帧，在这里不出帧（效果与重组都不发生）；
+        // 改用自己的重组器与帧时钟，由下面的循环手动推帧，与 Compose 测试库的做法相同。
+        val clock = BroadcastFrameClock()
+        val scope = CoroutineScope(Handler(Looper.getMainLooper()).asCoroutineDispatcher() + clock + Job())
+        val recomposer = Recomposer(scope.coroutineContext)
+        scope.launch(start = CoroutineStart.UNDISPATCHED) { recomposer.runRecomposeAndApplyChanges() }
+        activity.setContentView(ComposeView(activity).apply {
+            setParentCompositionContext(recomposer)
+            setContent {
+                DataProbe(name)
+                AgentAppTheme(
+                    appearance = AppearanceSettings(themeMode = AppearanceThemeMode.LIGHT, blurEnabled = false),
+                    applyInterfaceScale = false,
+                    content = content,
+                )
+            }
+        })
         val view = activity.window.decorView
         // Robolectric 不会给窗口真实尺寸，按配置的屏幕大小手动布局。
         val metrics = activity.resources.displayMetrics
@@ -129,9 +146,11 @@ class UiPreviewScreenshotTest {
         while (System.currentTimeMillis() < deadline) {
             layout()
             Thread.sleep(40)
-            // 后台写入的快照状态要发出 apply 通知，重组器才会看到（Compose 测试规则也这样做）。
+            // 后台写入的快照状态要发出 apply 通知，重组器才会看到；再推一帧让它重组。
             Snapshot.sendApplyNotifications()
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(32))
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16))
+            clock.sendFrame(System.nanoTime())
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(16))
         }
         layout()
         // miuix 的控件用 RuntimeShader 绘制，软件画布不支持，改用 PixelCopy 走 Robolectric 的硬件渲染。
@@ -142,6 +161,8 @@ class UiPreviewScreenshotTest {
         check(copyResult == PixelCopy.SUCCESS) { "PixelCopy failed: $copyResult" }
         File(outputDir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         File(outputDir, "diagnostics.txt").appendText("$name: ${probes[name]}\n")
+        recomposer.cancel()
+        scope.cancel()
         controller.pause().stop().destroy()
     }
 
