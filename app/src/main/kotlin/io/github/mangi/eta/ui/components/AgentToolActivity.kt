@@ -362,13 +362,7 @@ private fun ToolActivityDetail(
                     textStyle = MiuixTheme.textStyles.body2,
                 )
             }
-            TextButton(
-                text = stringResource(R.string.tool_detail_open),
-                onClick = onOpenDetail,
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-                minHeight = 36.dp,
-                textStyle = MiuixTheme.textStyles.body2,
-            )
+            LinkButton(text = stringResource(R.string.tool_detail_open), onClick = onOpenDetail)
         }
     }
 }

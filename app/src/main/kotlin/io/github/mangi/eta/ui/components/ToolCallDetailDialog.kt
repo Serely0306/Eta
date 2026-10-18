@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -26,6 +27,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -57,9 +60,7 @@ import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -94,6 +95,7 @@ internal fun TerminalOutputBlock(output: TerminalOutput, modifier: Modifier = Mo
             CodeBlock(
                 text = if (showAll) lines.take(MAX_INLINE_LINES).joinToString("\n")
                     else lines.take(PREVIEW_LINES).joinToString("\n"),
+                background = MiuixTheme.colorScheme.surfaceContainer,
             )
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -105,13 +107,10 @@ internal fun TerminalOutputBlock(output: TerminalOutput, modifier: Modifier = Mo
                 modifier = Modifier.weight(1f),
             )
             if (lines.size > PREVIEW_LINES) {
-                TextButton(
+                LinkButton(
                     text = if (showAll) stringResource(R.string.tool_output_collapse)
                         else pluralStringResource(R.plurals.tool_output_show_all, lines.size, lines.size),
                     onClick = { showAll = !showAll },
-                    colors = ButtonDefaults.textButtonColorsPrimary(),
-                    minHeight = 32.dp,
-                    textStyle = MiuixTheme.textStyles.footnote1,
                 )
             }
         }
@@ -283,21 +282,36 @@ private fun CopyButton(text: String) {
             copied = false
         }
     }
-    TextButton(
+    LinkButton(
         text = stringResource(if (copied) R.string.copy_copied else R.string.ui_copy_4edd1d),
         onClick = {
             @Suppress("DEPRECATION")
             clipboard.setText(AnnotatedString(text))
             copied = true
         },
-        colors = ButtonDefaults.textButtonColorsPrimary(),
-        minHeight = 28.dp,
-        textStyle = MiuixTheme.textStyles.footnote1,
+    )
+}
+
+/** 行内的次要操作（展开全部、详情、查看过程、复制）用文字链接，不用实心按钮。 */
+@Composable
+internal fun LinkButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MiuixTheme.textStyles.footnote1,
+        color = MiuixTheme.colorScheme.primary,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 6.dp),
     )
 }
 
 @Composable
-private fun CodeBlock(text: String, monospace: Boolean = true) {
+private fun CodeBlock(
+    text: String,
+    monospace: Boolean = true,
+    background: Color = MiuixTheme.colorScheme.surface,
+) {
     SelectionContainer {
         Text(
             text = text,
@@ -306,7 +320,7 @@ private fun CodeBlock(text: String, monospace: Boolean = true) {
             color = MiuixTheme.colorScheme.onSurface,
             modifier = Modifier
                 .fillMaxWidth()
-                .squircleSurface(color = MiuixTheme.colorScheme.surface, cornerRadius = 10.dp)
+                .squircleSurface(color = background, cornerRadius = 10.dp)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         )
     }
@@ -401,15 +415,12 @@ internal fun SubagentList(message: ToolActivityMessageUi, detail: ToolCallDetail
                         modifier = Modifier.weight(1f),
                     )
                     if (ids != null && subagent.status != ToolActivityStatusUi.Running) {
-                        TextButton(
+                        LinkButton(
                             text = stringResource(R.string.subagent_view_process),
                             onClick = {
                                 opened = subagent
                                 show = true
                             },
-                            colors = ButtonDefaults.textButtonColorsPrimary(),
-                            minHeight = 28.dp,
-                            textStyle = MiuixTheme.textStyles.footnote1,
                         )
                     }
                 }

@@ -8,6 +8,12 @@ import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.Snapshot
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.db.EtaDatabase
@@ -101,6 +107,7 @@ class UiPreviewScreenshotTest {
         controller.get().setTheme(R.style.Theme_Eta)
         val activity = controller.setup().get()
         activity.setContent {
+            DataProbe(name)
             AgentAppTheme(
                 appearance = AppearanceSettings(themeMode = AppearanceThemeMode.LIGHT, blurEnabled = false),
                 applyInterfaceScale = false,
@@ -122,6 +129,8 @@ class UiPreviewScreenshotTest {
         while (System.currentTimeMillis() < deadline) {
             layout()
             Thread.sleep(40)
+            // 后台写入的快照状态要发出 apply 通知，重组器才会看到（Compose 测试规则也这样做）。
+            Snapshot.sendApplyNotifications()
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(32))
         }
         layout()
@@ -132,7 +141,19 @@ class UiPreviewScreenshotTest {
         shadowOf(Looper.getMainLooper()).idle()
         check(copyResult == PixelCopy.SUCCESS) { "PixelCopy failed: $copyResult" }
         File(outputDir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        File(outputDir, "diagnostics.txt").appendText("$name: ${probes[name]}\n")
         controller.pause().stop().destroy()
+    }
+
+    private val probes = mutableMapOf<String, String>()
+
+    /** 记录效果、重组与 Flow 收集是否走通，写进 diagnostics.txt，截图为空时用来定位。 */
+    @Composable
+    private fun DataProbe(name: String) {
+        val effect by produceState(0) { value = 1 }
+        val records by remember { ModelUsageLedger.recordsFlow(0, Long.MAX_VALUE) }.collectAsState(initial = emptyList())
+        val providers by remember { ProviderRepository.providersFlow() }.collectAsState(initial = emptyList())
+        SideEffect { probes[name] = "effect=$effect records=${records.size} providers=${providers.size}" }
     }
 
     private fun sampleRecords(now: Long): List<ModelUsageRecordEntity> {

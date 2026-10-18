@@ -1,6 +1,7 @@
 package io.github.mangi.eta.ui.components
 
 import androidx.compose.runtime.Immutable
+import io.github.mangi.eta.agent.model.OpenAiResponsesProvider
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
@@ -79,6 +80,8 @@ internal fun ToolActivityMessageUi.outcomeLine(): String? {
     val summary = resultSummary?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     val lines = summary.lines().map(String::trim).filter(String::isNotEmpty)
     val head = lines.firstOrNull() ?: return null
+    // 托管搜索的摘要首行是来源数，后面是来源链接，结论取首行。
+    if (toolName == OpenAiResponsesProvider.HOSTED_WEB_SEARCH) return head
     return when (status) {
         ToolActivityStatusUi.Running -> null
         ToolActivityStatusUi.Failed, ToolActivityStatusUi.Unknown -> {
