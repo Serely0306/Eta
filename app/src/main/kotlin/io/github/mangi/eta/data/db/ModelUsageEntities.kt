@@ -7,6 +7,7 @@ import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 
 /**
@@ -67,6 +68,12 @@ internal interface ModelUsageDao {
             "ORDER BY created_at DESC, id DESC LIMIT :limit"
     )
     suspend fun between(from: Long, to: Long, limit: Int): List<ModelUsageRecordEntity>
+
+    @Query(
+        "SELECT * FROM model_usage_records WHERE created_at >= :from AND created_at < :to " +
+            "ORDER BY created_at DESC, id DESC LIMIT :limit"
+    )
+    fun betweenFlow(from: Long, to: Long, limit: Int): Flow<List<ModelUsageRecordEntity>>
 
     @Query("SELECT * FROM model_usage_records ORDER BY id LIMIT :limit OFFSET :offset")
     suspend fun page(limit: Int, offset: Int): List<ModelUsageRecordEntity>

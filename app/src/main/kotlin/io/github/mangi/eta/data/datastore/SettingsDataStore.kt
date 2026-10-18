@@ -20,6 +20,7 @@ import io.github.mangi.eta.data.model.ModelFallbackSettings
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.ReasoningSettings
 import io.github.mangi.eta.data.model.SpeechSettings
+import io.github.mangi.eta.data.usage.UsagePricingSettings
 import org.json.JSONObject
 import kotlinx.serialization.json.Json
 import io.github.mangi.eta.data.model.Settings
@@ -31,7 +32,26 @@ import kotlinx.coroutines.flow.map
 
 internal object SettingsDataStore {
     private val SPEECH_SETTINGS = stringPreferencesKey("speech_settings_v1")
+    private val USAGE_PRICING_SETTINGS = stringPreferencesKey("usage_pricing_v1")
     private val speechJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    fun usagePricingFlow(): Flow<UsagePricingSettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause -> if (cause is IOException) emit(emptyPreferences()) else throw cause }
+            .map { prefs ->
+                prefs[USAGE_PRICING_SETTINGS]
+                    ?.let { runCatching { speechJson.decodeFromString<UsagePricingSettings>(it) }.getOrNull() }
+                    ?: UsagePricingSettings()
+            }
+    }
+
+    suspend fun usagePricing(): UsagePricingSettings = usagePricingFlow().first()
+
+    suspend fun setUsagePricing(settings: UsagePricingSettings) {
+        ensureInitialized()
+        dataStore.edit { it[USAGE_PRICING_SETTINGS] = speechJson.encodeToString(settings) }
+    }
 
     fun speechSettingsFlow(): Flow<SpeechSettings> {
         ensureInitialized()

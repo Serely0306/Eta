@@ -5,7 +5,12 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.db.ModelUsageRecordEntity
+import java.io.OutputStream
+import java.time.Instant
+import java.util.Locale
 import java.util.concurrent.Executors
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 
@@ -27,6 +32,7 @@ internal object ModelUsageLedger {
         val context = appContext ?: return
         writer.execute {
             runCatching { EtaDatabase.get(context).modelUsageDao().insert(record) }
+                .onSuccess { if (record.hasUsage) UsageQuotaMonitor.check(context, record.providerId) }
                 .onFailure { failure ->
                     AndroidAgentLogger.warnThrottled("usage_ledger_write_failed") {
                         "Usage ledger write failed: type=${failure.safeLogType()}"
@@ -34,6 +40,49 @@ internal object ModelUsageLedger {
                 }
         }
     }
+
+    /** 时间范围内的记录，最新的在前；随账本写入实时更新。 */
+    fun recordsFlow(from: Long, to: Long, limit: Int = MAX_REPORT_ROWS): Flow<List<ModelUsageRecordEntity>> =
+        appContext?.let { EtaDatabase.get(it).modelUsageDao().betweenFlow(from, to, limit) } ?: flowOf(emptyList())
+
+    /** 导出全部记录为 CSV（只有计数与模型信息），费用按当前价格表计算。 */
+    suspend fun exportCsv(output: OutputStream, cost: (ModelUsageRecordEntity) -> Double?): Int {
+        val context = appContext ?: return 0
+        val dao = EtaDatabase.get(context).modelUsageDao()
+        var count = 0
+        output.bufferedWriter(Charsets.UTF_8).use { writer ->
+            writer.write(CSV_HEADER)
+            writer.newLine()
+            var offset = 0
+            while (true) {
+                val page = dao.page(EXPORT_PAGE_SIZE, offset)
+                if (page.isEmpty()) break
+                page.forEach { record ->
+                    writer.write(csvRow(record, cost(record)))
+                    writer.newLine()
+                }
+                count += page.size
+                offset += page.size
+            }
+        }
+        return count
+    }
+
+    private fun csvRow(record: ModelUsageRecordEntity, costUsd: Double?): String = listOf(
+        Instant.ofEpochMilli(record.createdAt).toString(),
+        record.source, record.runId, record.purpose, record.subagentIndex?.toString().orEmpty(),
+        record.providerName, record.model, record.endpoint, record.reasoningEffort, record.status,
+        record.hasUsage.toString(), record.promptTokens.toString(), record.cachedTokens.toString(),
+        record.cacheWriteTokens.toString(), record.outputTokens.toString(), record.reasoningTokens.toString(),
+        record.durationMs.toString(), costUsd?.let { "%.6f".format(Locale.ROOT, it) }.orEmpty(),
+    ).joinToString(",") { field ->
+        if (field.any { it == ',' || it == '"' || it == '\n' }) "\"${field.replace("\"", "\"\"")}\"" else field
+    }
+
+    private const val MAX_REPORT_ROWS = 20_000
+    private const val EXPORT_PAGE_SIZE = 500
+    private const val CSV_HEADER = "time,source,run_id,purpose,subagent_index,provider,model,endpoint,reasoning_effort," +
+        "status,has_usage,input_tokens,cached_tokens,cache_write_tokens,output_tokens,reasoning_tokens,duration_ms,cost_usd"
 
     /** 一次 run 的累计用量（含压缩与子 Agent 的请求）；账本不可用或还没有记录时为 null。 */
     fun runSummary(runId: String): ModelUsageSummary? {

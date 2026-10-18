@@ -32,6 +32,7 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.QueryStats
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SettingsVoice
@@ -464,6 +465,16 @@ private fun SettingsPageContent(
                             )
                         },
                         onClick = { onNavigate(AppRoute.Automations) },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaArrowPreference(
+                        title = stringResource(R.string.usage_title),
+                        summary = stringResource(R.string.usage_settings_summary),
+                        startAction = {
+                            EtaPreferenceIcon(icon = Icons.Rounded.QueryStats, tint = EtaPreferenceColors.Green)
+                        },
+                        onClick = { onNavigate(AppRoute.Usage) },
                     )
 
                     EtaPreferenceDivider()

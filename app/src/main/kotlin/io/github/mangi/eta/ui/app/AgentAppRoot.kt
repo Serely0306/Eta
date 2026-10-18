@@ -81,6 +81,9 @@ import io.github.mangi.eta.ui.screens.home.AgentHomeScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServerDetailScreen
 import io.github.mangi.eta.ui.screens.mcp.McpServersScreen
 import io.github.mangi.eta.ui.screens.automation.AutomationsScreen
+import io.github.mangi.eta.ui.screens.usage.UsageLogsScreen
+import io.github.mangi.eta.ui.screens.usage.UsagePricingScreen
+import io.github.mangi.eta.ui.screens.usage.UsageScreen
 import io.github.mangi.eta.ui.screens.memory.AgentMemoryScreen
 import io.github.mangi.eta.ui.screens.permissions.PermissionHealthScreen
 import io.github.mangi.eta.ui.screens.skills.AgentSkillsScreen
@@ -699,6 +702,15 @@ fun AgentAppRoot(
             }
             entry<AppRoute.Automations>(swipeDismiss = swipeDismiss) {
                 AutomationsScreen(onBack = ::popRoute)
+            }
+            entry<AppRoute.Usage>(swipeDismiss = swipeDismiss) {
+                UsageScreen(onNavigate = { route -> pushRoute(route) }, onBack = ::popRoute)
+            }
+            entry<AppRoute.UsageLogs>(swipeDismiss = swipeDismiss) {
+                UsageLogsScreen(onBack = ::popRoute)
+            }
+            entry<AppRoute.UsagePricing>(swipeDismiss = swipeDismiss) {
+                UsagePricingScreen(onBack = ::popRoute)
             }
             entry<AppRoute.McpServers>(swipeDismiss = swipeDismiss) {
                 McpServersScreen(
