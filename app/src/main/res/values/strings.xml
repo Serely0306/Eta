@@ -380,6 +380,11 @@
   <string name="ui_allows_the_model_to_call_web_searches_provided_by_th_2f752f">Allows the model to call web searches provided by the Provider</string>
   <string name="provider_prompt_cache_key">Send cache routing key</string>
   <string name="provider_prompt_cache_key_summary">Sends prompt_cache_key per conversation so requests hit the same cache. Turn off only if the endpoint rejects the field</string>
+  <string name="provider_reasoning_summary">Reasoning summary</string>
+  <string name="provider_reasoning_summary_summary">OpenAI does not expose the full chain of thought, only a summary. Detailed needs provider support; switch back to Auto if requests fail</string>
+  <string name="provider_reasoning_summary_auto">Auto</string>
+  <string name="provider_reasoning_summary_detailed">Detailed</string>
+  <string name="provider_reasoning_summary_concise">Concise</string>
   <string name="ui_allow_reading_of_sensitive_device_information_feaec0">Allow reading of sensitive device information</string>
   <string name="ui_about_bed172">about</string>
   <string name="ui_after_closing_no_memory_will_be_injected_and_the_mod_db3d23">After closing, no memory will be injected, and the model will not be allowed to read or write; existing content will be retained.</string>
@@ -607,6 +612,8 @@
   <string name="shell_command">Shell command</string>
   <string name="reasoning_in_progress">Reasoning…</string>
   <string name="reasoning_completed">Reasoning completed</string>
+  <string name="reasoning_tokens">%1$s reasoning tokens</string>
+  <string name="reasoning_content_unavailable">The provider returned no reasoning content. With the Responses API, you can set Reasoning summary to Detailed in the provider settings.</string>
   <plurals name="reasoning_completed_seconds">
     <item quantity="one">Reasoning completed · %d second</item>
     <item quantity="other">Reasoning completed · %d seconds</item>

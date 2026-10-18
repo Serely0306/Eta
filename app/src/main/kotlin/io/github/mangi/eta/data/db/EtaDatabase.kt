@@ -27,7 +27,7 @@ import androidx.room.migration.Migration
         UserPersonaEntity::class,
         ModelUsageRecordEntity::class,
     ],
-    version = 25,
+    version = 26,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -70,6 +70,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_22_23,
                         MIGRATION_23_24,
                         MIGRATION_24_25,
+                        MIGRATION_25_26,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -141,6 +142,10 @@ internal abstract class EtaDatabase : RoomDatabase() {
             database.execSQL(
                 "CREATE INDEX IF NOT EXISTS index_model_usage_records_run_id ON model_usage_records(run_id)"
             )
+        }
+
+        internal val MIGRATION_25_26 = Migration(25, 26) { database ->
+            database.execSQL("ALTER TABLE model_providers ADD COLUMN reasoning_summary TEXT NOT NULL DEFAULT 'auto'")
         }
 
         internal val MIGRATION_24_25 = Migration(24, 25) { database ->

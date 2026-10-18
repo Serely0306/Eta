@@ -282,6 +282,7 @@ internal object AgentConversationStore {
                 type = TYPE_THINKING,
                 content = content,
                 elapsedSeconds = elapsedSeconds,
+                reasoningTokens = reasoningTokens,
             )
 
             is ToolActivityMessageUi -> ConversationMessageEntity(
@@ -347,6 +348,7 @@ internal object AgentConversationStore {
                 isStreaming = false,
                 elapsedSeconds = elapsedSeconds,
                 collapsed = true,
+                reasoningTokens = reasoningTokens,
             )
 
             TYPE_TOOL -> ToolActivityMessageUi(

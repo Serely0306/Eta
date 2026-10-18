@@ -58,6 +58,7 @@ class EtaDatabaseMigrationTest {
                 EtaDatabase.MIGRATION_22_23,
                 EtaDatabase.MIGRATION_23_24,
                 EtaDatabase.MIGRATION_24_25,
+                EtaDatabase.MIGRATION_25_26,
             )
             .build()
         try {
@@ -124,6 +125,7 @@ class EtaDatabaseMigrationTest {
             assertEquals(listOf("built-in", "manual"), provider.models.map { it.modelId })
             assertEquals(false, provider.hostedWebSearchEnabled)
             assertEquals(true, provider.promptCacheKeyEnabled)
+            assertEquals("auto", provider.reasoningSummary)
             assertEquals(emptyList<ModelUsageRecordEntity>(), runBlocking(Dispatchers.IO) { database.modelUsageDao().page(10, 0) })
             assertEquals(false, migratedMessage.isEdited)
             assertEquals(emptyList<RuntimeInFlightRunWithEvents>(), inFlightRuns)

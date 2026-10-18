@@ -43,6 +43,7 @@ import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomProviderSetting
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ProviderSetting
+import io.github.mangi.eta.data.model.ReasoningSummaryMode
 import io.github.mangi.eta.data.model.withId
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RemoteModelFetcher
@@ -315,6 +316,21 @@ private fun ProviderConfigTab(
                                 onDraftChange(draft.copy(promptCacheKeyEnabled = it))
                             },
                         )
+                        EtaPreferenceDivider(hasLeading = false)
+                        val summaryModes = ReasoningSummaryMode.ALL
+                        EtaWindowSpinnerPreference(
+                            items = listOf(
+                                DropdownItem(text = stringResource(R.string.provider_reasoning_summary_auto)),
+                                DropdownItem(text = stringResource(R.string.provider_reasoning_summary_detailed)),
+                                DropdownItem(text = stringResource(R.string.provider_reasoning_summary_concise)),
+                            ),
+                            selectedIndex = summaryModes.indexOf(draft.reasoningSummary).coerceAtLeast(0),
+                            title = stringResource(R.string.provider_reasoning_summary),
+                            summary = stringResource(R.string.provider_reasoning_summary_summary),
+                            onSelectedIndexChange = { index ->
+                                onDraftChange(draft.copy(reasoningSummary = summaryModes[index]))
+                            },
+                        )
                     }
                 }
                 EtaPreferenceDivider(hasLeading = false)
@@ -346,6 +362,7 @@ private fun ProviderConfigTab(
                                         anthropicVersion = draft.anthropicVersion,
                                         customHeaders = draft.headers.map { it.header },
                                         promptCacheKeyEnabled = draft.promptCacheKeyEnabled,
+                                        reasoningSummary = draft.reasoningSummary,
                                     )
                                 )
                             } finally {
@@ -431,6 +448,7 @@ private fun ProviderConfigTab(
                                 anthropicVersion = draft.anthropicVersion,
                                 customHeaders = draft.headers.map { it.header },
                                 promptCacheKeyEnabled = draft.promptCacheKeyEnabled,
+                                reasoningSummary = draft.reasoningSummary,
                             )
                             try {
                                 if (isNew) {

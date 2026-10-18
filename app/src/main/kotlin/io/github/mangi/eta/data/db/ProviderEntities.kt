@@ -18,6 +18,7 @@ import io.github.mangi.eta.data.model.OpenAiCompatibleProviderSetting
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ProviderTypes
+import io.github.mangi.eta.data.model.ReasoningSummaryMode
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -45,6 +46,8 @@ internal data class ProviderEntity(
     @ColumnInfo(name = "anthropic_version") val anthropicVersion: String,
     @ColumnInfo(name = "prompt_cache_key_enabled", defaultValue = "1")
     val promptCacheKeyEnabled: Boolean = true,
+    @ColumnInfo(name = "reasoning_summary", defaultValue = "'auto'")
+    val reasoningSummary: String = ReasoningSummaryMode.AUTO,
 )
 
 @Serializable
@@ -126,6 +129,7 @@ internal fun ProviderSetting.toEntity(): ProviderEntity =
             else -> AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION
         },
         promptCacheKeyEnabled = promptCacheKeyEnabled,
+        reasoningSummary = reasoningSummary,
     )
 
 internal fun ProviderSetting.toModelEntities(): List<ProviderModelEntity> =
@@ -177,6 +181,7 @@ internal fun ProviderWithModels.toDomain(): ProviderSetting {
             endpointMode = provider.endpointMode.ifBlank { OpenAiEndpointMode.CHAT_COMPLETIONS },
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
             promptCacheKeyEnabled = provider.promptCacheKeyEnabled,
+            reasoningSummary = ReasoningSummaryMode.normalize(provider.reasoningSummary),
         )
 
         else -> OpenAiCompatibleProviderSetting(
@@ -196,6 +201,7 @@ internal fun ProviderWithModels.toDomain(): ProviderSetting {
             endpointMode = provider.endpointMode.ifBlank { OpenAiEndpointMode.CHAT_COMPLETIONS },
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
             promptCacheKeyEnabled = provider.promptCacheKeyEnabled,
+            reasoningSummary = ReasoningSummaryMode.normalize(provider.reasoningSummary),
         )
     }
 }

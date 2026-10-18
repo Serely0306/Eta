@@ -48,6 +48,9 @@ sealed interface ProviderSetting {
     /** Responses 请求是否带会话级 prompt_cache_key；只对 Responses 端点生效。 */
     val promptCacheKeyEnabled: Boolean
         get() = true
+    /** Responses 请求的思考摘要档位，见 [ReasoningSummaryMode]。 */
+    val reasoningSummary: String
+        get() = ReasoningSummaryMode.AUTO
 }
 
 @Serializable
@@ -69,6 +72,7 @@ data class OpenAiCompatibleProviderSetting(
     val endpointMode: String = OpenAiEndpointMode.CHAT_COMPLETIONS,
     override val hostedWebSearchEnabled: Boolean = false,
     override val promptCacheKeyEnabled: Boolean = true,
+    override val reasoningSummary: String = ReasoningSummaryMode.AUTO,
 ) : ProviderSetting
 
 @Serializable
@@ -113,6 +117,7 @@ data class CustomProviderSetting(
     val endpointMode: String = OpenAiEndpointMode.CHAT_COMPLETIONS,
     override val hostedWebSearchEnabled: Boolean = false,
     override val promptCacheKeyEnabled: Boolean = true,
+    override val reasoningSummary: String = ReasoningSummaryMode.AUTO,
 ) : ProviderSetting
 
 internal val ProviderSetting.runtimeProviderType: String

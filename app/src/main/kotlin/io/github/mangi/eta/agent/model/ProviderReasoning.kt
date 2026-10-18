@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.data.model.ProviderSourceTypes
 import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.model.ReasoningSummaryMode
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import kotlin.math.max
 import org.json.JSONObject
@@ -54,7 +55,7 @@ internal object ProviderReasoning {
                 if (effort == ReasoningEffort.OFF) {
                     put("effort", "none")
                 } else {
-                    put("summary", "auto")
+                    put("summary", ReasoningSummaryMode.normalize(config.reasoningSummary))
                     if (effort != ReasoningEffort.DEFAULT) put("effort", effort.wireValue)
                 }
             },

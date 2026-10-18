@@ -113,6 +113,8 @@ data class ThinkingMessageUi(
     val isStreaming: Boolean,
     val elapsedSeconds: Int? = null,
     val collapsed: Boolean = false,
+    /** 本轮请求的推理 token（来自 usage），记在该轮最后一个思考块上。 */
+    val reasoningTokens: Int? = null,
 ) : AgentChatMessageUi
 
 /**

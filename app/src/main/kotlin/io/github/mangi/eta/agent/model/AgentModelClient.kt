@@ -14,6 +14,7 @@ import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ProviderTypes
 import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.model.ReasoningSummaryMode
 import io.github.mangi.eta.data.provider.BuiltinProviders
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import kotlinx.serialization.Serializable
@@ -291,6 +292,8 @@ internal object AgentModelClient {
         val hostedWebSearchEnabled: Boolean = false,
         /** Responses 请求是否带会话级 prompt_cache_key（服务商设置，默认开）。 */
         val promptCacheKeyEnabled: Boolean = true,
+        /** Responses 请求的思考摘要档位（服务商设置，默认 auto）。 */
+        val reasoningSummary: String = ReasoningSummaryMode.AUTO,
         val terminalTools: Boolean = false,
         val browserTools: Boolean = true,
         val deviceDirectTools: Boolean = true,

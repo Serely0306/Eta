@@ -357,6 +357,11 @@
   <string name="ui_allows_the_model_to_call_web_searches_provided_by_th_2f752f">允許模型呼叫 Provider 提供的網頁搜尋</string>
   <string name="provider_prompt_cache_key">傳送快取路由鍵</string>
   <string name="provider_prompt_cache_key_summary">按對話傳送 prompt_cache_key，讓同一對話的請求命中同一份快取；端點拒收該欄位時再關閉</string>
+  <string name="provider_reasoning_summary">思考摘要</string>
+  <string name="provider_reasoning_summary_summary">OpenAI 不提供完整思維鏈，只回傳摘要。「詳細」需要服務商支援，請求失敗時改回「自動」</string>
+  <string name="provider_reasoning_summary_auto">自動</string>
+  <string name="provider_reasoning_summary_detailed">詳細</string>
+  <string name="provider_reasoning_summary_concise">簡潔</string>
   <string name="ui_allow_reading_of_sensitive_device_information_feaec0">允許讀取敏感裝置資訊</string>
   <string name="ui_about_bed172">關於</string>
   <string name="ui_after_closing_no_memory_will_be_injected_and_the_mod_db3d23">關閉後不注入記憶，也不允許模型讀寫；已有內容會保留</string>
@@ -574,6 +579,8 @@
   <string name="shell_command">Shell 指令</string>
   <string name="reasoning_in_progress">正在思考…</string>
   <string name="reasoning_completed">思考完成</string>
+  <string name="reasoning_tokens">%1$s 推理 tokens</string>
+  <string name="reasoning_content_unavailable">服務商沒有回傳思考內容。使用 Responses 介面時，可以在服務商設定裡把「思考摘要」改成「詳細」。</string>
   <plurals name="reasoning_completed_seconds">
     <item quantity="other">思考完成 · 用時 %d 秒</item>
   </plurals>

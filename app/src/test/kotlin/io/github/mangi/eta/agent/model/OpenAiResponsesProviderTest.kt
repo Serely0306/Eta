@@ -42,6 +42,19 @@ class OpenAiResponsesProviderTest {
     }
 
     @Test
+    fun reasoningSummaryFollowsProviderSettingAndFallsBackToAuto() {
+        val base = config("https://example.com/v1").copy(
+            reasoningCapabilities = ModelReasoningCapabilities(supportedEfforts = listOf(ReasoningEffort.HIGH), canDisable = true),
+            reasoningEffort = ReasoningEffort.HIGH,
+        )
+        fun summary(mode: String) = OpenAiResponsesProvider.buildRequestJson(base.copy(reasoningSummary = mode), JSONArray(), JSONArray())
+            .getJSONObject("reasoning").getString("summary")
+        assertEquals("detailed", summary("detailed"))
+        assertEquals("concise", summary("concise"))
+        assertEquals("auto", summary("bogus"))
+    }
+
+    @Test
     fun hostedSearchRequestsSourcesAndReportsQueryWithSources() {
         val functions = JSONArray().also { AgentWebToolCatalog.appendTo(it) }
         val withUserInclude = config("https://example.com/v1").copy(

@@ -9,6 +9,16 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 
+/** Responses 端点的推理摘要档位（reasoning.summary）。OpenAI 不提供完整思维链，只有摘要。 */
+object ReasoningSummaryMode {
+    const val AUTO = "auto"
+    const val DETAILED = "detailed"
+    const val CONCISE = "concise"
+    val ALL = listOf(AUTO, DETAILED, CONCISE)
+
+    fun normalize(value: String?): String = value?.takeIf { it in ALL } ?: AUTO
+}
+
 @Serializable(with = ReasoningEffortSerializer::class)
 enum class ReasoningEffort(
     val wireValue: String,

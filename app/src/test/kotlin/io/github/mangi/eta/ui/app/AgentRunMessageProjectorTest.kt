@@ -44,6 +44,25 @@ class AgentRunMessageProjectorTest {
     }
 
     @Test
+    fun reasoningTokensGoToLastThinkingBlockOrAPlaceholderBeforeTheRound() {
+        val projector = AgentRunMessageProjector { 1_000L }
+        var messages = projector.appendReasoningDelta("run", 1, 0, "先想", emptyList())
+        messages = projector.appendReasoningDelta("run", 1, 1, "再想", projector.finalizeThinkingBlock("run", 1, 0, null, messages))
+        messages = projector.finalizeThinkingRound("run", 1, messages)
+        messages = projector.applyEvent("run", AgentEvent.UsageReceived(1, AgentTokenUsage(reasoningTokens = 1_800)), messages)
+        assertEquals(listOf(null, 1_800), messages.filterIsInstance<ThinkingMessageUi>().map { it.reasoningTokens })
+
+        // 服务商推理了但没有返回思考内容：补一个空思考块，放在这一轮的回答之前。
+        var silent = projector.appendTextDelta("run2", 1, 0, "回答", emptyList())
+        silent = projector.applyEvent("run2", AgentEvent.UsageReceived(1, AgentTokenUsage(outputTokens = 50, reasoningTokens = 400)), silent)
+        val placeholder = silent.first() as ThinkingMessageUi
+        assertEquals("run2-thinking-1-usage", placeholder.id)
+        assertEquals("", placeholder.content)
+        assertEquals(400, placeholder.reasoningTokens)
+        assertTrue(silent[1] is AgentMessageUi)
+    }
+
+    @Test
     fun applyResultFillsSingleBlockKeepsMultiBlockAndReplacesWithNotice() {
         val projector = AgentRunMessageProjector { 1_000L }
         val single = projector.appendTextDelta("run", 1, 0, "流式半截", emptyList())

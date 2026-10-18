@@ -229,6 +229,7 @@ internal object RuntimeConfigRepository {
             openAiEndpointMode = endpointMode,
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
             promptCacheKeyEnabled = provider.promptCacheKeyEnabled,
+            reasoningSummary = provider.reasoningSummary,
             thinkingEnabled = reasoningCapabilities != null,
             reasoningEffort = reasoningCapabilities?.let { ReasoningEffort.DEFAULT }
                 ?: ReasoningEffort.OFF,

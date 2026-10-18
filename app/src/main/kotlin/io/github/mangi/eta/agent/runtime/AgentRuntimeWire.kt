@@ -16,6 +16,7 @@ import io.github.mangi.eta.data.model.CustomBody
 import io.github.mangi.eta.data.model.CustomHeader
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.model.ReasoningSummaryMode
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.encodeToString
@@ -121,6 +122,7 @@ internal object AgentRuntimeWire {
     private const val KEY_OPENAI_ENDPOINT_MODE = "openai_endpoint_mode"
     private const val KEY_HOSTED_WEB_SEARCH_ENABLED = "hosted_web_search_enabled"
     private const val KEY_PROMPT_CACHE_KEY_ENABLED = "prompt_cache_key_enabled"
+    private const val KEY_REASONING_SUMMARY = "reasoning_summary"
     private const val KEY_TERMINAL_TOOLS = "terminal_tools"
     private const val KEY_BROWSER_TOOLS = "browser_tools"
     private const val KEY_DEVICE_DIRECT_TOOLS = "device_direct_tools"
@@ -323,6 +325,7 @@ internal object AgentRuntimeWire {
         putString(KEY_OPENAI_ENDPOINT_MODE, request.config.openAiEndpointMode)
         putBoolean(KEY_HOSTED_WEB_SEARCH_ENABLED, request.config.hostedWebSearchEnabled)
         putBoolean(KEY_PROMPT_CACHE_KEY_ENABLED, request.config.promptCacheKeyEnabled)
+        putString(KEY_REASONING_SUMMARY, request.config.reasoningSummary)
         putBoolean(KEY_TERMINAL_TOOLS, request.config.terminalTools)
         putBoolean(KEY_BROWSER_TOOLS, request.config.browserTools)
         putBoolean(KEY_DEVICE_DIRECT_TOOLS, request.config.deviceDirectTools)
@@ -461,6 +464,7 @@ internal object AgentRuntimeWire {
                     .ifBlank { io.github.mangi.eta.data.model.OpenAiEndpointMode.CHAT_COMPLETIONS },
                 hostedWebSearchEnabled = bundle.getBoolean(KEY_HOSTED_WEB_SEARCH_ENABLED, false),
                 promptCacheKeyEnabled = bundle.getBoolean(KEY_PROMPT_CACHE_KEY_ENABLED, true),
+                reasoningSummary = ReasoningSummaryMode.normalize(bundle.getString(KEY_REASONING_SUMMARY)),
                 terminalTools = bundle.getBoolean(KEY_TERMINAL_TOOLS),
                 browserTools = if (bundle.containsKey(KEY_BROWSER_TOOLS)) {
                     bundle.getBoolean(KEY_BROWSER_TOOLS)

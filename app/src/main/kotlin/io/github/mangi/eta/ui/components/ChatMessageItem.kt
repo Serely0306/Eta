@@ -88,6 +88,7 @@ import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.RunTraceMessageUi
 import io.github.mangi.eta.ui.model.SuggestionChipsMessageUi
+import io.github.mangi.eta.ui.screens.usage.compactTokens
 import io.github.mangi.eta.ui.model.SystemNoticeCode
 import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
@@ -823,13 +824,16 @@ internal fun ThinkingRow(
                 text = if (message.isStreaming) {
                     stringResource(R.string.reasoning_in_progress)
                 } else {
-                    message.elapsedSeconds?.takeIf { it > 0 }?.let { seconds ->
+                    val completed = message.elapsedSeconds?.takeIf { it > 0 }?.let { seconds ->
                         pluralStringResource(
                             R.plurals.reasoning_completed_seconds,
                             seconds,
                             seconds,
                         )
                     } ?: stringResource(R.string.reasoning_completed)
+                    message.reasoningTokens?.let { tokens ->
+                        completed + " · " + stringResource(R.string.reasoning_tokens, compactTokens(tokens.toLong()))
+                    } ?: completed
                 },
                 style = MiuixTheme.textStyles.body2,
                 color = if (message.isStreaming) {
@@ -890,6 +894,19 @@ internal fun ThinkingRow(
                     )
                 }
             }
+        }
+        // 服务商推理了但没有返回思考内容时，展开给出说明，不再是点了没反应的“已完成”。
+        AnimatedVisibility(visible = expanded && !message.isStreaming && message.content.isBlank()) {
+            Text(
+                text = stringResource(R.string.reasoning_content_unavailable),
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(
+                    start = if (compact) 0.dp else 13.dp,
+                    end = if (compact) 8.dp else 13.dp,
+                    bottom = if (compact) 8.dp else 12.dp,
+                ),
+            )
         }
     }
 }

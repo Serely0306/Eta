@@ -8,6 +8,7 @@ import io.github.mangi.eta.data.model.CustomHeader
 import io.github.mangi.eta.data.model.CustomProviderSetting
 import io.github.mangi.eta.data.model.OpenAiCompatibleProviderSetting
 import io.github.mangi.eta.data.model.ProviderSetting
+import io.github.mangi.eta.data.model.ReasoningSummaryMode
 import java.util.UUID
 
 internal data class ProviderHeaderDraft(
@@ -26,6 +27,7 @@ internal data class ProviderConfigDraft(
     val anthropicVersion: String,
     val headers: List<ProviderHeaderDraft> = emptyList(),
     val promptCacheKeyEnabled: Boolean = true,
+    val reasoningSummary: String = ReasoningSummaryMode.AUTO,
 ) {
     companion object {
         fun from(provider: ProviderSetting): ProviderConfigDraft = ProviderConfigDraft(
@@ -44,6 +46,7 @@ internal data class ProviderConfigDraft(
             anthropicVersion = (provider as? AnthropicProviderSetting)?.anthropicVersion
                 ?: AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
             promptCacheKeyEnabled = provider.promptCacheKeyEnabled,
+            reasoningSummary = provider.reasoningSummary,
         )
     }
 }
@@ -61,6 +64,7 @@ internal val ProviderConfigDraftSaver = mapSaver(
             "hostedWebSearchEnabled" to draft.hostedWebSearchEnabled,
             "anthropicVersion" to draft.anthropicVersion,
             "promptCacheKeyEnabled" to draft.promptCacheKeyEnabled,
+            "reasoningSummary" to draft.reasoningSummary,
         )
     },
     restore = { state ->
@@ -77,6 +81,7 @@ internal val ProviderConfigDraftSaver = mapSaver(
             hostedWebSearchEnabled = state.getValue("hostedWebSearchEnabled") as Boolean,
             anthropicVersion = state.getValue("anthropicVersion") as String,
             promptCacheKeyEnabled = state["promptCacheKeyEnabled"] as? Boolean ?: true,
+            reasoningSummary = ReasoningSummaryMode.normalize(state["reasoningSummary"] as? String),
         )
     },
 )
@@ -93,6 +98,7 @@ internal fun buildUpdatedProvider(
     anthropicVersion: String,
     customHeaders: List<CustomHeader>,
     promptCacheKeyEnabled: Boolean = true,
+    reasoningSummary: String = ReasoningSummaryMode.AUTO,
 ): ProviderSetting {
     val prompt = systemPrompt.trim().takeIf { it.isNotBlank() }
     return when (source) {
@@ -106,6 +112,7 @@ internal fun buildUpdatedProvider(
             endpointMode = endpointMode,
             hostedWebSearchEnabled = hostedWebSearchEnabled,
             promptCacheKeyEnabled = promptCacheKeyEnabled,
+            reasoningSummary = ReasoningSummaryMode.normalize(reasoningSummary),
         )
         is CustomProviderSetting -> source.copy(
             customHeaders = customHeaders.map { it.copy(name = it.name.trim()) },
@@ -117,6 +124,7 @@ internal fun buildUpdatedProvider(
             endpointMode = endpointMode,
             hostedWebSearchEnabled = hostedWebSearchEnabled,
             promptCacheKeyEnabled = promptCacheKeyEnabled,
+            reasoningSummary = ReasoningSummaryMode.normalize(reasoningSummary),
         )
         is AnthropicProviderSetting -> source.copy(
             customHeaders = customHeaders.map { it.copy(name = it.name.trim()) },
