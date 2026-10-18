@@ -4,6 +4,7 @@ import io.github.mangi.eta.agent.model.AgentUserAnswer
 import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
+import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
@@ -74,6 +75,60 @@ internal class EtaMcpTaskManager(
         var error: String? = null
         var finishedAt: Long? = null
         var stopRequested = false
+        val usage = UsageTotals()
+    }
+
+    /**
+     * 本任务累计的模型用量。同一请求内的多次上报取最后一次（Anthropic 先报输入、再报累计输出），
+     * 请求之间相加；服务商没返回 usage 的请求只计入请求数。
+     */
+    private class UsageTotals {
+        private var requests = 0
+        private val committed = LongArray(FIELDS)
+        private var committedReports = 0
+        /** 当前请求最近一次上报；下一次请求开始时才计入总数，快照只读不提交。 */
+        private var pending: AgentTokenUsage? = null
+
+        fun requestStarted() {
+            pending?.let { usage ->
+                add(committed, usage)
+                committedReports += 1
+            }
+            pending = null
+            requests += 1
+        }
+
+        fun received(usage: AgentTokenUsage) {
+            if (requests == 0) requests = 1
+            pending = usage
+        }
+
+        fun toJson(): JSONObject? {
+            if (requests == 0) return null
+            val totals = committed.copyOf()
+            pending?.let { add(totals, it) }
+            val reported = committedReports + if (pending != null) 1 else 0
+            return JSONObject()
+                .put("requests", requests)
+                .put("requests_without_usage", requests - reported)
+                .put("input_tokens", totals[0])
+                .put("cached_tokens", totals[1])
+                .put("cache_write_tokens", totals[2])
+                .put("output_tokens", totals[3])
+                .put("reasoning_tokens", totals[4])
+        }
+
+        private fun add(totals: LongArray, usage: AgentTokenUsage) {
+            totals[0] += (usage.promptTokens ?: usage.inputTokens ?: 0).toLong()
+            totals[1] += (usage.cachedTokens ?: 0).toLong()
+            totals[2] += (usage.cacheWriteTokens ?: 0).toLong()
+            totals[3] += (usage.outputTokens ?: 0).toLong()
+            totals[4] += (usage.reasoningTokens ?: 0).toLong()
+        }
+
+        private companion object {
+            const val FIELDS = 5
+        }
     }
 
     private val tasks = LinkedHashMap<String, Task>()
@@ -148,6 +203,9 @@ internal class EtaMcpTaskManager(
 
     private fun onEvent(task: Task, event: AgentEvent) = task.lock.withLock {
         when (event) {
+            // 用量只在状态快照里汇总，不单独唤醒等待中的长轮询。
+            is AgentEvent.ProviderRequestStarted -> return@withLock task.usage.requestStarted()
+            is AgentEvent.UsageReceived -> return@withLock task.usage.received(event.usage)
             is AgentEvent.ToolStarted -> task.currentTool = event.name
             is AgentEvent.HostedToolStarted -> task.currentTool = event.name
             is AgentEvent.ToolFinished -> {
@@ -291,6 +349,7 @@ internal class EtaMcpTaskManager(
                         task.question?.let { put("questions", JSONObject(it.toJson()).getJSONArray("questions")) }
                     })
                 }
+                task.usage.toJson()?.let { put("usage", it) }
                 task.result?.let { put("result", it) }
                 task.error?.let { put("error", it) }
                 put("hint", hintFor(task.status))
@@ -370,7 +429,9 @@ internal class EtaMcpTaskManager(
     private val fixedTools = listOf(
         EtaMcpTool(
             name = STATUS,
-            description = "查询委托任务的状态、最近步骤、待回答问题与最终结果；任务仍在执行时最多等待 wait_seconds 秒，结束或需要回答时提前返回。",
+            description = "查询委托任务的状态、最近步骤、待回答问题与最终结果；任务仍在执行时最多等待 wait_seconds 秒，结束或需要回答时提前返回。" +
+                "usage 为本任务累计的模型用量：input_tokens 含缓存读写，cached_tokens 为缓存命中的输入；" +
+                "requests_without_usage 为服务商没有返回用量的请求数。",
             inputSchema = schema(
                 listOf("task_id"),
                 "task_id" to JSONObject().put("type", "string"),

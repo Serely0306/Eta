@@ -43,6 +43,8 @@ internal data class ProviderEntity(
     @ColumnInfo(name = "hosted_web_search_enabled", defaultValue = "0")
     val hostedWebSearchEnabled: Boolean,
     @ColumnInfo(name = "anthropic_version") val anthropicVersion: String,
+    @ColumnInfo(name = "prompt_cache_key_enabled", defaultValue = "1")
+    val promptCacheKeyEnabled: Boolean = true,
 )
 
 @Serializable
@@ -123,6 +125,7 @@ internal fun ProviderSetting.toEntity(): ProviderEntity =
             is AnthropicProviderSetting -> anthropicVersion
             else -> AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION
         },
+        promptCacheKeyEnabled = promptCacheKeyEnabled,
     )
 
 internal fun ProviderSetting.toModelEntities(): List<ProviderModelEntity> =
@@ -173,6 +176,7 @@ internal fun ProviderWithModels.toDomain(): ProviderSetting {
             createdAt = provider.createdAt,
             endpointMode = provider.endpointMode.ifBlank { OpenAiEndpointMode.CHAT_COMPLETIONS },
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
+            promptCacheKeyEnabled = provider.promptCacheKeyEnabled,
         )
 
         else -> OpenAiCompatibleProviderSetting(
@@ -191,6 +195,7 @@ internal fun ProviderWithModels.toDomain(): ProviderSetting {
             createdAt = provider.createdAt,
             endpointMode = provider.endpointMode.ifBlank { OpenAiEndpointMode.CHAT_COMPLETIONS },
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
+            promptCacheKeyEnabled = provider.promptCacheKeyEnabled,
         )
     }
 }

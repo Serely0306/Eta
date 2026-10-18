@@ -4,6 +4,7 @@ import io.github.mangi.eta.agent.model.AgentUserAnswer
 import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
+import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -126,6 +127,44 @@ class EtaMcpTaskManagerTest {
         assertEquals("已整理", finished.getString("result"))
         assertEquals(1, finished.getInt("step_count"))
         assertEquals("terminal", finished.getJSONArray("recent_steps").getJSONObject(0).getString("tool"))
+    }
+
+    @Test
+    fun statusSumsUsagePerRequestAndCountsRequestsWithoutUsage() {
+        val started = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("wait_seconds", 0))
+        assertFalse(started.has("usage"))
+        val taskId = started.getString("task_id")
+        val reported = CountDownLatch(1)
+        runner.steps.put { onEvent ->
+            // 第 1 个请求像 Anthropic 一样上报两次：先输入，再累计输出，只计最后一次。
+            onEvent(AgentEvent.ProviderRequestStarted(1))
+            onEvent(AgentEvent.UsageReceived(1, AgentTokenUsage(inputTokens = 100, promptTokens = 1_000, cachedTokens = 900)))
+            onEvent(AgentEvent.UsageReceived(1, AgentTokenUsage(inputTokens = 100, promptTokens = 1_000, cachedTokens = 900,
+                cacheWriteTokens = 0, outputTokens = 40)))
+            // 第 2 个请求没有返回用量（API B 的情况）。
+            onEvent(AgentEvent.ProviderRequestStarted(2))
+            onEvent(AgentEvent.ProviderRequestStarted(3))
+            onEvent(AgentEvent.UsageReceived(3, AgentTokenUsage(inputTokens = 2_000, cachedTokens = 1_500,
+                outputTokens = 10, reasoningTokens = 4)))
+            reported.countDown()
+            null
+        }
+        assertTrue(reported.await(5, TimeUnit.SECONDS))
+        val running = manager.call(EtaMcpTaskManager.STATUS, JSONObject().put("task_id", taskId).put("wait_seconds", 0))
+        val expected = mapOf(
+            "requests" to 3L, "requests_without_usage" to 1L, "input_tokens" to 3_000L, "cached_tokens" to 2_400L,
+            "cache_write_tokens" to 0L, "output_tokens" to 50L, "reasoning_tokens" to 4L,
+        )
+        // 快照不提交未结束请求的用量，连续查询结果一致。
+        repeat(2) {
+            val usage = manager.call(EtaMcpTaskManager.STATUS, JSONObject().put("task_id", taskId).put("wait_seconds", 0))
+                .getJSONObject("usage")
+            expected.forEach { (key, value) -> assertEquals(key, value, usage.getLong(key)) }
+        }
+        assertEquals("running", running.getString("status"))
+        runner.steps.put { AgentRuntimeWire.RunResult("", ok = true, content = "ok") }
+        val done = manager.call(EtaMcpTaskManager.STATUS, JSONObject().put("task_id", taskId).put("wait_seconds", 5))
+        assertEquals(3_000L, done.getJSONObject("usage").getLong("input_tokens"))
     }
 
     @Test

@@ -553,15 +553,18 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
      */
     private fun parseUsage(usage: JSONObject?): AgentTokenUsage? {
         usage ?: return null
+        val prompt = usage.firstInt("input_tokens")?.let { input ->
+            input + (usage.firstInt("cache_read_input_tokens") ?: 0) +
+                (usage.firstInt("cache_creation_input_tokens") ?: 0)
+        }
         return AgentTokenUsage(
-            contextTokens = usage.firstInt("input_tokens")?.let { input ->
-                input + (usage.firstInt("cache_read_input_tokens") ?: 0) +
-                    (usage.firstInt("cache_creation_input_tokens") ?: 0)
-            },
+            contextTokens = prompt,
             inputTokens = usage.firstInt("input_tokens"),
             outputTokens = usage.firstInt("output_tokens"),
             reasoningTokens = usage.firstInt("thinking_output_tokens"),
-            cachedTokens = usage.firstInt("cache_read_input_tokens")
+            cachedTokens = usage.firstInt("cache_read_input_tokens"),
+            cacheWriteTokens = usage.firstInt("cache_creation_input_tokens"),
+            promptTokens = prompt,
         ).takeUnless { it.isEmpty }
     }
 
@@ -575,6 +578,8 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         outputTokens = later.outputTokens ?: outputTokens,
         reasoningTokens = later.reasoningTokens ?: reasoningTokens,
         cachedTokens = later.cachedTokens ?: cachedTokens,
+        cacheWriteTokens = later.cacheWriteTokens ?: cacheWriteTokens,
+        promptTokens = later.promptTokens ?: promptTokens,
     )
 
     private fun parseJsonObject(raw: String): JSONObject =

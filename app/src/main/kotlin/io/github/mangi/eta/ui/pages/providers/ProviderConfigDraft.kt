@@ -25,6 +25,7 @@ internal data class ProviderConfigDraft(
     val hostedWebSearchEnabled: Boolean,
     val anthropicVersion: String,
     val headers: List<ProviderHeaderDraft> = emptyList(),
+    val promptCacheKeyEnabled: Boolean = true,
 ) {
     companion object {
         fun from(provider: ProviderSetting): ProviderConfigDraft = ProviderConfigDraft(
@@ -42,6 +43,7 @@ internal data class ProviderConfigDraft(
             hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
             anthropicVersion = (provider as? AnthropicProviderSetting)?.anthropicVersion
                 ?: AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
+            promptCacheKeyEnabled = provider.promptCacheKeyEnabled,
         )
     }
 }
@@ -58,6 +60,7 @@ internal val ProviderConfigDraftSaver = mapSaver(
             "endpointMode" to draft.endpointMode,
             "hostedWebSearchEnabled" to draft.hostedWebSearchEnabled,
             "anthropicVersion" to draft.anthropicVersion,
+            "promptCacheKeyEnabled" to draft.promptCacheKeyEnabled,
         )
     },
     restore = { state ->
@@ -73,6 +76,7 @@ internal val ProviderConfigDraftSaver = mapSaver(
             endpointMode = state.getValue("endpointMode") as String,
             hostedWebSearchEnabled = state.getValue("hostedWebSearchEnabled") as Boolean,
             anthropicVersion = state.getValue("anthropicVersion") as String,
+            promptCacheKeyEnabled = state["promptCacheKeyEnabled"] as? Boolean ?: true,
         )
     },
 )
@@ -88,6 +92,7 @@ internal fun buildUpdatedProvider(
     hostedWebSearchEnabled: Boolean,
     anthropicVersion: String,
     customHeaders: List<CustomHeader>,
+    promptCacheKeyEnabled: Boolean = true,
 ): ProviderSetting {
     val prompt = systemPrompt.trim().takeIf { it.isNotBlank() }
     return when (source) {
@@ -100,6 +105,7 @@ internal fun buildUpdatedProvider(
             isEnabled = isEnabled,
             endpointMode = endpointMode,
             hostedWebSearchEnabled = hostedWebSearchEnabled,
+            promptCacheKeyEnabled = promptCacheKeyEnabled,
         )
         is CustomProviderSetting -> source.copy(
             customHeaders = customHeaders.map { it.copy(name = it.name.trim()) },
@@ -110,6 +116,7 @@ internal fun buildUpdatedProvider(
             isEnabled = isEnabled,
             endpointMode = endpointMode,
             hostedWebSearchEnabled = hostedWebSearchEnabled,
+            promptCacheKeyEnabled = promptCacheKeyEnabled,
         )
         is AnthropicProviderSetting -> source.copy(
             customHeaders = customHeaders.map { it.copy(name = it.name.trim()) },

@@ -79,7 +79,7 @@ http_headers = { Authorization = "Bearer <令牌>" }
 | 工具 | 用途 |
 |---|---|
 | `eta_task_start` | 提交任务描述，立即返回 `task_id`；最多等待 `wait_seconds`（默认 30，最大 90）秒，任务结束或需要回答问题时提前返回 |
-| `eta_task_status` | 查询状态、最近 20 个步骤、待回答问题与最终结果，同样支持有界等待 |
+| `eta_task_status` | 查询状态、最近 20 个步骤、待回答问题与最终结果，同样支持有界等待；`usage` 为本任务累计的模型用量（请求数、含缓存读写的输入、缓存命中、缓存写入、输出、推理，以及服务商未返回用量的请求数） |
 | `eta_task_answer` | 回答 Eta 的提问：`text` 自由回答，`selections` 选项标签（单题一维、多题二维），`skip=true` 不回答 |
 | `eta_task_steer` | 运行中追加要求 |
 | `eta_task_stop` | 停止任务 |

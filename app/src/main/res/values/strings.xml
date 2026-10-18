@@ -378,6 +378,8 @@
   <string name="ui_stop_a17f70">stop</string>
   <string name="ui_allow_sensitive_device_operation_3d42ea">Allow sensitive device operation</string>
   <string name="ui_allows_the_model_to_call_web_searches_provided_by_th_2f752f">Allows the model to call web searches provided by the Provider</string>
+  <string name="provider_prompt_cache_key">Send cache routing key</string>
+  <string name="provider_prompt_cache_key_summary">Sends prompt_cache_key per conversation so requests hit the same cache. Turn off only if the endpoint rejects the field</string>
   <string name="ui_allow_reading_of_sensitive_device_information_feaec0">Allow reading of sensitive device information</string>
   <string name="ui_about_bed172">about</string>
   <string name="ui_after_closing_no_memory_will_be_injected_and_the_mod_db3d23">After closing, no memory will be injected, and the model will not be allowed to read or write; existing content will be retained.</string>

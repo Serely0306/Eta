@@ -120,6 +120,7 @@ internal object AgentRuntimeWire {
     private const val KEY_ANTHROPIC_VERSION = "anthropic_version"
     private const val KEY_OPENAI_ENDPOINT_MODE = "openai_endpoint_mode"
     private const val KEY_HOSTED_WEB_SEARCH_ENABLED = "hosted_web_search_enabled"
+    private const val KEY_PROMPT_CACHE_KEY_ENABLED = "prompt_cache_key_enabled"
     private const val KEY_TERMINAL_TOOLS = "terminal_tools"
     private const val KEY_BROWSER_TOOLS = "browser_tools"
     private const val KEY_DEVICE_DIRECT_TOOLS = "device_direct_tools"
@@ -321,6 +322,7 @@ internal object AgentRuntimeWire {
         putString(KEY_ANTHROPIC_VERSION, request.config.anthropicVersion)
         putString(KEY_OPENAI_ENDPOINT_MODE, request.config.openAiEndpointMode)
         putBoolean(KEY_HOSTED_WEB_SEARCH_ENABLED, request.config.hostedWebSearchEnabled)
+        putBoolean(KEY_PROMPT_CACHE_KEY_ENABLED, request.config.promptCacheKeyEnabled)
         putBoolean(KEY_TERMINAL_TOOLS, request.config.terminalTools)
         putBoolean(KEY_BROWSER_TOOLS, request.config.browserTools)
         putBoolean(KEY_DEVICE_DIRECT_TOOLS, request.config.deviceDirectTools)
@@ -458,6 +460,7 @@ internal object AgentRuntimeWire {
                 openAiEndpointMode = bundle.getString(KEY_OPENAI_ENDPOINT_MODE).orEmpty()
                     .ifBlank { io.github.mangi.eta.data.model.OpenAiEndpointMode.CHAT_COMPLETIONS },
                 hostedWebSearchEnabled = bundle.getBoolean(KEY_HOSTED_WEB_SEARCH_ENABLED, false),
+                promptCacheKeyEnabled = bundle.getBoolean(KEY_PROMPT_CACHE_KEY_ENABLED, true),
                 terminalTools = bundle.getBoolean(KEY_TERMINAL_TOOLS),
                 browserTools = if (bundle.containsKey(KEY_BROWSER_TOOLS)) {
                     bundle.getBoolean(KEY_BROWSER_TOOLS)
@@ -1050,6 +1053,8 @@ internal object AgentRuntimeWire {
         usage.outputTokens?.let { putInt("usage_output", it) }
         usage.reasoningTokens?.let { putInt("usage_reasoning", it) }
         usage.cachedTokens?.let { putInt("usage_cache", it) }
+        usage.cacheWriteTokens?.let { putInt("usage_cache_write", it) }
+        usage.promptTokens?.let { putInt("usage_prompt", it) }
     }
 
     private fun Bundle.getTokenUsage(): AgentTokenUsage =
@@ -1059,6 +1064,8 @@ internal object AgentRuntimeWire {
             outputTokens = optionalInt("usage_output"),
             reasoningTokens = optionalInt("usage_reasoning"),
             cachedTokens = optionalInt("usage_cache"),
+            cacheWriteTokens = optionalInt("usage_cache_write"),
+            promptTokens = optionalInt("usage_prompt"),
         )
 
     private fun decodeCustomHeaders(raw: String?): List<CustomHeader> =

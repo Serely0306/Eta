@@ -306,6 +306,15 @@ private fun ProviderConfigTab(
                                 onDraftChange(draft.copy(hostedWebSearchEnabled = it))
                             },
                         )
+                        EtaPreferenceDivider(hasLeading = false)
+                        EtaSwitchPreference(
+                            title = stringResource(R.string.provider_prompt_cache_key),
+                            summary = stringResource(R.string.provider_prompt_cache_key_summary),
+                            checked = draft.promptCacheKeyEnabled,
+                            onCheckedChange = {
+                                onDraftChange(draft.copy(promptCacheKeyEnabled = it))
+                            },
+                        )
                     }
                 }
                 EtaPreferenceDivider(hasLeading = false)
@@ -336,6 +345,7 @@ private fun ProviderConfigTab(
                                         hostedWebSearchEnabled = draft.hostedWebSearchEnabled,
                                         anthropicVersion = draft.anthropicVersion,
                                         customHeaders = draft.headers.map { it.header },
+                                        promptCacheKeyEnabled = draft.promptCacheKeyEnabled,
                                     )
                                 )
                             } finally {
@@ -420,6 +430,7 @@ private fun ProviderConfigTab(
                                 hostedWebSearchEnabled = draft.hostedWebSearchEnabled,
                                 anthropicVersion = draft.anthropicVersion,
                                 customHeaders = draft.headers.map { it.header },
+                                promptCacheKeyEnabled = draft.promptCacheKeyEnabled,
                             )
                             try {
                                 if (isNew) {

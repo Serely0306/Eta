@@ -32,6 +32,21 @@ class ProviderRequestHeadersTest {
     }
 
     @Test
+    fun responsesKeySentToCompatibleHostsWithSameStableValue() {
+        fun key(baseUrl: String, session: String) = JSONObject()
+            .also { ProviderRequestHeaders.applyPromptCacheKey(it, baseUrl, session, anyHost = true) }
+            .optString("prompt_cache_key")
+        val relay = key("https://relay.example.com/v1", "conversation-1")
+        assertTrue(relay.isNotBlank())
+        assertEquals(relay, key("https://api.openai.com/v1", "conversation-1"))
+        assertEquals(relay, key("http://127.0.0.1:18080/v1", "conversation-1"))
+        assertNotEquals(relay, key("https://relay.example.com/v1", "conversation-2"))
+        val explicit = JSONObject().put("prompt_cache_key", "user-value")
+        ProviderRequestHeaders.applyPromptCacheKey(explicit, "https://relay.example.com/v1", "conversation-1", anyHost = true)
+        assertEquals("user-value", explicit.getString("prompt_cache_key"))
+    }
+
+    @Test
     fun openCodeSessionIsStableAndIsolatedFromOtherConversations() {
         val first = headers("https://opencode.ai/zen/go/v1", "conversation-1")
         val retry = headers("https://opencode.ai/zen/go/v1", "conversation-1")

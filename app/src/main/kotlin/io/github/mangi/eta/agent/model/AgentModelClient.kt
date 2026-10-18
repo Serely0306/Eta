@@ -289,6 +289,8 @@ internal object AgentModelClient {
         val anthropicVersion: String = AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
         val openAiEndpointMode: String = OpenAiEndpointMode.CHAT_COMPLETIONS,
         val hostedWebSearchEnabled: Boolean = false,
+        /** Responses 请求是否带会话级 prompt_cache_key（服务商设置，默认开）。 */
+        val promptCacheKeyEnabled: Boolean = true,
         val terminalTools: Boolean = false,
         val browserTools: Boolean = true,
         val deviceDirectTools: Boolean = true,

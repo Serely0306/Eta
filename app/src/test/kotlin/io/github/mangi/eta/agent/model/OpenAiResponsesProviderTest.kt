@@ -362,6 +362,8 @@ class OpenAiResponsesProviderTest {
             )
 
             assertTrue(requestBody.get().contains("\"store\":false"))
+            // 兼容端点同样依赖会话路由键命中缓存（AG-14），本地 Mock 主机也应带上。
+            assertTrue(requestBody.get().contains("\"prompt_cache_key\""))
             assertEquals("完整摘要", result.assistantMessage.getString("reasoning_content"))
             assertTrue(result.assistantMessage.getString("content").contains("[[1]]"))
             assertEquals("call_1", result.assistantMessage.getJSONArray("tool_calls").getJSONObject(0).getString("id"))
@@ -370,6 +372,7 @@ class OpenAiResponsesProviderTest {
             assertEquals(1, events.filterIsInstance<ProviderEvent.HostedToolFinished>().size)
             val usage = events.filterIsInstance<ProviderEvent.Usage>().single().usage
             assertEquals(18, usage.contextTokens)
+            assertEquals(10, usage.promptTokens)
             assertEquals(3, usage.cachedTokens)
             assertEquals(5, usage.reasoningTokens)
         }

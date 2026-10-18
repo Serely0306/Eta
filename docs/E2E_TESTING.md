@@ -30,7 +30,8 @@
 | 设备端 MCP 服务：切换局域网开关后立即重绑端口 | `1ada506` | I16 | 未执行 |
 | 设备端 MCP 服务：电脑端连接情况与复制命令 | `89867a6` | I17–I18 | 未执行 |
 | 设备端 MCP 服务：出口脱敏、可逆占位与截图开关 | `13bbbcf` | I19–I22 | 未执行 |
-| 设备端 MCP 服务：委托任务限定可调用的模型 | 本提交 | I23–I26 | 未执行 |
+| 设备端 MCP 服务：委托任务限定可调用的模型 | `d3c4b2f` | I23–I26 | 未执行 |
+| 第三方 Responses 端点发送会话级 `prompt_cache_key`（服务商可关闭）；委托任务状态带模型用量 | 本提交 | F3、F4、I27、I28 | 未执行 |
 | 小爱 8.2.65 唤醒与电源键语音交给 Eta | `7010ad3` | G4–G7 | 未执行 |
 | 计划工具与子 Agent | `e2f14b8`、`c359ab3` | J1–J9 | 未执行 |
 | 模型回退链 | `1548476` | K1–K9 | 未执行 |
@@ -188,7 +189,8 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 |---|---|---|
 | F1 `M` | Anthropic 格式 Mock，多轮工具调用 | 工具列表末尾、system 末块、观察块之前的最后稳定块带 `cache_control`；前缀哈希逐轮不变 |
 | F2 `M` | 同一会话中途修改记忆 | 本会话后续轮次的 system 哈希不变；新会话才反映修改 |
-| F3 `M` | OpenAI 格式 Mock（非 api.openai.com） | 请求不带 `prompt_cache_key` |
+| F3 `M` | Mock 服务（非 api.openai.com）分别以 Chat Completions 与 Responses 两种端点模式各跑两轮；再在 Responses 服务商设置中关闭“发送缓存路由键”重复一次 | Chat Completions 请求不带 `prompt_cache_key`；Responses 请求带，且同一会话两轮的值相同、不同会话不同；关闭开关后 Responses 请求也不带 |
+| F4 `M` | Responses 服务商的自定义请求体中显式设置 `prompt_cache_key` | 请求中的值保持用户设置，不被会话路由键覆盖 |
 
 ### G. 系统入口与会话归组
 
@@ -242,6 +244,8 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | I24 `M` | 准备两个 Mock 模型（`e2e-mock-a`、`e2e-mock-b`，剧本中各自回复自己的名字），只勾选两者；分别不带 `model` 和带 `e2e-mock-b` 启动任务 | `model.enum` 只含这两个 id；前者 `model.id` 为列表中靠前的模型，结果为它的回复；后者结果为 `e2e-mock-b` 的回复 |
 | I25 `M` | 只勾选 `e2e-mock-a`，并把它的剧本设为持续失败；回退链中放入未勾选的 `e2e-mock-b` | 任务以失败结束，Mock 服务没有收到发往 `e2e-mock-b` 的请求 |
 | I26 `M` | 勾选 `e2e-mock-a` 后在模型提供商中停用它，再启动任务；传入未勾选的模型 id | 前者返回 `MODEL_UNAVAILABLE`，后者返回 `INVALID_ARGUMENT`；两者都没有向默认模型发出请求 |
+| I27 `M` | 剧本两轮（一次工具调用后回复），Mock 每轮返回固定 usage；再用一个不返回 usage 的剧本跑一次 | 任务状态的 `usage.requests` 为 2，`input_tokens`、`cached_tokens`、`output_tokens` 等于两轮之和；Anthropic 格式 Mock 先报输入、再报累计输出时不重复计数；不返回 usage 时 `requests_without_usage` 等于请求数 |
+| I28 `R` | 经 MCP 用同一 `conversation_id` 在 API A 上跑 AG-14 的 S1 五轮 | 第 2 轮起每轮 `cached_tokens / input_tokens` 约 99%（AG-14 验收） |
 
 ### J. 计划与子 Agent
 

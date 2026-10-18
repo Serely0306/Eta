@@ -45,6 +45,9 @@ sealed interface ProviderSetting {
     val createdAt: Long
     val hostedWebSearchEnabled: Boolean
         get() = false
+    /** Responses 请求是否带会话级 prompt_cache_key；只对 Responses 端点生效。 */
+    val promptCacheKeyEnabled: Boolean
+        get() = true
 }
 
 @Serializable
@@ -65,6 +68,7 @@ data class OpenAiCompatibleProviderSetting(
     override val createdAt: Long = System.currentTimeMillis(),
     val endpointMode: String = OpenAiEndpointMode.CHAT_COMPLETIONS,
     override val hostedWebSearchEnabled: Boolean = false,
+    override val promptCacheKeyEnabled: Boolean = true,
 ) : ProviderSetting
 
 @Serializable
@@ -108,6 +112,7 @@ data class CustomProviderSetting(
     override val createdAt: Long = System.currentTimeMillis(),
     val endpointMode: String = OpenAiEndpointMode.CHAT_COMPLETIONS,
     override val hostedWebSearchEnabled: Boolean = false,
+    override val promptCacheKeyEnabled: Boolean = true,
 ) : ProviderSetting
 
 internal val ProviderSetting.runtimeProviderType: String

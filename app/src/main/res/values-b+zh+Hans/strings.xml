@@ -367,6 +367,8 @@
   <string name="ui_stop_a17f70">停止</string>
   <string name="ui_allow_sensitive_device_operation_3d42ea">允许敏感设备操作</string>
   <string name="ui_allows_the_model_to_call_web_searches_provided_by_th_2f752f">允许模型调用 Provider 提供的网页搜索</string>
+  <string name="provider_prompt_cache_key">发送缓存路由键</string>
+  <string name="provider_prompt_cache_key_summary">按会话发送 prompt_cache_key，让同一会话的请求命中同一份缓存；端点拒收该字段时再关闭</string>
   <string name="ui_allow_reading_of_sensitive_device_information_feaec0">允许读取敏感设备信息</string>
   <string name="ui_about_bed172">关于</string>
   <string name="ui_after_closing_no_memory_will_be_injected_and_the_mod_db3d23">关闭后不注入记忆，也不允许模型读写；已有内容会保留</string>

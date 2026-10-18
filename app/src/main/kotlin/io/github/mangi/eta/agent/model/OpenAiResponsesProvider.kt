@@ -35,7 +35,11 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
             "当前 Provider 未配置为 Responses API"
         }
         val body = buildRequestJson(config, request.messages, request.effectiveTools)
-            .also { ProviderRequestHeaders.applyPromptCacheKey(it, config.baseUrl, request.sessionId) }
+            .also {
+                if (config.promptCacheKeyEnabled) {
+                    ProviderRequestHeaders.applyPromptCacheKey(it, config.baseUrl, request.sessionId, anyHost = true)
+                }
+            }
             .toString()
             .toRequestBody(JSON_MEDIA_TYPE)
         val headers = okhttp3.Headers.Builder()
@@ -599,9 +603,11 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
 
     private fun parseUsage(usage: JSONObject?): AgentTokenUsage? {
         usage ?: return null
+        val inputTokens = usage.intValue("input_tokens", "prompt_tokens")
         return AgentTokenUsage(
             contextTokens = usage.intValue("total_tokens"),
-            inputTokens = usage.intValue("input_tokens", "prompt_tokens"),
+            inputTokens = inputTokens,
+            promptTokens = inputTokens,
             outputTokens = usage.intValue("output_tokens", "completion_tokens"),
             cachedTokens = usage.optJSONObject("input_tokens_details")?.intValue("cached_tokens")
                 ?: usage.optJSONObject("prompt_tokens_details")?.intValue("cached_tokens"),
