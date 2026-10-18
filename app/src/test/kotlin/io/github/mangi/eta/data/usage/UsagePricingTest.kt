@@ -56,7 +56,7 @@ class UsagePricingTest {
         assertEquals(astra, resolver.price(record(providerId = "builtin-openai", model = "gpt-6.1-sol")))
         assertEquals(astra, resolver.price(record(providerId = "deleted", model = "gpt-6.1-sol")))
         assertNull(resolver.price(record(model = "gpt-6-sol")))
-        assertEquals(1_000_000 * 10.0 / 1e6 * 0.5, resolver.cost(record(providerId = "relay", model = "gpt-6.1-sol", prompt = 1_000_000))!!, 1e-12)
+        assertEquals(100_000 * 10.0 / 1e6 * 0.5, resolver.cost(record(providerId = "relay", model = "gpt-6.1-sol", prompt = 100_000))!!, 1e-12)
     }
 
     @Test
