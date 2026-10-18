@@ -9,6 +9,8 @@ import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentModelExecutionException
 import io.github.mangi.eta.agent.model.AgentModelFailure
+import io.github.mangi.eta.agent.model.ModelUsageContext
+import io.github.mangi.eta.agent.model.ModelUsageScope
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.model.AgentTaskPlan
 import io.github.mangi.eta.agent.model.ModelFallbackPolicy
@@ -345,45 +347,52 @@ internal class AgentRuntimeRunExecutor(
                     characterMemoryTools.execute(call)
                 } else routingExecutor.execute(call)
             }
-            val completedResponse = AgentModelClient.complete(
-                config = request.config,
-                sessionId = request.effectiveModelSessionId,
-                operationId = request.runId,
-                initialUserMessageId = uiPayload?.promptMessageId(request.runId) ?: "user-${request.runId}",
-                initialSupplementIndex = uiPayload?.lastSupplementIndex ?: 0,
-                roleplayContext = roleplayContext,
-                rewriteReply = request.operation == AgentRuntimeWire.OP_REWRITE_REPLY,
-                compactOnly = request.operation == AgentRuntimeWire.OP_COMPACT,
-                onContextSnapshot = { snapshot ->
-                    val committed = snapshot.copy(operationId = request.runId)
-                    AgentRunCheckpointStore.saveContext(appContext, request.runId, committed)
-                    session.updateContext(committed)
-                },
-                onTranscript = { transcript ->
-                    AgentRunCheckpointStore.saveTranscript(appContext, request.runId, transcript)
-                    session.updateTranscript(transcript)
-                },
-                capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
-                disabledToolsProvider = disabledTools,
-                prompt = request.prompt,
-                assistantScreenContext = request.assistantScreenContext,
-                toolExecutor = runToolExecutor,
-                images = request.images,
-                history = request.history,
-                runController = runController,
-                skillContext = skillContext,
-                memoryContext = memoryContext,
-                additionalTools = runTools,
-                fallback = fallbackPolicy,
-            ) { event ->
-                timing.accept(event)
-                acceptEvent(
-                    session,
-                    event,
-                    archivedEvents,
-                    entrySurfaceGuard,
-                    checkpointRecorder,
-                )
+            // 用量账本按入口与 run 归类；同一线程上的压缩请求一并归入，子 Agent 在自己的线程上继承。
+            val usageContext = ModelUsageContext(
+                source = request.handoff?.source ?: AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
+                runId = request.runId,
+            )
+            val completedResponse = ModelUsageScope.run(usageContext) {
+                AgentModelClient.complete(
+                    config = request.config,
+                    sessionId = request.effectiveModelSessionId,
+                    operationId = request.runId,
+                    initialUserMessageId = uiPayload?.promptMessageId(request.runId) ?: "user-${request.runId}",
+                    initialSupplementIndex = uiPayload?.lastSupplementIndex ?: 0,
+                    roleplayContext = roleplayContext,
+                    rewriteReply = request.operation == AgentRuntimeWire.OP_REWRITE_REPLY,
+                    compactOnly = request.operation == AgentRuntimeWire.OP_COMPACT,
+                    onContextSnapshot = { snapshot ->
+                        val committed = snapshot.copy(operationId = request.runId)
+                        AgentRunCheckpointStore.saveContext(appContext, request.runId, committed)
+                        session.updateContext(committed)
+                    },
+                    onTranscript = { transcript ->
+                        AgentRunCheckpointStore.saveTranscript(appContext, request.runId, transcript)
+                        session.updateTranscript(transcript)
+                    },
+                    capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
+                    disabledToolsProvider = disabledTools,
+                    prompt = request.prompt,
+                    assistantScreenContext = request.assistantScreenContext,
+                    toolExecutor = runToolExecutor,
+                    images = request.images,
+                    history = request.history,
+                    runController = runController,
+                    skillContext = skillContext,
+                    memoryContext = memoryContext,
+                    additionalTools = runTools,
+                    fallback = fallbackPolicy,
+                ) { event ->
+                    timing.accept(event)
+                    acceptEvent(
+                        session,
+                        event,
+                        archivedEvents,
+                        entrySurfaceGuard,
+                        checkpointRecorder,
+                    )
+                }
             }
             response = completedResponse
             AgentRuntimeWire.RunResult(

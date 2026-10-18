@@ -6,6 +6,7 @@ import io.github.mangi.eta.agent.model.AgentTaskPlan
 import io.github.mangi.eta.agent.model.AgentToolCatalog
 import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.model.ModelFallbackPolicy
+import io.github.mangi.eta.agent.model.ModelUsageScope
 import io.github.mangi.eta.agent.model.AgentToolSchema
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.agent.tool.ForegroundResourceLease
@@ -50,10 +51,14 @@ internal class AgentSubagentTool(
         }
         val excluded = excludedTools(catalogNames()) + COORDINATOR_TOOLS
         val outcomes = arrayOfNulls<Outcome>(tasks.size)
+        // 子 Agent 在新线程上运行，用量账本的归属要显式带过去。
+        val usageContext = ModelUsageScope.current()
         val workers = tasks.mapIndexed { index, task ->
             emitSafely(AgentEvent.SubagentUpdate(call.id, index, tasks.size, AgentEvent.SubagentUpdate.PHASE_STARTED))
             thread(name = "agent-subagent-$index", isDaemon = true) {
-                val outcome = runSubagent(call.id, index, tasks.size, task, excluded)
+                val outcome = ModelUsageScope.run(usageContext?.copy(subagentIndex = index)) {
+                    runSubagent(call.id, index, tasks.size, task, excluded)
+                }
                 outcomes[index] = outcome
                 emitSafely(
                     AgentEvent.SubagentUpdate(

@@ -33,7 +33,8 @@
 | 设备端 MCP 服务：委托任务限定可调用的模型 | `d3c4b2f` | I23–I26 | 未执行 |
 | 第三方 Responses 端点发送会话级 `prompt_cache_key`（服务商可关闭）；委托任务状态带模型用量 | `7daef5f` | F3、F4、I27、I28 | 未执行 |
 | 备用模型、厂商助手模型、MCP 可调用模型的选择按服务商分组收纳 | `fa6b48d` | K10、I29 | 未执行 |
-| 思考强度：全局默认、“服务商默认”说明、Eta 语音 / 厂商助手 / MCP / 自动任务 / 备用模型各自的模型与强度，`eta_task_start` 的 `reasoning_effort` | 本提交 | F5、F6、I30、I31、K11、L11 | 未执行 |
+| 思考强度：全局默认、“服务商默认”说明、Eta 语音 / 厂商助手 / MCP / 自动任务 / 备用模型各自的模型与强度，`eta_task_start` 的 `reasoning_effort` | `c0a1193` | F5、F6、I30、I31、K11、L11 | 未执行 |
+| 用量账本：所有模型请求入账（含压缩、子 Agent、改写、转写润色），与会话独立；委托任务用量改读账本 | 本提交 | N1–N4 | 未执行 |
 | 小爱 8.2.65 唤醒与电源键语音交给 Eta | `7010ad3` | G4–G7 | 未执行 |
 | 计划工具与子 Agent | `e2f14b8`、`c359ab3` | J1–J9 | 未执行 |
 | 模型回退链 | `1548476` | K1–K9 | 未执行 |
@@ -318,6 +319,17 @@ Mock 服务按请求中的模型名区分主模型与备用模型（设置中配
 | M4 `M` | 关闭“操作界面时暂停横幅通知” | 接管期间横幅设置不变 |
 | M5 `M` | 剧本任务“打开系统设置的 Wi-Fi 页面” | Mock 收到的系统提示含优先非界面途径的规则；剧本可用 `open_uri`/`terminal` 完成，无需 GUI 工具 |
 | M6 `R` | 按 VIRTUAL_DISPLAY.md 的验证步骤在真机上逐项检查 | 记录每项结果，决定虚拟屏方案是否继续 |
+
+### N. 用量与费用
+
+用量账本在本机数据库 `model_usage_records`；统一落地前可用 `adb shell run-as` 导出数据库核对，落地后由状态 Provider 提供账本摘要。
+
+| ID | 场景 | 断言 |
+|---|---|---|
+| N1 `M` | 剧本：一轮工具调用后回复；同一会话再手动压缩一次；再让模型调用 `run_subagents` 派 2 个子 Agent | 每次模型请求一条记录：对话、压缩、子 Agent（`subagent_index` 为 0、1）都在，同一 run 的 `run_id` 相同；token 与 Mock 返回的 usage 一致；Anthropic 格式先报输入、再报累计输出时只记最后一次 |
+| N2 `M` | Mock 不返回 usage；Mock 返回 500；请求进行中停止 run | 依次记为 `has_usage=0`、`status=failed`、`status=cancelled`，都计入请求数 |
+| N3 `M` | 经 MCP 运行 N1 的剧本 | `eta_task_status.usage.requests` 与账本中该 run 的条数一致，包含压缩与子 Agent 的请求 |
+| N4 `M` | 删除 N1 的会话 | 账本记录仍在 |
 
 ## 执行方式
 

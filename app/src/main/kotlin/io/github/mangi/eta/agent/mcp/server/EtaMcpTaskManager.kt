@@ -26,6 +26,11 @@ internal class EtaMcpTaskManager(
     },
     /** 每次列出工具与启动任务时读取，用户在手机上修改勾选后立即生效。 */
     private val models: () -> ModelChoices = { ModelChoices.DEFAULT_MODEL },
+    /**
+     * 用量账本中该任务（run）的累计用量，含压缩与子 Agent 的请求；账本写入稍有延迟，
+     * 请求数少于事件累计时用事件累计的结果。
+     */
+    private val runUsage: (taskId: String) -> JSONObject? = { null },
 ) {
     /**
      * [efforts] 为该模型可选的思考强度（wire 值），为空表示模型不支持思考；
@@ -391,11 +396,18 @@ internal class EtaMcpTaskManager(
                         task.question?.let { put("questions", JSONObject(it.toJson()).getJSONArray("questions")) }
                     })
                 }
-                task.usage.toJson()?.let { put("usage", it) }
+                usageFor(task)?.let { put("usage", it) }
                 task.result?.let { put("result", it) }
                 task.error?.let { put("error", it) }
                 put("hint", hintFor(task.status))
             }
+    }
+
+    private fun usageFor(task: Task): JSONObject? {
+        val events = task.usage.toJson()
+        val ledger = runCatching { runUsage(task.id) }.getOrNull() ?: return events
+        if (events == null) return ledger
+        return if (ledger.optInt("requests") >= events.optInt("requests")) ledger else events
     }
 
     private fun hintFor(status: Status): String = when (status) {

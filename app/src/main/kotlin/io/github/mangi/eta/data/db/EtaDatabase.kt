@@ -25,8 +25,9 @@ import androidx.room.migration.Migration
         McpServerEntity::class,
         CharacterEntity::class,
         UserPersonaEntity::class,
+        ModelUsageRecordEntity::class,
     ],
-    version = 23,
+    version = 24,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -36,6 +37,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
     abstract fun skillDao(): SkillDao
     abstract fun mcpServerDao(): McpServerDao
     abstract fun characterDao(): CharacterDao
+    abstract fun modelUsageDao(): ModelUsageDao
 
     companion object {
         @Volatile
@@ -66,6 +68,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_20_21,
                         MIGRATION_21_22,
                         MIGRATION_22_23,
+                        MIGRATION_23_24,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -117,6 +120,25 @@ internal abstract class EtaDatabase : RoomDatabase() {
         internal val MIGRATION_22_23 = Migration(22, 23) { database ->
             database.execSQL(
                 "ALTER TABLE model_providers ADD COLUMN prompt_cache_key_enabled INTEGER NOT NULL DEFAULT 1"
+            )
+        }
+
+        internal val MIGRATION_23_24 = Migration(23, 24) { database ->
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS model_usage_records (" +
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, created_at INTEGER NOT NULL, " +
+                    "duration_ms INTEGER NOT NULL, source TEXT NOT NULL, run_id TEXT NOT NULL, purpose TEXT NOT NULL, " +
+                    "subagent_index INTEGER, provider_id TEXT NOT NULL, provider_name TEXT NOT NULL, model TEXT NOT NULL, " +
+                    "model_display_name TEXT NOT NULL, endpoint TEXT NOT NULL, reasoning_effort TEXT NOT NULL, " +
+                    "status TEXT NOT NULL, has_usage INTEGER NOT NULL, prompt_tokens INTEGER NOT NULL, " +
+                    "cached_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, " +
+                    "reasoning_tokens INTEGER NOT NULL)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_model_usage_records_created_at ON model_usage_records(created_at)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_model_usage_records_run_id ON model_usage_records(run_id)"
             )
         }
 

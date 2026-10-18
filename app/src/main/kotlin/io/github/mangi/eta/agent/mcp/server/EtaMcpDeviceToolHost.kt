@@ -13,6 +13,7 @@ import io.github.mangi.eta.agent.tool.ToolExecutionDecision
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
+import io.github.mangi.eta.data.usage.ModelUsageLedger
 import java.util.UUID
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -116,6 +117,7 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
                 taskManager ?: EtaMcpTaskManager(
                     runner = EtaMcpRuntimeTaskRunner(context),
                     models = { runBlocking { EtaMcpModelAccess.choices() } },
+                    runUsage = { taskId -> ModelUsageLedger.runSummary(taskId)?.toJson() },
                 ).also { taskManager = it }
             }
 
