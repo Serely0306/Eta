@@ -31,13 +31,15 @@ import io.github.mangi.eta.agent.mcp.server.EtaMcpServerController
 import io.github.mangi.eta.agent.mcp.server.EtaMcpServerSettings
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.ui.components.EtaArrowPreference
-import io.github.mangi.eta.ui.components.EtaCheckboxPreference
 import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
 import io.github.mangi.eta.ui.components.EtaSwitchPreference
 import io.github.mangi.eta.ui.components.EtaWindowDialog
+import io.github.mangi.eta.ui.components.GroupedModelChecklist
 import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.modelChoiceGroups
+import io.github.mangi.eta.ui.components.unavailableModelLabel
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextField
@@ -58,13 +60,8 @@ internal fun McpDeviceServerSection() {
     // 本页每 30 秒刷新一次时间，记住 Flow 避免每次重组重新订阅。
     val providersFlow = remember { ProviderRepository.providersFlow() }
     val providers by providersFlow.collectAsState(initial = emptyList())
-    // 与设置页的模型列表一致：已启用服务商下的已启用模型。
-    val modelOptions = remember(providers) {
-        providers.filter { it.isEnabled }.flatMap { provider ->
-            provider.models.filter { it.isEnabled }.sortedBy { it.sortOrder }
-                .map { model -> model.id to "${provider.name} / ${model.displayName}" }
-        }
-    }
+    // 与设置页的模型选择一致：按服务商分组，只列当前可用的模型。
+    val modelGroups = remember(providers) { modelChoiceGroups(providers) }
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(Unit) { EtaMcpServerController.refreshAddresses() }
@@ -194,22 +191,26 @@ internal fun McpDeviceServerSection() {
     EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp)) {
         EtaPreference(
             summary = stringResource(
-                if (modelOptions.isEmpty()) R.string.mcp_device_server_models_empty else R.string.mcp_device_server_models_summary,
+                if (modelGroups.isEmpty()) R.string.mcp_device_server_models_empty else R.string.mcp_device_server_models_summary,
             ),
         )
-        modelOptions.forEach { (id, label) ->
-            EtaCheckboxPreference(
-                title = label,
-                checked = id in privacy.taskModelIds,
-                onCheckedChange = { checked ->
-                    val chosen = if (checked) privacy.taskModelIds + id else privacy.taskModelIds - id
-                    // 按列表顺序保存，靠前的为默认；暂时停用的模型保留勾选，重新启用后继续生效。
-                    val listed = modelOptions.map { it.first }
-                    val ordered = listed.filter { it in chosen } + chosen.filter { it !in listed }
-                    updatePrivacy(privacy.copy(taskModelIds = ordered))
-                },
-            )
-        }
+        val listed = modelGroups.flatMap { group -> group.models.map { it.id } }
+        val deletedLabel = stringResource(R.string.model_selection_deleted)
+        GroupedModelChecklist(
+            groups = modelGroups,
+            checkedIds = privacy.taskModelIds,
+            unavailable = privacy.taskModelIds.filter { it !in listed }.map { id ->
+                id to (unavailableModelLabel(providers, id)
+                    ?.let { stringResource(R.string.model_selection_unavailable, it) }
+                    ?: deletedLabel)
+            },
+            onCheckedChange = { id, checked ->
+                val chosen = if (checked) privacy.taskModelIds + id else privacy.taskModelIds - id
+                // 按列表顺序保存，靠前的为默认；暂时停用的模型保留勾选，重新启用后继续生效。
+                val ordered = listed.filter { it in chosen } + chosen.filter { it !in listed }
+                updatePrivacy(privacy.copy(taskModelIds = ordered.distinct()))
+            },
+        )
     }
 
     if (editingPort) {

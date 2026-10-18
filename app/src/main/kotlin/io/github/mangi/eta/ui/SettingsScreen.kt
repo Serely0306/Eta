@@ -76,6 +76,7 @@ import io.github.mangi.eta.ui.app.EnhancementSettingsHistory
 import io.github.mangi.eta.ui.app.rememberDeviceCapabilities
 import io.github.mangi.eta.ui.components.EtaArrowPreference
 import io.github.mangi.eta.ui.components.EtaDropdownPreference
+import io.github.mangi.eta.ui.components.EtaModelSelectPreference
 import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceColors
 import io.github.mangi.eta.ui.components.EtaPreferenceDivider
@@ -87,6 +88,7 @@ import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.LanguagePreference
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.modelChoiceGroups
 import io.github.mangi.eta.ui.navigation.AppRoute
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -205,29 +207,13 @@ private fun SettingsPageContent(
     val selectedModel = remember(selectedProvider, selectedModelId) {
         selectedProvider?.models?.find { it.id == selectedModelId }
     }
-    // 厂商助手模型：第一项为跟随默认模型，其余为已启用服务商下的已启用模型。
+    // 厂商助手模型与备用模型都从按服务商分组的列表里选，分组与聊天输入框的模型选择一致。
     val vendorModelId by RuntimeConfigRepository.vendorAssistantModelIdFlow()
         .collectAsState(initial = null)
-    val vendorModelOptions = remember(providers) {
-        listOf<Pair<String?, String>?>(null) + providers
-            .filter { it.isEnabled }
-            .flatMap { provider ->
-                provider.models
-                    .filter { it.isEnabled }
-                    .sortedBy { it.sortOrder }
-                    .map { model -> model.id to "${provider.name} / ${model.displayName}" }
-            }
-    }
+    val modelGroups = remember(providers) { modelChoiceGroups(providers) }
     val followDefaultModelLabel = stringResource(R.string.settings_vendor_assistant_model_follow_default)
-    val vendorModelItems = vendorModelOptions.map { option ->
-        DropdownItem(text = option?.second ?: followDefaultModelLabel)
-    }
-    val vendorModelIndex = vendorModelOptions
-        .indexOfFirst { it?.first == vendorModelId }
-        .coerceAtLeast(0)
     val fallbackSettings by RuntimeConfigRepository.modelFallbackFlow()
         .collectAsState(initial = ModelFallbackSettings())
-    val fallbackModelOptions = remember(vendorModelOptions) { vendorModelOptions.filterNotNull() }
     val fallbackNoneLabel = stringResource(R.string.settings_model_fallback_none)
     val providerSummary = selectedProvider?.let { provider ->
         "${provider.name} / ${selectedModel?.displayName ?: stringResource(R.string.settings_model_not_selected)}"
@@ -309,14 +295,14 @@ private fun SettingsPageContent(
                     repeat(fallbackSlots) { slot ->
                         val currentId = fallbackSettings.modelIds.getOrNull(slot)
                         EtaPreferenceDivider()
-                        EtaDropdownPreference(
+                        EtaModelSelectPreference(
                             title = stringResource(R.string.settings_model_fallback_slot, slot + 1),
                             summary = if (slot == 0) stringResource(R.string.settings_model_fallback_summary) else null,
-                            items = listOf(DropdownItem(text = fallbackNoneLabel)) +
-                                fallbackModelOptions.map { DropdownItem(text = it.second) },
-                            selectedIndex = fallbackModelOptions.indexOfFirst { it.first == currentId } + 1,
-                            onSelectedIndexChange = { index ->
-                                val chosen = fallbackModelOptions.getOrNull(index - 1)?.first
+                            providers = providers,
+                            groups = modelGroups,
+                            selectedId = currentId,
+                            emptyOptionLabel = fallbackNoneLabel,
+                            onSelect = { chosen ->
                                 val next = fallbackSettings.modelIds.toMutableList().apply {
                                     if (chosen == null) {
                                         if (slot < size) removeAt(slot)
@@ -603,13 +589,14 @@ private fun SettingsPageContent(
                         )
 
                         EtaPreferenceDivider()
-                        EtaDropdownPreference(
+                        EtaModelSelectPreference(
                             title = stringResource(R.string.settings_vendor_assistant_model),
                             summary = stringResource(R.string.settings_vendor_assistant_model_summary),
-                            items = vendorModelItems,
-                            selectedIndex = vendorModelIndex,
-                            onSelectedIndexChange = { index ->
-                                val modelId = vendorModelOptions.getOrNull(index)?.first
+                            providers = providers,
+                            groups = modelGroups,
+                            selectedId = vendorModelId,
+                            emptyOptionLabel = followDefaultModelLabel,
+                            onSelect = { modelId ->
                                 coroutineScope.launch {
                                     val synced = RuntimeConfigRepository.setVendorAssistantModelId(
                                         modelId,

@@ -1153,6 +1153,13 @@
   <string name="model_switch_current">切換模型，目前為 %1$s</string>
   <string name="model_collapse_provider">收合 %1$s</string>
   <string name="model_expand_provider">展開 %1$s</string>
+  <string name="model_group_checked">已選 %1$d / 共 %2$d</string>
+  <plurals name="model_group_count">
+    <item quantity="other">%d 個模型</item>
+  </plurals>
+  <string name="model_selection_unavailable">%1$s（已停用）</string>
+  <string name="model_selection_deleted">已刪除的模型</string>
+  <string name="model_selection_unavailable_summary">目前無法使用，取消勾選即可移除</string>
   <string name="context_no_previous_usage">暫無上輪用量</string>
   <string name="context_no_model_limit">未知上下文視窗，自動壓縮已關閉。仍可手動壓縮，也可在設定 → 模型提供商中填寫視窗。</string>
   <string name="context_usage_after_response">完成首次回覆後顯示實測用量</string>

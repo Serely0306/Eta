@@ -1185,6 +1185,14 @@
   <string name="model_switch_current">Switch model. Current: %1$s</string>
   <string name="model_collapse_provider">Collapse %1$s</string>
   <string name="model_expand_provider">Expand %1$s</string>
+  <string name="model_group_checked">%1$d of %2$d selected</string>
+  <plurals name="model_group_count">
+    <item quantity="one">%d model</item>
+    <item quantity="other">%d models</item>
+  </plurals>
+  <string name="model_selection_unavailable">%1$s (unavailable)</string>
+  <string name="model_selection_deleted">Deleted model</string>
+  <string name="model_selection_unavailable_summary">Unavailable now. Uncheck to remove</string>
   <string name="context_no_previous_usage">No usage data yet</string>
   <string name="context_no_model_limit">Context window unknown, so automatic compaction is off. You can still compact manually, or set the window in Settings → Model Providers.</string>
   <string name="context_usage_after_response">Measured after the first response</string>
