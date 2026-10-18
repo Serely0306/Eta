@@ -516,6 +516,34 @@
   <string name="tool_status_running">执行中</string>
   <string name="tool_status_success">已完成</string>
   <string name="tool_status_failed">失败</string>
+  <string name="tool_detail_open">详情</string>
+  <string name="tool_detail_arguments">调用参数</string>
+  <string name="tool_detail_result">结果</string>
+  <plurals name="tool_detail_stdout">
+    <item quantity="other">标准输出 · %d 行</item>
+  </plurals>
+  <string name="tool_detail_stderr">标准错误</string>
+  <string name="tool_detail_empty">（空）</string>
+  <string name="tool_detail_truncated">输出超过工具上限，已截断；模型看到的也是截断后的内容。</string>
+  <string name="tool_detail_truncated_short">已截断</string>
+  <string name="tool_detail_sensitive">敏感工具的参数和结果只在当轮使用，没有保存到会话记录。</string>
+  <string name="tool_detail_unavailable">这条记录没有保存完整内容，下面是摘要。</string>
+  <string name="tool_detail_pending">本轮结束后可以查看完整内容。</string>
+  <string name="tool_detail_source_note">内容来自会话记录里保存的工具结果。</string>
+  <string name="tool_detail_exit_code">退出码 %1$d</string>
+  <string name="tool_detail_timed_out">执行超时</string>
+  <string name="tool_detail_seconds">%1$s 秒</string>
+  <string name="tool_detail_search_query">查询词</string>
+  <plurals name="tool_detail_search_results">
+    <item quantity="other">%d 条结果</item>
+  </plurals>
+  <string name="tool_detail_page">网页内容</string>
+  <string name="tool_detail_page_more">网页还有更多内容，模型可以继续读取。</string>
+  <string name="tool_detail_text_limited">只显示前 %1$d 字</string>
+  <plurals name="tool_output_show_all">
+    <item quantity="other">展开全部（%d 行）</item>
+  </plurals>
+  <string name="tool_output_collapse">收起</string>
   <string name="tool_browser_loading">正在加载 · %1$d%%</string>
   <string name="tool_browser_preview">页面预览</string>
   <plurals name="work_processing_step">

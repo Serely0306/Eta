@@ -1,0 +1,368 @@
+package io.github.mangi.eta.ui.components
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.referentialEqualityPolicy
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import io.github.mangi.eta.R
+import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.overlay.toolDisplayName
+import io.github.mangi.eta.ui.model.AgentChatMessageUi
+import io.github.mangi.eta.ui.model.TerminalOutput
+import io.github.mangi.eta.ui.model.ToolActivityMessageUi
+import io.github.mangi.eta.ui.model.ToolActivityStatusUi
+import io.github.mangi.eta.ui.model.ToolCallDetail
+import io.github.mangi.eta.ui.model.ToolCallDetails
+import java.util.Locale
+import kotlinx.coroutines.delay
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.squircle.squircleSurface
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+/** 工具详情的数据来源：当前会话的完整脱敏记录与消息列表。只有展开的工具行和打开的详情读取它。 */
+internal class ToolCallDetailSource(
+    private val journal: List<AgentModelClient.ConversationMessage>,
+    private val messages: List<AgentChatMessageUi>,
+    /** 本轮的工具结果要等 run 结束才写入记录。 */
+    val runInProgress: Boolean,
+) {
+    fun find(message: ToolActivityMessageUi): ToolCallDetail? = ToolCallDetails.find(journal, messages, message)
+}
+
+internal val LocalToolCallDetailSource = compositionLocalOf<ToolCallDetailSource?>(referentialEqualityPolicy()) { null }
+
+@Composable
+internal fun rememberToolCallDetail(message: ToolActivityMessageUi): ToolCallDetail? {
+    val source = LocalToolCallDetailSource.current
+    return remember(source, message) { source?.find(message) }
+}
+
+/** 展开的终端行：输出默认显示前几行，可就地展开；退出码、耗时与截断说明在下方一行。 */
+@Composable
+internal fun TerminalOutputBlock(output: TerminalOutput, modifier: Modifier = Modifier) {
+    val text = remember(output) {
+        listOf(output.stdout, output.stderr).map(String::trimEnd).filter(String::isNotEmpty).joinToString("\n")
+    }
+    val lines = remember(text) { if (text.isEmpty()) emptyList() else text.lines() }
+    var showAll by rememberSaveable(text) { mutableStateOf(false) }
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (lines.isNotEmpty()) {
+            CodeBlock(
+                text = if (showAll) lines.take(MAX_INLINE_LINES).joinToString("\n")
+                    else lines.take(PREVIEW_LINES).joinToString("\n"),
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = terminalStatusLine(output),
+                style = MiuixTheme.textStyles.footnote2,
+                color = if (output.timedOut || (output.exitCode ?: 0) != 0) StatusError
+                    else MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.8f),
+                modifier = Modifier.weight(1f),
+            )
+            if (lines.size > PREVIEW_LINES) {
+                TextButton(
+                    text = if (showAll) stringResource(R.string.tool_output_collapse)
+                        else pluralStringResource(R.plurals.tool_output_show_all, lines.size, lines.size),
+                    onClick = { showAll = !showAll },
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                    minHeight = 32.dp,
+                    textStyle = MiuixTheme.textStyles.footnote1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun terminalStatusLine(output: TerminalOutput): String = buildList {
+    when {
+        output.timedOut -> add(stringResource(R.string.tool_detail_timed_out))
+        output.exitCode != null -> add(stringResource(R.string.tool_detail_exit_code, output.exitCode))
+    }
+    output.durationMs?.let { add(stringResource(R.string.tool_detail_seconds, formatSeconds(it))) }
+    if (output.truncated) add(stringResource(R.string.tool_detail_truncated_short))
+}.joinToString(" · ")
+
+/**
+ * 工具详情：完整调用参数与结果。内容取自会话记录，敏感工具与本轮未结束时给出说明，并退回到摘要。
+ */
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+internal fun ToolCallDetailDialog(
+    message: ToolActivityMessageUi,
+    show: Boolean,
+    onDismissRequest: () -> Unit,
+    onDismissFinished: () -> Unit,
+) {
+    val source = LocalToolCallDetailSource.current
+    val detail = rememberToolCallDetail(message)
+    val terminal = remember(detail) {
+        detail?.result?.takeIf { message.toolName in TERMINAL_TOOLS }?.let(ToolCallDetails::terminalOutput)
+    }
+    EtaWindowDialog(
+        show = show,
+        title = message.argumentsSummary.ifBlank { toolDisplayName(message.toolName) },
+        onDismissRequest = onDismissRequest,
+        onDismissFinished = onDismissFinished,
+    ) {
+        val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.7f).dp
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = maxHeight)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Pill(stringResource(message.status.labelRes()))
+                terminal?.let { output ->
+                    when {
+                        output.timedOut -> Pill(stringResource(R.string.tool_detail_timed_out))
+                        output.exitCode != null -> Pill(stringResource(R.string.tool_detail_exit_code, output.exitCode))
+                    }
+                    output.durationMs?.let { Pill(stringResource(R.string.tool_detail_seconds, formatSeconds(it))) }
+                }
+                Pill(message.toolName)
+            }
+            when {
+                detail == null -> {
+                    Note(stringResource(
+                        if (source?.runInProgress == true) R.string.tool_detail_pending else R.string.tool_detail_unavailable,
+                    ))
+                    message.command?.takeIf(String::isNotBlank)?.let { DetailSection(stringResource(R.string.shell_command), it) }
+                    message.resultSummary?.takeIf(String::isNotBlank)?.let {
+                        DetailSection(stringResource(R.string.tool_detail_result), it)
+                    }
+                }
+                detail.sensitive -> Note(stringResource(R.string.tool_detail_sensitive))
+                else -> {
+                    detail.argumentsJson?.let { arguments ->
+                        DetailSection(stringResource(R.string.tool_detail_arguments), remember(arguments) {
+                            ToolCallDetails.pretty(arguments)
+                        })
+                    }
+                    ToolResultSections(message, detail, terminal)
+                    Note(stringResource(R.string.tool_detail_source_note))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ToolResultSections(message: ToolActivityMessageUi, detail: ToolCallDetail, terminal: TerminalOutput?) {
+    val result = detail.result ?: return
+    if (terminal != null) {
+        val stdoutLines = remember(terminal) { terminal.stdout.trimEnd().takeIf(String::isNotEmpty)?.lines()?.size ?: 0 }
+        DetailSection(
+            title = pluralStringResource(R.plurals.tool_detail_stdout, stdoutLines, stdoutLines),
+            text = terminal.stdout.trimEnd().ifEmpty { stringResource(R.string.tool_detail_empty) },
+            copyText = terminal.stdout.takeIf(String::isNotBlank),
+        )
+        if (terminal.stderr.isNotBlank()) {
+            DetailSection(stringResource(R.string.tool_detail_stderr), terminal.stderr.trimEnd())
+        }
+        if (terminal.truncated) Note(stringResource(R.string.tool_detail_truncated))
+        return
+    }
+    when (message.toolName) {
+        "web_search" -> {
+            ToolCallDetails.searchQuery(detail.argumentsJson)?.let {
+                DetailSection(stringResource(R.string.tool_detail_search_query), it, monospace = false)
+            }
+            val results = remember(result) { ToolCallDetails.searchResults(result) }
+            if (results.isNotEmpty()) {
+                SectionTitle(pluralStringResource(R.plurals.tool_detail_search_results, results.size, results.size))
+                results.forEach { item -> LinkCard(item.title, item.url, item.snippet) }
+                return
+            }
+        }
+        "fetch_url" -> {
+            val page = remember(result) { ToolCallDetails.webPage(result) }
+            if (page != null) {
+                LinkCard(page.title, page.url, "")
+                LimitedSection(stringResource(R.string.tool_detail_page), page.text, monospace = false)
+                if (page.hasMore) Note(stringResource(R.string.tool_detail_page_more))
+                return
+            }
+        }
+    }
+    LimitedSection(stringResource(R.string.tool_detail_result), remember(result) { ToolCallDetails.pretty(result) })
+}
+
+@Composable
+private fun LimitedSection(title: String, text: String, monospace: Boolean = true) {
+    val limited = text.length > MAX_DETAIL_CHARS
+    DetailSection(title, if (limited) text.take(MAX_DETAIL_CHARS) else text, monospace = monospace, copyText = text)
+    if (limited) Note(stringResource(R.string.tool_detail_text_limited, MAX_DETAIL_CHARS))
+}
+
+@Composable
+private fun DetailSection(title: String, text: String, monospace: Boolean = true, copyText: String? = text) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionTitle(title, Modifier.weight(1f))
+            copyText?.let { CopyButton(it) }
+        }
+        CodeBlock(text, monospace = monospace)
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MiuixTheme.textStyles.footnote1,
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun CopyButton(text: String) {
+    @Suppress("DEPRECATION")
+    val clipboard = LocalClipboardManager.current
+    var copied by remember(text) { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1_400)
+            copied = false
+        }
+    }
+    TextButton(
+        text = stringResource(if (copied) R.string.copy_copied else R.string.ui_copy_4edd1d),
+        onClick = {
+            @Suppress("DEPRECATION")
+            clipboard.setText(AnnotatedString(text))
+            copied = true
+        },
+        colors = ButtonDefaults.textButtonColorsPrimary(),
+        minHeight = 28.dp,
+        textStyle = MiuixTheme.textStyles.footnote1,
+    )
+}
+
+@Composable
+private fun CodeBlock(text: String, monospace: Boolean = true) {
+    SelectionContainer {
+        Text(
+            text = text,
+            style = if (monospace) MiuixTheme.textStyles.footnote2.copy(fontFamily = FontFamily.Monospace)
+                else MiuixTheme.textStyles.footnote1,
+            color = MiuixTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .squircleSurface(color = MiuixTheme.colorScheme.surface, cornerRadius = 10.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        )
+    }
+}
+
+@Composable
+private fun LinkCard(title: String, url: String, snippet: String) {
+    val uriHandler = LocalUriHandler.current
+    val openable = url.startsWith("https://", ignoreCase = true) || url.startsWith("http://", ignoreCase = true)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .squircleSurface(color = MiuixTheme.colorScheme.surface, cornerRadius = 10.dp)
+            .then(if (openable) Modifier.clickable { runCatching { uriHandler.openUri(url) } } else Modifier)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        if (title.isNotBlank()) {
+            Text(
+                text = title,
+                style = MiuixTheme.textStyles.body2,
+                color = if (openable) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (url.isNotBlank()) {
+            Text(
+                text = url,
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (snippet.isNotBlank()) {
+            Text(
+                text = snippet,
+                style = MiuixTheme.textStyles.footnote2,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Pill(text: String) {
+    Text(
+        text = text,
+        style = MiuixTheme.textStyles.footnote2,
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        modifier = Modifier
+            .squircleSurface(color = MiuixTheme.colorScheme.surface, cornerRadius = 8.dp)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
+}
+
+@Composable
+private fun Note(text: String) {
+    Text(
+        text = text,
+        style = MiuixTheme.textStyles.footnote2,
+        color = MiuixTheme.colorScheme.onSurfaceVariantSummary.copy(alpha = 0.8f),
+    )
+}
+
+private fun ToolActivityStatusUi.labelRes(): Int = when (this) {
+    ToolActivityStatusUi.Running -> R.string.tool_status_running
+    ToolActivityStatusUi.Success -> R.string.tool_status_success
+    ToolActivityStatusUi.Failed -> R.string.tool_status_failed
+    ToolActivityStatusUi.Unknown -> R.string.tool_status_unknown
+}
+
+private fun formatSeconds(durationMs: Long): String =
+    if (durationMs < 10_000) "%.1f".format(Locale.ROOT, durationMs / 1_000.0) else (durationMs / 1_000).toString()
+
+internal val TERMINAL_TOOLS = setOf("terminal", "run_command")
+private const val PREVIEW_LINES = 6
+private const val MAX_INLINE_LINES = 200
+private const val MAX_DETAIL_CHARS = 20_000

@@ -527,6 +527,37 @@
   <string name="tool_status_running">Running</string>
   <string name="tool_status_success">Completed</string>
   <string name="tool_status_failed">Failed</string>
+  <string name="tool_detail_open">Details</string>
+  <string name="tool_detail_arguments">Arguments</string>
+  <string name="tool_detail_result">Result</string>
+  <plurals name="tool_detail_stdout">
+    <item quantity="one">Standard output · %d line</item>
+    <item quantity="other">Standard output · %d lines</item>
+  </plurals>
+  <string name="tool_detail_stderr">Standard error</string>
+  <string name="tool_detail_empty">(empty)</string>
+  <string name="tool_detail_truncated">The output exceeded the tool limit. The model also received the truncated output.</string>
+  <string name="tool_detail_truncated_short">Truncated</string>
+  <string name="tool_detail_sensitive">Arguments and results of sensitive tools are only used in the current turn and are not saved to the conversation.</string>
+  <string name="tool_detail_unavailable">Full content was not saved for this entry. Showing the summary.</string>
+  <string name="tool_detail_pending">Full content is available after this turn finishes.</string>
+  <string name="tool_detail_source_note">Content comes from the tool results saved in this conversation.</string>
+  <string name="tool_detail_exit_code">Exit code %1$d</string>
+  <string name="tool_detail_timed_out">Timed out</string>
+  <string name="tool_detail_seconds">%1$s s</string>
+  <string name="tool_detail_search_query">Query</string>
+  <plurals name="tool_detail_search_results">
+    <item quantity="one">%d result</item>
+    <item quantity="other">%d results</item>
+  </plurals>
+  <string name="tool_detail_page">Page content</string>
+  <string name="tool_detail_page_more">The page has more content that the model can continue reading.</string>
+  <string name="tool_detail_text_limited">Showing the first %1$d characters</string>
+  <plurals name="tool_output_show_all">
+    <item quantity="one">Show all (%d line)</item>
+    <item quantity="other">Show all (%d lines)</item>
+  </plurals>
+  <string name="tool_output_collapse">Collapse</string>
   <string name="tool_browser_loading">Loading · %1$d%%</string>
   <string name="tool_browser_preview">Page preview</string>
   <plurals name="work_processing_step">

@@ -5,7 +5,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,7 +16,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -52,6 +50,7 @@ import io.github.mangi.eta.agent.browser.BrowserSessionSnapshot
 import io.github.mangi.eta.agent.overlay.toolDisplayName
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
+import io.github.mangi.eta.ui.model.ToolCallDetails
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -123,11 +122,9 @@ internal fun ToolActivityRow(
         }
     }
     val subtitle = browserLine ?: outcome
-    // 结果只有一行且已作为结论显示时，展开不会带来新信息，不提供展开入口。
-    val resultDetail = message.resultSummary?.trim()?.takeIf { it.isNotEmpty() && it != outcome }
-    val hasDetail = !message.command.isNullOrBlank() ||
-        resultDetail != null ||
-        showBrowserShortcut
+    // 每个工具都能展开：至少有“详情”入口，完整参数与结果从会话记录读取。
+    var showDetail by remember(message.id) { mutableStateOf(false) }
+    var detailComposed by remember(message.id) { mutableStateOf(false) }
     val elapsedSeconds = rememberRunningSeconds(message.id, running)
 
     Column(modifier = modifier.fillMaxWidth()) {
@@ -136,7 +133,7 @@ internal fun ToolActivityRow(
                 .fillMaxWidth()
                 .heightIn(min = WorkRowHeight)
                 .clip(RoundedCornerShape(10.dp))
-                .then(if (hasDetail) Modifier.clickable { expanded = !expanded } else Modifier)
+                .clickable { expanded = !expanded }
                 .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -180,13 +177,11 @@ internal fun ToolActivityRow(
                     modifier = Modifier.padding(start = 8.dp),
                 )
             }
-            if (hasDetail) {
-                ExpandChevron(
-                    expanded = expanded,
-                    contentDescription = null,
-                    modifier = Modifier.padding(start = 6.dp, end = 8.dp),
-                )
-            }
+            ExpandChevron(
+                expanded = expanded,
+                contentDescription = null,
+                modifier = Modifier.padding(start = 6.dp, end = 8.dp),
+            )
         }
 
         AnimatedVisibility(visible = expanded) {
@@ -195,8 +190,20 @@ internal fun ToolActivityRow(
                 browserSnapshot = browserSnapshot,
                 showBrowserShortcut = showBrowserShortcut,
                 onOpenBrowser = onOpenBrowser,
+                onOpenDetail = {
+                    detailComposed = true
+                    showDetail = true
+                },
             )
         }
+    }
+    if (detailComposed) {
+        ToolCallDetailDialog(
+            message = message,
+            show = showDetail,
+            onDismissRequest = { showDetail = false },
+            onDismissFinished = { detailComposed = false },
+        )
     }
 }
 
@@ -296,7 +303,12 @@ private fun ToolActivityDetail(
     browserSnapshot: BrowserSessionSnapshot?,
     showBrowserShortcut: Boolean,
     onOpenBrowser: () -> Unit,
+    onOpenDetail: () -> Unit,
 ) {
+    val detail = rememberToolCallDetail(message)
+    val terminal = remember(detail) {
+        detail?.result?.takeIf { message.isTerminalTool() }?.let(ToolCallDetails::terminalOutput)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -307,7 +319,9 @@ private fun ToolActivityDetail(
             ToolCommandBlock(command = message.command, context = message.argumentsSummary)
         }
         val result = message.resultSummary?.takeIf(String::isNotBlank)
-        if (result != null) {
+        if (terminal != null) {
+            TerminalOutputBlock(terminal)
+        } else if (result != null) {
             SelectionContainer {
                 Text(
                     text = result,
@@ -333,7 +347,9 @@ private fun ToolActivityDetail(
             browserSnapshot?.takeIf { it.available }?.let { snapshot ->
                 BrowserPagePreview(snapshot = snapshot)
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            if (showBrowserShortcut) {
                 TextButton(
                     text = stringResource(R.string.ui_open_current_browser_58358e),
                     onClick = onOpenBrowser,
@@ -342,6 +358,13 @@ private fun ToolActivityDetail(
                     textStyle = MiuixTheme.textStyles.body2,
                 )
             }
+            TextButton(
+                text = stringResource(R.string.tool_detail_open),
+                onClick = onOpenDetail,
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+                minHeight = 36.dp,
+                textStyle = MiuixTheme.textStyles.body2,
+            )
         }
     }
 }
@@ -364,8 +387,7 @@ private fun rememberRunningSeconds(id: String, running: Boolean): Int? {
     return seconds
 }
 
-private fun ToolActivityMessageUi.isTerminalTool(): Boolean =
-    toolName == "terminal" || toolName == "run_command"
+private fun ToolActivityMessageUi.isTerminalTool(): Boolean = toolName in TERMINAL_TOOLS
 
 @Composable
 private fun ToolActivityStatusUi.dotColor() = when (this) {
@@ -547,6 +569,7 @@ private fun ToolCommandBlock(
                 .height(0.5.dp)
                 .background(MiuixTheme.colorScheme.outline.copy(alpha = 0.45f)),
         )
+        // 长命令自动换行，不再横向滑动。
         SelectionContainer {
             Text(
                 text = command,
@@ -554,7 +577,6 @@ private fun ToolCommandBlock(
                 color = MiuixTheme.colorScheme.onSurface,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             )
         }

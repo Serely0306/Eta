@@ -10,7 +10,7 @@ import org.json.JSONTokener
 internal object AgentConversationCodec {
 
     private const val IMAGE_OMITTED_TEXT = "[图片观察已在当前回合使用，未写入持久会话]"
-    private const val SENSITIVE_TOOL_OMITTED_TEXT =
+    const val SENSITIVE_TOOL_OMITTED_TEXT =
         "[敏感工具参数与原始结果仅供当前回合使用，未写入持久会话]"
     private val json = Json {
         ignoreUnknownKeys = true
