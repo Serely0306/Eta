@@ -1,8 +1,9 @@
 package io.github.mangi.eta.ui.preview
 
 import android.graphics.Bitmap
-import android.graphics.Canvas
+import android.os.Handler
 import android.os.Looper
+import android.view.PixelCopy
 import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -51,6 +52,7 @@ class UsageScreenshotTest {
     fun setUp() {
         assumeTrue(outputDir != null)
         outputDir!!.mkdirs()
+        System.setProperty("robolectric.pixelCopyRenderMode", "hardware")
         EtaDatabase.closeForTests()
         context.deleteDatabase("eta.db")
         SettingsDataStore.init(context)
@@ -110,8 +112,12 @@ class UsageScreenshotTest {
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50))
         }
         layout()
+        // miuix 的控件用 RuntimeShader 绘制，软件画布不支持，改用 PixelCopy 走 Robolectric 的硬件渲染。
         val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
-        view.draw(Canvas(bitmap))
+        var copyResult = -1
+        PixelCopy.request(activity.window, bitmap, { copyResult = it }, Handler(Looper.getMainLooper()))
+        shadowOf(Looper.getMainLooper()).idle()
+        check(copyResult == PixelCopy.SUCCESS) { "PixelCopy failed: $copyResult" }
         File(outputDir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         controller.pause().stop().destroy()
     }

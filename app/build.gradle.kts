@@ -126,6 +126,8 @@ android {
                 "--add-opens=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
                 "--enable-native-access=ALL-UNNAMED",
             )
+            // 界面截图测试用 PixelCopy 走硬件渲染（miuix 的 RuntimeShader 不支持软件画布）。
+            it.systemProperty("robolectric.pixelCopyRenderMode", "hardware")
         }
     }
 }
