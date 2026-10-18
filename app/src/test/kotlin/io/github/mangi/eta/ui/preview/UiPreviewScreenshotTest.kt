@@ -25,7 +25,10 @@ import io.github.mangi.eta.ui.screens.usage.UsagePricingScreen
 import io.github.mangi.eta.ui.screens.usage.UsageScreen
 import java.io.File
 import java.time.Duration
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
@@ -38,13 +41,13 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * 装机前的界面预览：用示例账本渲染用量页面并保存 PNG。只在设置了 ETA_SCREENSHOT_DIR 时运行
- * （PR Check 设置并上传为 ui-preview 产物）；本机单测跳过。
+ * 装机前的界面预览：用示例账本渲染用量页面，以及工具与思考的行内界面，保存 PNG。
+ * 只在设置了 ETA_SCREENSHOT_DIR 时运行（PR Check 设置并上传为 ui-preview 产物）；本机单测跳过。
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [36], qualifiers = "w411dp-h1400dp-xxhdpi")
-class UsageScreenshotTest {
+class UiPreviewScreenshotTest {
     private val context = RuntimeEnvironment.getApplication()
     private val outputDir = System.getenv("ETA_SCREENSHOT_DIR")?.takeIf { it.isNotBlank() }?.let(::File)
 
@@ -69,6 +72,14 @@ class UsageScreenshotTest {
                 ),
             ))
         }
+        // 页面从这些 Flow 读数据；先在后台线程确认它们都能出数据，截图为空时能区分是数据还是界面的问题。
+        runBlocking(Dispatchers.IO) {
+            withTimeout(FLOW_TIMEOUT_MS) {
+                ProviderRepository.providersFlow().first { it.isNotEmpty() }
+                ModelUsageLedger.recordsFlow(0, Long.MAX_VALUE).first { it.isNotEmpty() }
+                SettingsDataStore.usagePricingFlow().first { it.quotas.isNotEmpty() }
+            }
+        }
     }
 
     @Test
@@ -82,6 +93,7 @@ class UsageScreenshotTest {
         capture("usage-dashboard-$locale") { UsageScreen(onNavigate = {}, onBack = {}) }
         capture("usage-logs-$locale") { UsageLogsScreen(onBack = {}) }
         capture("usage-pricing-$locale") { UsagePricingScreen(onBack = {}) }
+        capture("agent-timeline-$locale") { AgentTimelinePreview() }
     }
 
     private fun capture(name: String, content: @Composable () -> Unit) {
@@ -105,11 +117,12 @@ class UsageScreenshotTest {
             )
             view.layout(0, 0, view.measuredWidth, view.measuredHeight)
         }
-        // Room 的 Flow 在后台线程查询，主线程循环推进几帧，等数据到达后再截图。
-        repeat(40) {
+        // Flow 在后台线程查询，结果投递回主线程；按真实时间等一段，期间不断推进主线程的帧。
+        val deadline = System.currentTimeMillis() + SETTLE_MS
+        while (System.currentTimeMillis() < deadline) {
             layout()
-            Thread.sleep(25)
-            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(50))
+            Thread.sleep(40)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(32))
         }
         layout()
         // miuix 的控件用 RuntimeShader 绘制，软件画布不支持，改用 PixelCopy 走 Robolectric 的硬件渲染。
@@ -158,5 +171,7 @@ class UsageScreenshotTest {
 
     private companion object {
         const val RELAY_ID = "relay-a"
+        const val FLOW_TIMEOUT_MS = 10_000L
+        const val SETTLE_MS = 4_000L
     }
 }
