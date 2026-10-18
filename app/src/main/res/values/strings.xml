@@ -1570,6 +1570,13 @@
   <string name="usage_group_no_usage">%1$d requests · the provider returned no usage, so no cost</string>
   <string name="usage_unpriced_short">No price</string>
   <string name="usage_logs">Request log</string>
+  <string name="usage_filter_provider">Provider</string>
+  <string name="usage_filter_purpose">Purpose</string>
+  <string name="usage_filter_all">All</string>
+  <plurals name="usage_filter_summary">
+    <item quantity="one">%1$d request · est. %2$s</item>
+    <item quantity="other">%1$d requests · est. %2$s</item>
+  </plurals>
   <string name="usage_pricing">Prices, multipliers and exchange rate</string>
   <string name="usage_export_csv">Export CSV</string>
   <string name="usage_exported">Exported</string>

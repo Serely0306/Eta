@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -576,16 +577,60 @@ internal fun UsageLogsScreen(onBack: () -> Unit) {
     val timeFormat = remember(range) {
         DateTimeFormatter.ofPattern(if (range == UsageRange.TODAY) "HH:mm:ss" else "MM/dd HH:mm").withZone(zone)
     }
+    // 筛选项只取当前时间范围里出现过的服务商与用途；换范围后原选项不在了就当作“全部”。
+    var providerFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var purposeFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    val providerOptions = remember(records) {
+        records.distinctBy { it.providerId }.map { it.providerId to it.providerName }.sortedBy { it.second.lowercase() }
+    }
+    val purposeOptions = remember(records) {
+        records.map(UsageReports::purposeKey).distinct().sortedBy { PURPOSE_ORDER.indexOf(it).let { i -> if (i < 0) Int.MAX_VALUE else i } }
+    }
+    val activeProvider = providerFilter?.takeIf { id -> providerOptions.any { it.first == id } }
+    val activePurpose = purposeFilter?.takeIf { it in purposeOptions }
+    val filtered = remember(records, activeProvider, activePurpose) {
+        records.filter { record ->
+            (activeProvider == null || record.providerId == activeProvider) &&
+                (activePurpose == null || UsageReports.purposeKey(record) == activePurpose)
+        }
+    }
+    val filteredCost = remember(filtered, resolver) { filtered.sumOf { resolver.cost(it) ?: 0.0 } }
     MiuixScaffoldPage(title = stringResource(R.string.usage_logs), onBack = onBack) {
         item(key = "range") { RangeSelector(range = range, onSelect = { range = it }) }
-        if (records.isEmpty()) {
+        if (records.isNotEmpty()) {
+            item(key = "filters") {
+                val all = stringResource(R.string.usage_filter_all)
+                EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
+                    EtaDropdownPreference(
+                        title = stringResource(R.string.usage_filter_provider),
+                        items = listOf(DropdownItem(text = all)) + providerOptions.map { DropdownItem(text = it.second) },
+                        selectedIndex = providerOptions.indexOfFirst { it.first == activeProvider } + 1,
+                        onSelectedIndexChange = { index -> providerFilter = providerOptions.getOrNull(index - 1)?.first },
+                    )
+                    EtaPreferenceDivider(hasLeading = false)
+                    EtaDropdownPreference(
+                        title = stringResource(R.string.usage_filter_purpose),
+                        items = listOf(DropdownItem(text = all)) + purposeOptions.map { DropdownItem(text = purposeLabel(it)) },
+                        selectedIndex = purposeOptions.indexOf(activePurpose) + 1,
+                        onSelectedIndexChange = { index -> purposeFilter = purposeOptions.getOrNull(index - 1) },
+                    )
+                }
+                Text(
+                    text = pluralStringResource(R.plurals.usage_filter_summary, filtered.size, filtered.size, formatUsd(filteredCost)),
+                    style = MiuixTheme.textStyles.footnote2,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier.padding(horizontal = 28.dp).padding(bottom = 8.dp),
+                )
+            }
+        }
+        if (filtered.isEmpty()) {
             item(key = "empty") {
                 EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp)) {
                     EtaPreference(summary = stringResource(R.string.usage_empty))
                 }
             }
         }
-        records.forEach { record ->
+        filtered.forEach { record ->
             item(key = "record-${record.id}") {
                 val open = record.id in expanded
                 val cost = resolver.cost(record)
@@ -908,6 +953,9 @@ private fun PriceField(label: String, value: String, onChange: (String) -> Unit)
 }
 
 private const val LOG_ROWS = 500
+
+/** 用途筛选的显示顺序。 */
+private val PURPOSE_ORDER = listOf("chat", UsageReports.PURPOSE_SUBAGENT, "compaction", "reply_rewrite", "transcript_refine")
 private const val WARN_PERCENT = 80
 
 internal fun formatUsd(value: Double): String = when {

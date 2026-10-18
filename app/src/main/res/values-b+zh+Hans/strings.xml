@@ -1545,6 +1545,12 @@
   <string name="usage_group_no_usage">%1$d 次请求 · 服务商未返回用量，无法计费</string>
   <string name="usage_unpriced_short">未计费</string>
   <string name="usage_logs">使用记录</string>
+  <string name="usage_filter_provider">服务商</string>
+  <string name="usage_filter_purpose">用途</string>
+  <string name="usage_filter_all">全部</string>
+  <plurals name="usage_filter_summary">
+    <item quantity="other">%1$d 次请求 · 估算 %2$s</item>
+  </plurals>
   <string name="usage_pricing">价格、倍率与汇率</string>
   <string name="usage_export_csv">导出 CSV</string>
   <string name="usage_exported">已导出</string>
