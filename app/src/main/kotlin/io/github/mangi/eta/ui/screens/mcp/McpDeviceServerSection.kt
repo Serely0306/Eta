@@ -31,6 +31,7 @@ import io.github.mangi.eta.agent.mcp.server.EtaMcpServerController
 import io.github.mangi.eta.agent.mcp.server.EtaMcpServerSettings
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.ui.components.EtaArrowPreference
+import io.github.mangi.eta.ui.components.EtaDropdownPreference
 import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
@@ -38,7 +39,10 @@ import io.github.mangi.eta.ui.components.EtaSwitchPreference
 import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.GroupedModelChecklist
 import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.effortDropdownItems
+import io.github.mangi.eta.ui.components.entryEffortOptions
 import io.github.mangi.eta.ui.components.modelChoiceGroups
+import io.github.mangi.eta.ui.components.reasoningCapabilitiesFor
 import io.github.mangi.eta.ui.components.unavailableModelLabel
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Text
@@ -196,6 +200,7 @@ internal fun McpDeviceServerSection() {
         )
         val listed = modelGroups.flatMap { group -> group.models.map { it.id } }
         val deletedLabel = stringResource(R.string.model_selection_deleted)
+        val followDefaultEffortLabel = stringResource(R.string.reasoning_effort_follow_default)
         GroupedModelChecklist(
             groups = modelGroups,
             checkedIds = privacy.taskModelIds,
@@ -208,7 +213,34 @@ internal fun McpDeviceServerSection() {
                 val chosen = if (checked) privacy.taskModelIds + id else privacy.taskModelIds - id
                 // 按列表顺序保存，靠前的为默认；暂时停用的模型保留勾选，重新启用后继续生效。
                 val ordered = listed.filter { it in chosen } + chosen.filter { it !in listed }
-                updatePrivacy(privacy.copy(taskModelIds = ordered.distinct()))
+                updatePrivacy(
+                    privacy.copy(
+                        taskModelIds = ordered.distinct(),
+                        taskModelEfforts = privacy.taskModelEfforts.filterKeys { it in ordered },
+                    ),
+                )
+            },
+            // 每个勾选模型的强度；电脑端调用时仍可用 reasoning_effort 覆盖。
+            checkedExtra = { modelId ->
+                val capabilities = reasoningCapabilitiesFor(providers, modelId)
+                if (capabilities != null) {
+                    val options = entryEffortOptions(capabilities)
+                    EtaDropdownPreference(
+                        title = stringResource(R.string.reasoning_effort_title),
+                        items = effortDropdownItems(options, followDefaultEffortLabel, capabilities.defaultEffort),
+                        selectedIndex = options.indexOf(privacy.taskModelEfforts[modelId]).coerceAtLeast(0),
+                        onSelectedIndexChange = { index ->
+                            val effort = options.getOrNull(index)
+                            val efforts = if (effort == null) {
+                                privacy.taskModelEfforts - modelId
+                            } else {
+                                privacy.taskModelEfforts + (modelId to effort)
+                            }
+                            updatePrivacy(privacy.copy(taskModelEfforts = efforts))
+                        },
+                        modifier = Modifier.padding(start = 40.dp),
+                    )
+                }
             },
         )
     }

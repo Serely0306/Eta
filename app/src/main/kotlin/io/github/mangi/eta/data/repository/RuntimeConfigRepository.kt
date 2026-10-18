@@ -14,6 +14,7 @@ import io.github.mangi.eta.data.model.OpenAiCompatibleProviderSetting
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.model.ReasoningSettings
 import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.model.runtimeProviderType
 import io.github.mangi.eta.data.model.selectedOrFirstModel
@@ -101,12 +102,51 @@ internal object RuntimeConfigRepository {
         return syncToRemotePreferences(service)
     }
 
+    fun reasoningSettingsFlow() = SettingsDataStore.reasoningSettingsFlow()
+
+    suspend fun reasoningSettings(): ReasoningSettings = SettingsDataStore.reasoningSettings()
+
+    /** 厂商助手的强度可能跟随全局默认，两者变化都要刷新 RemotePreferences 中的快照。 */
+    suspend fun setReasoningSettings(settings: ReasoningSettings, service: XposedService?): Boolean {
+        SettingsDataStore.setReasoningSettings(settings)
+        return syncToRemotePreferences(service)
+    }
+
     /**
      * RemotePreferences 中的模型快照只由厂商助手入口（小爱、小布）读取；Eta 自有入口在 Runtime
-     * 侧使用默认模型。单独选择的模型停用或删除时回落到默认模型。
+     * 侧按各自的设置解析。单独选择的模型停用或删除时回落到默认模型。
      */
     suspend fun vendorAssistantRuntimeConfig(): AgentModelClient.ModelConfig? =
-        runtimeConfigFor(SettingsDataStore.vendorAssistantModelId())
+        entryRuntimeConfig(SettingsDataStore.vendorAssistantModelId(), SettingsDataStore.reasoningSettings().vendorEffort)
+
+    /** Eta 语音入口（电源键、助理浮层）：单独选的模型与强度，模型不可用时回落到默认模型。 */
+    suspend fun voiceRuntimeConfig(): AgentModelClient.ModelConfig? {
+        val settings = SettingsDataStore.reasoningSettings()
+        return entryRuntimeConfig(settings.voiceModelId, settings.voiceEffort)
+    }
+
+    /**
+     * 入口单独选择的模型与强度：模型为空或不可用时用默认模型，强度为空时用全局默认强度。
+     * 自动任务与厂商助手共用这一规则。
+     */
+    suspend fun entryRuntimeConfig(modelId: String?, effort: ReasoningEffort?): AgentModelClient.ModelConfig? {
+        val config = runtimeConfigFor(modelId) ?: return null
+        return withReasoningEffort(config, effort, SettingsDataStore.reasoningSettings().defaultEffort)
+    }
+
+    /**
+     * 入口单独设置的强度优先，其次 [defaultEffort]；按模型能力就近取档。模型不支持思考时保持原配置。
+     * 思考权限关闭时仍由 AgentRuntimePolicy 统一改为 Off。
+     */
+    fun withReasoningEffort(
+        config: AgentModelClient.ModelConfig,
+        requested: ReasoningEffort?,
+        defaultEffort: ReasoningEffort,
+    ): AgentModelClient.ModelConfig {
+        val capabilities = config.reasoningCapabilities ?: return config
+        val effort = capabilities.normalize(requested ?: defaultEffort)
+        return config.copy(reasoningEffort = effort, thinkingEnabled = effort.enablesReasoning)
+    }
 
     fun modelFallbackFlow() = SettingsDataStore.modelFallbackFlow()
 
@@ -114,7 +154,8 @@ internal object RuntimeConfigRepository {
 
     /**
      * 按回退链顺序构造备用模型配置；停用、删除或与主模型相同的条目跳过。
-     * 工具开关沿用主模型配置，由 Runtime 再与本地权限取交集。
+     * 工具开关沿用主模型配置，由 Runtime 再与本地权限取交集。强度用该条目单独设置的值，
+     * 没有设置时跟随主模型本次的强度，都按备用模型的能力就近取档。
      * [allowedModelIds] 非空时只保留其中的模型（电脑端任务限定了可用模型时使用）。
      */
     suspend fun modelFallbackPolicy(
@@ -127,7 +168,13 @@ internal object RuntimeConfigRepository {
         ProviderRepository.ensureBuiltInsMerged()
         val providers = ProviderRepository.allProviders()
         val configs = modelIds.mapNotNull { id ->
-            providers.enabledModel(id)?.let { (provider, model) -> buildRuntimeConfig(provider, model) }
+            providers.enabledModel(id)?.let { (provider, model) ->
+                withReasoningEffort(
+                    buildRuntimeConfig(provider, model),
+                    requested = settings.efforts[id],
+                    defaultEffort = primary.effectiveReasoningEffort,
+                )
+            }
         }.filterNot { it.providerId == primary.providerId && it.model == primary.model }
             .map { config ->
                 config.copy(

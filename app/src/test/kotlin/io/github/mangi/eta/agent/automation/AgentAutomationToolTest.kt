@@ -49,6 +49,18 @@ class AgentAutomationToolTest {
 
         val listed = call(JSONObject().put("action", "list"))
         assertEquals(1, listed.getInt("count"))
+        assertEquals("default", listed.getJSONArray("automations").getJSONObject(0).getString("model"))
+        assertEquals("follow_default", listed.getJSONArray("automations").getJSONObject(0).getString("reasoning_effort"))
+
+        val withEffort = call(JSONObject().put("action", "update").put("id", id).put("reasoning_effort", "high"))
+        assertEquals("high", withEffort.getJSONObject("automation").getString("reasoning_effort"))
+        assertEquals(io.github.mangi.eta.data.model.ReasoningEffort.HIGH, AgentAutomationStore.get(id)?.reasoningEffort)
+        val reset = call(JSONObject().put("action", "update").put("id", id).put("reasoning_effort", ""))
+        assertEquals("follow_default", reset.getJSONObject("automation").getString("reasoning_effort"))
+        assertEquals(
+            "INVALID_ARGUMENT",
+            call(JSONObject().put("action", "update").put("id", id).put("reasoning_effort", "turbo")).getString("code"),
+        )
 
         assertTrue(call(JSONObject().put("action", "delete").put("id", id)).getBoolean("ok"))
         assertEquals(0, call(JSONObject().put("action", "list")).getInt("count"))

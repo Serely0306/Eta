@@ -17,7 +17,10 @@ import io.github.mangi.eta.data.model.AppearanceSettings
 import io.github.mangi.eta.data.model.AppearanceThemeMode
 import io.github.mangi.eta.data.model.AppearanceTopBarBlurStyle
 import io.github.mangi.eta.data.model.ModelFallbackSettings
+import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.model.ReasoningSettings
 import io.github.mangi.eta.data.model.SpeechSettings
+import org.json.JSONObject
 import kotlinx.serialization.json.Json
 import io.github.mangi.eta.data.model.Settings
 import java.io.IOException
@@ -52,6 +55,11 @@ internal object SettingsDataStore {
     private val VENDOR_ASSISTANT_MODEL_ID = stringPreferencesKey("vendor_assistant_model_id")
     private val MODEL_FALLBACK_IDS = stringPreferencesKey("model_fallback_ids")
     private val MODEL_FALLBACK_ON_CONTENT_FILTER = booleanPreferencesKey("model_fallback_on_content_filter")
+    private val MODEL_FALLBACK_EFFORTS = stringPreferencesKey("model_fallback_efforts")
+    private val DEFAULT_REASONING_EFFORT = stringPreferencesKey("default_reasoning_effort")
+    private val VOICE_MODEL_ID = stringPreferencesKey("voice_model_id")
+    private val VOICE_REASONING_EFFORT = stringPreferencesKey("voice_reasoning_effort")
+    private val VENDOR_ASSISTANT_REASONING_EFFORT = stringPreferencesKey("vendor_assistant_reasoning_effort")
     private val OFFICIAL_MODEL_CATALOG_REVISION = intPreferencesKey("official_model_catalog_revision")
     private val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
     private val LINUX_DISTRIBUTION = stringPreferencesKey("linux_distribution")
@@ -227,10 +235,12 @@ internal object SettingsDataStore {
                 }
             }
             .map { prefs ->
+                val modelIds = prefs[MODEL_FALLBACK_IDS].orEmpty().split(',').map(String::trim).filter(String::isNotEmpty)
+                    .distinct().take(ModelFallbackSettings.MAX_MODELS)
                 ModelFallbackSettings(
-                    modelIds = prefs[MODEL_FALLBACK_IDS].orEmpty().split(',').map(String::trim).filter(String::isNotEmpty)
-                        .distinct().take(ModelFallbackSettings.MAX_MODELS),
+                    modelIds = modelIds,
                     onContentFilter = prefs[MODEL_FALLBACK_ON_CONTENT_FILTER] ?: false,
+                    efforts = decodeEfforts(prefs[MODEL_FALLBACK_EFFORTS]).filterKeys { it in modelIds },
                 )
             }
     }
@@ -240,12 +250,52 @@ internal object SettingsDataStore {
     suspend fun setModelFallback(settings: ModelFallbackSettings) {
         ensureInitialized()
         dataStore.edit { prefs ->
-            prefs.putOrRemove(
-                MODEL_FALLBACK_IDS,
-                settings.modelIds.distinct().take(ModelFallbackSettings.MAX_MODELS).joinToString(",").ifEmpty { null },
-            )
+            val modelIds = settings.modelIds.distinct().take(ModelFallbackSettings.MAX_MODELS)
+            prefs.putOrRemove(MODEL_FALLBACK_IDS, modelIds.joinToString(",").ifEmpty { null })
             prefs[MODEL_FALLBACK_ON_CONTENT_FILTER] = settings.onContentFilter
+            prefs.putOrRemove(MODEL_FALLBACK_EFFORTS, encodeEfforts(settings.efforts.filterKeys { it in modelIds }))
         }
+    }
+
+    fun reasoningSettingsFlow(): Flow<ReasoningSettings> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause ->
+                if (cause is IOException) emit(emptyPreferences()) else throw cause
+            }
+            .map { prefs ->
+                ReasoningSettings(
+                    defaultEffort = ReasoningEffort.fromWireValue(prefs[DEFAULT_REASONING_EFFORT])
+                        ?: ReasoningEffort.DEFAULT,
+                    voiceModelId = prefs[VOICE_MODEL_ID],
+                    voiceEffort = ReasoningEffort.fromWireValue(prefs[VOICE_REASONING_EFFORT]),
+                    vendorEffort = ReasoningEffort.fromWireValue(prefs[VENDOR_ASSISTANT_REASONING_EFFORT]),
+                )
+            }
+    }
+
+    suspend fun reasoningSettings(): ReasoningSettings = reasoningSettingsFlow().first()
+
+    suspend fun setReasoningSettings(settings: ReasoningSettings) {
+        ensureInitialized()
+        dataStore.edit { prefs ->
+            prefs[DEFAULT_REASONING_EFFORT] = settings.defaultEffort.wireValue
+            prefs.putOrRemove(VOICE_MODEL_ID, settings.voiceModelId)
+            prefs.putOrRemove(VOICE_REASONING_EFFORT, settings.voiceEffort?.wireValue)
+            prefs.putOrRemove(VENDOR_ASSISTANT_REASONING_EFFORT, settings.vendorEffort?.wireValue)
+        }
+    }
+
+    private fun encodeEfforts(efforts: Map<String, ReasoningEffort>): String? =
+        efforts.takeIf { it.isNotEmpty() }
+            ?.let { JSONObject().apply { it.forEach { (id, effort) -> put(id, effort.wireValue) } }.toString() }
+
+    /** 读不出的条目视为跟随主模型，不因格式问题阻断回退链。 */
+    private fun decodeEfforts(raw: String?): Map<String, ReasoningEffort> {
+        val json = raw?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return emptyMap()
+        return json.keys().asSequence().mapNotNull { id ->
+            ReasoningEffort.fromWireValue(json.optString(id))?.let { id to it }
+        }.toMap()
     }
 
     suspend fun clearSelectedModelIdForProvider(providerId: String) {

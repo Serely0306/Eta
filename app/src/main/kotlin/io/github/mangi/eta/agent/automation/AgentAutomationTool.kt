@@ -2,10 +2,14 @@ package io.github.mangi.eta.agent.automation
 
 import android.content.Context
 import io.github.mangi.eta.agent.model.AgentToolSchema
+import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.repository.ProviderRepository
+import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -37,8 +41,27 @@ internal class AgentAutomationTool(
     private fun list(): JSONObject {
         val items = JSONArray()
         AgentAutomationStore.all().forEach { items.put(describe(it)) }
+        val models = JSONArray()
+        availableModels().forEach { (id, label, efforts) ->
+            models.put(JSONObject().put("id", id).put("name", label).put("reasoning_efforts", JSONArray(efforts)))
+        }
         return JSONObject().put("ok", true).put("automations", items).put("count", items.length())
             .put("exact_alarms_allowed", AgentAutomationScheduler.exactAlarmsAllowed(context))
+            .put("models", models)
+    }
+
+    /** 可指定给自动任务的模型：已启用服务商下的已启用模型，附可选的思考强度。读不到服务商时为空，不影响其余操作。 */
+    private fun availableModels(): List<Triple<String, String, List<String>>> = runCatching {
+        runBlocking { ProviderRepository.allProviders() }
+    }.getOrDefault(emptyList()).filter { it.isEnabled }.flatMap { provider ->
+        provider.models.filter { it.isEnabled }.sortedBy { it.sortOrder }.map { model ->
+            Triple(
+                model.id,
+                "${provider.name} / ${model.displayName}",
+                RuntimeConfigRepository.reasoningCapabilities(provider, model)
+                    ?.selectableEfforts?.map { it.wireValue }.orEmpty(),
+            )
+        }
     }
 
     private fun save(args: JSONObject, existing: AgentAutomation?): JSONObject {
@@ -50,6 +73,18 @@ internal class AgentAutomationTool(
         require(prompt.length <= AgentAutomation.MAX_PROMPT_CHARS) { "prompt 最长 ${AgentAutomation.MAX_PROMPT_CHARS} 字" }
         val trigger = args.optJSONObject("trigger")?.let(::parseTrigger) ?: existing?.trigger
             ?: throw IllegalArgumentException("缺少 trigger")
+        // 传空字符串表示改回跟随默认；不传则保持原值。
+        val modelId = if (args.has("model")) args.optString("model").trim().ifEmpty { null } else existing?.modelId
+        if (args.has("model") && modelId != null) {
+            require(availableModels().any { it.first == modelId }) { "model 不在可用模型中，先 list 查看 models" }
+        }
+        val effort = if (args.has("reasoning_effort")) {
+            args.optString("reasoning_effort").trim().ifEmpty { null }?.let { raw ->
+                ReasoningEffort.fromWireValue(raw) ?: throw IllegalArgumentException("reasoning_effort 无效：$raw")
+            }
+        } else {
+            existing?.reasoningEffort
+        }
         val automation = AgentAutomation(
             id = existing?.id ?: UUID.randomUUID().toString(),
             name = name,
@@ -60,6 +95,8 @@ internal class AgentAutomationTool(
             lastRunAt = existing?.lastRunAt,
             lastStatus = existing?.lastStatus,
             lastSummary = existing?.lastSummary,
+            modelId = modelId,
+            reasoningEffort = effort,
         )
         if (!AgentAutomationStore.upsert(automation)) {
             return failure("AUTOMATION_LIMIT", "最多保存 ${AgentAutomation.MAX_AUTOMATIONS} 个自动任务，或配置写入失败")
@@ -130,6 +167,8 @@ internal class AgentAutomationTool(
         .put("prompt", automation.prompt)
         .put("enabled", automation.enabled)
         .put("trigger", describeTrigger(automation.trigger))
+        .put("model", automation.modelId ?: "default")
+        .put("reasoning_effort", automation.reasoningEffort?.wireValue ?: "follow_default")
         .apply {
             AutomationSchedule.nextFireAt(automation, now(), zone())?.let { put("next_run", format(it)) }
             automation.lastRunAt?.let { put("last_run", format(it)) }
@@ -171,6 +210,11 @@ internal class AgentAutomationTool(
                     .put("name", JSONObject().put("type", "string").put("maxLength", AgentAutomation.MAX_NAME_CHARS))
                     .put("prompt", JSONObject().put("type", "string").put("maxLength", AgentAutomation.MAX_PROMPT_CHARS))
                     .put("enabled", JSONObject().put("type", "boolean"))
+                    .put("model", JSONObject().put("type", "string")
+                        .put("description", "可选；执行用的模型 id，取自 list 返回的 models。省略或传空字符串时用 Eta 的默认模型"))
+                    .put("reasoning_effort", JSONObject().put("type", "string")
+                        .put("description", "可选；思考强度（off、default、minimal、low、medium、high、xhigh、max）。" +
+                            "省略或传空字符串时跟随全局默认强度；模型不支持的档位按最接近的较低档执行"))
                     .put("trigger", JSONObject().put("type", "object").put("required", JSONArray().put("type"))
                         .put("properties", JSONObject()
                             .put("type", JSONObject().put("type", "string")

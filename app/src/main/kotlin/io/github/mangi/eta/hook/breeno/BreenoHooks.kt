@@ -565,12 +565,11 @@ internal object BreenoHooks {
                 var ackRunId: String? = null
                 val modelResponse = runCatching {
                     val baseConfig = AgentModelClient.loadConfig()
+                    // 快速 / 深度思考只是开关：深度思考沿用厂商助手设置的强度。
                     val config = request.thinkingEnabledOverride
                         ?.let {
-                            baseConfig.copy(
-                                thinkingEnabled = it,
-                                reasoningEffort = ReasoningEffort.fromLegacy(it),
-                            )
+                            val effort = ReasoningEffort.forToggle(it, baseConfig.effectiveReasoningEffort)
+                            baseConfig.copy(thinkingEnabled = effort.enablesReasoning, reasoningEffort = effort)
                         }
                         ?: baseConfig
                     val context = AgentAppContext.resolve()

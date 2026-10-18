@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.automation
 
+import io.github.mangi.eta.data.model.ReasoningEffort
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.LocalDateTime
@@ -25,6 +26,10 @@ internal data class AgentAutomation(
     val lastRunAt: Long? = null,
     val lastStatus: String? = null,
     val lastSummary: String? = null,
+    /** 执行用的模型（[io.github.mangi.eta.data.model.Model.id]）；为空或不可用时用默认模型。 */
+    val modelId: String? = null,
+    /** 执行用的思考强度；为空时跟随全局默认强度。 */
+    val reasoningEffort: ReasoningEffort? = null,
 ) {
     companion object {
         const val STATUS_COMPLETED = "completed"

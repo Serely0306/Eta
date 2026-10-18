@@ -34,8 +34,18 @@ import io.github.mangi.eta.agent.automation.AgentAutomationStore
 import io.github.mangi.eta.agent.automation.AutomationSchedule
 import io.github.mangi.eta.agent.automation.AutomationTrigger
 import io.github.mangi.eta.agent.device.AgentNotificationHistoryService
+import io.github.mangi.eta.data.model.ProviderSetting
+import io.github.mangi.eta.data.repository.ProviderRepository
+import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.components.EtaArrowPreference
 import io.github.mangi.eta.ui.components.EtaDropdownPreference
+import io.github.mangi.eta.ui.components.EtaModelSelectPreference
+import io.github.mangi.eta.ui.components.ModelEffortSelection
+import io.github.mangi.eta.ui.components.modelChoiceGroups
+import io.github.mangi.eta.ui.components.modelSelectionSummary
+import io.github.mangi.eta.ui.components.reasoningCapabilitiesFor
+import io.github.mangi.eta.ui.components.reasoningEffortLabel
+import io.github.mangi.eta.ui.model.AgentModelProviderGroupUi
 import io.github.mangi.eta.ui.components.EtaPreferenceGroup
 import io.github.mangi.eta.ui.components.EtaPreferenceGroupTitle
 import io.github.mangi.eta.ui.components.EtaSwitchPreference
@@ -63,6 +73,9 @@ internal fun AutomationsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val resources = LocalResources.current
     val automations by remember { AgentAutomationStore.flow() }.collectAsState()
+    val providers by remember { ProviderRepository.providersFlow() }.collectAsState(initial = emptyList())
+    val defaultModelId by remember { RuntimeConfigRepository.selectedModelIdFlow() }.collectAsState(initial = null)
+    val modelGroups = remember(providers) { modelChoiceGroups(providers) }
     var editing by remember { mutableStateOf<AgentAutomation?>(null) }
     var creating by remember { mutableStateOf(false) }
     val exactAllowed = remember(automations) { AgentAutomationScheduler.exactAlarmsAllowed(context) }
@@ -129,7 +142,7 @@ internal fun AutomationsScreen(onBack: () -> Unit) {
                     automations.forEach { automation ->
                         EtaSwitchPreference(
                             title = automation.name,
-                            summary = automationSummary(automation),
+                            summary = automationSummary(automation, providers, modelGroups),
                             checked = automation.enabled,
                             onCheckedChange = { enabled -> save(automation.copy(enabled = enabled)) },
                             bottomAction = {
@@ -159,6 +172,9 @@ internal fun AutomationsScreen(onBack: () -> Unit) {
     if (creating || editing != null) {
         AutomationEditor(
             initial = editing,
+            providers = providers,
+            modelGroups = modelGroups,
+            defaultModelId = defaultModelId,
             onDismiss = {
                 creating = false
                 editing = null
@@ -180,8 +196,24 @@ internal fun AutomationsScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun automationSummary(automation: AgentAutomation): String {
+private fun automationSummary(
+    automation: AgentAutomation,
+    providers: List<ProviderSetting>,
+    modelGroups: List<AgentModelProviderGroupUi>,
+): String {
     val trigger = triggerSummary(automation.trigger)
+    // 写明执行条件：模型不可用时 Runtime 回落到默认模型，摘要里会显示“（已停用）”。
+    val execution = stringResource(
+        R.string.automation_model_effort_summary,
+        modelSelectionSummary(
+            providers,
+            modelGroups,
+            automation.modelId,
+            stringResource(R.string.settings_vendor_assistant_model_follow_default),
+        ),
+        automation.reasoningEffort?.let { reasoningEffortLabel(it) }
+            ?: stringResource(R.string.reasoning_effort_follow_default),
+    )
     val last = automation.lastRunAt?.let { at ->
         val status = when (automation.lastStatus) {
             AgentAutomation.STATUS_COMPLETED -> stringResource(R.string.automation_status_completed)
@@ -190,7 +222,7 @@ private fun automationSummary(automation: AgentAutomation): String {
         }
         stringResource(R.string.automation_last_run, format(at), status)
     }
-    return listOfNotNull(trigger, last).joinToString("\n")
+    return listOfNotNull(trigger, execution, last).joinToString("\n")
 }
 
 @Composable
@@ -224,6 +256,9 @@ private enum class DayPreset(val days: Set<Int>) { EVERY_DAY(emptySet()), WORKDA
 @Composable
 private fun AutomationEditor(
     initial: AgentAutomation?,
+    providers: List<ProviderSetting>,
+    modelGroups: List<AgentModelProviderGroupUi>,
+    defaultModelId: String?,
     onDismiss: () -> Unit,
     onSave: (AgentAutomation) -> Unit,
     onDelete: (() -> Unit)?,
@@ -232,6 +267,8 @@ private fun AutomationEditor(
     val trigger = initial?.trigger
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
     var prompt by remember { mutableStateOf(initial?.prompt.orEmpty()) }
+    var modelId by remember { mutableStateOf(initial?.modelId) }
+    var reasoningEffort by remember { mutableStateOf(initial?.reasoningEffort) }
     var kind by remember {
         mutableStateOf(
             when (trigger) {
@@ -303,6 +340,8 @@ private fun AutomationEditor(
             lastRunAt = initial?.lastRunAt,
             lastStatus = initial?.lastStatus,
             lastSummary = initial?.lastSummary,
+            modelId = modelId,
+            reasoningEffort = reasoningEffort,
         )
     }
 
@@ -319,6 +358,22 @@ private fun AutomationEditor(
                 singleLine = true, modifier = Modifier.fillMaxWidth())
             TextField(value = prompt, onValueChange = { prompt = it }, label = stringResource(R.string.automation_prompt),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp))
+            EtaModelSelectPreference(
+                title = stringResource(R.string.automation_model),
+                providers = providers,
+                groups = modelGroups,
+                selectedId = modelId,
+                emptyOptionLabel = stringResource(R.string.settings_vendor_assistant_model_follow_default),
+                effort = ModelEffortSelection(
+                    selected = reasoningEffort,
+                    followLabel = stringResource(R.string.reasoning_effort_follow_default),
+                    capabilitiesFor = { id -> reasoningCapabilitiesFor(providers, id ?: defaultModelId) },
+                ),
+                onSelect = { id, effort ->
+                    modelId = id
+                    reasoningEffort = effort
+                },
+            )
             val kindLabels = listOf(
                 stringResource(R.string.automation_trigger_daily),
                 stringResource(R.string.automation_trigger_interval),

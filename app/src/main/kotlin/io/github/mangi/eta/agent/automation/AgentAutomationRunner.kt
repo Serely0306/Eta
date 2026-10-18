@@ -12,6 +12,7 @@ import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.runtime.AgentExecutionService
 import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
 import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
+import io.github.mangi.eta.agent.runtime.AgentRuntimeRequestConfigResolver
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.runtime.ExternalArchiveIds
 import io.github.mangi.eta.core.AndroidAgentLogger
@@ -20,6 +21,7 @@ import io.github.mangi.eta.ui.MainActivity
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
+import org.json.JSONObject
 
 /**
  * 执行一次自动任务：以“自动任务”入口提交给 Runtime，同一任务的历次运行归档进同一会话，结束后发通知。
@@ -115,6 +117,13 @@ internal object AgentAutomationRunner {
                         userText = prompt,
                         conversationKey = automation.id,
                         title = automation.name,
+                        // Runtime 按此解析模型与强度；为空时用默认模型与全局默认强度。
+                        adapterPayload = JSONObject().apply {
+                            automation.modelId?.let { put(AgentRuntimeRequestConfigResolver.PAYLOAD_MODEL_ID, it) }
+                            automation.reasoningEffort?.let {
+                                put(AgentRuntimeRequestConfigResolver.PAYLOAD_REASONING_EFFORT, it.wireValue)
+                            }
+                        },
                     ).toJson(),
                 ),
                 modelSessionId = "${AgentRuntimeWire.AUTOMATION_HANDOFF_SOURCE}:$runId",

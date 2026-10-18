@@ -33,6 +33,7 @@ internal fun AgentHomeScreen(
             isStreaming = state.isStreaming,
             reasoningEffort = state.reasoningEffort,
             availableReasoningEfforts = state.availableReasoningEfforts,
+            providerDefaultEffort = state.providerDefaultEffort,
             pendingImages = state.pendingImages,
             pendingFileReferences = state.pendingFileReferences,
             messageEdit = state.messageEdit,

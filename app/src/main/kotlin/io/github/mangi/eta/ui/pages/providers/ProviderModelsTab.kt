@@ -68,6 +68,7 @@ import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.components.EtaArrowPreference
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.EtaCheckboxPreference
+import io.github.mangi.eta.ui.components.reasoningEffortLabel
 import io.github.mangi.eta.ui.components.EtaOverlayDialog
 import io.github.mangi.eta.ui.components.EtaPreferenceColors
 import io.github.mangi.eta.ui.components.EtaPreferenceDivider
@@ -855,8 +856,11 @@ private fun ModelEditDialog(
                     if (reasoningEnabled) {
                         EtaPreferenceDivider(hasLeading = false)
                         EtaCheckboxPreference(
-                            title = ReasoningEffort.DEFAULT.displayName,
-                            summary = stringResource(R.string.ui_determined_by_model_or_provider_06c326),
+                            title = reasoningEffortLabel(
+                                ReasoningEffort.DEFAULT,
+                                model.effectiveReasoningCapabilities?.defaultEffort,
+                            ),
+                            summary = stringResource(R.string.reasoning_effort_provider_default_summary),
                             checked = true,
                             onCheckedChange = null,
                             checkboxLocation = CheckboxLocation.End,

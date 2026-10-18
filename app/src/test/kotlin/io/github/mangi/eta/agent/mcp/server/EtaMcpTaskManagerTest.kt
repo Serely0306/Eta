@@ -25,16 +25,19 @@ class EtaMcpTaskManagerTest {
         val cancelled = CountDownLatch(1)
         val prompts = mutableListOf<Pair<String, String>>()
         val modelIds = LinkedBlockingQueue<String>()
+        val efforts = LinkedBlockingQueue<String>()
 
         override fun run(
             runId: String,
             conversationKey: String,
             prompt: String,
             modelId: String?,
+            reasoningEffort: String?,
             onEvent: (AgentEvent) -> Unit,
         ): AgentRuntimeWire.RunResult {
             synchronized(prompts) { prompts += conversationKey to prompt }
             modelIds.put(modelId ?: DEFAULT_MODEL_MARKER)
+            efforts.put(reasoningEffort ?: DEFAULT_MODEL_MARKER)
             while (true) {
                 val step = steps.poll(5, TimeUnit.SECONDS) ?: return AgentRuntimeWire.RunResult(runId, false, "", "timeout")
                 step(onEvent)?.let { return it.copy(runId = runId) }
@@ -105,6 +108,57 @@ class EtaMcpTaskManagerTest {
         assertEquals("MODEL_UNAVAILABLE", unavailable.getString("code"))
         // 被拒绝的请求都没有启动任务。
         assertTrue(runner.modelIds.isEmpty())
+    }
+
+    @Test
+    fun reasoningEffortIsValidatedPerModelAndDefaultsToPhoneSetting() {
+        modelChoices = EtaMcpTaskManager.ModelChoices(
+            restricted = true,
+            options = listOf(
+                EtaMcpTaskManager.ModelOption("m-astra", "Relay / Astra", listOf("default", "low", "high", "max"), "high"),
+                EtaMcpTaskManager.ModelOption("m-plain", "Relay / Plain"),
+            ),
+        )
+        val effort = startSchema().getJSONObject("properties").getJSONObject("reasoning_effort")
+        assertEquals(listOf("default", "low", "high", "max"), effort.getJSONArray("enum").let { e -> (0 until e.length()).map(e::getString) })
+
+        runner.steps.put { AgentRuntimeWire.RunResult("", ok = true, content = "ok") }
+        val explicit = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("reasoning_effort", "max").put("wait_seconds", 5))
+        assertEquals("max", explicit.getString("reasoning_effort"))
+        assertEquals("max", runner.efforts.poll(5, TimeUnit.SECONDS))
+
+        runner.steps.put { AgentRuntimeWire.RunResult("", ok = true, content = "ok") }
+        val defaulted = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("wait_seconds", 5))
+        assertEquals("high", defaulted.getString("reasoning_effort"))
+        assertEquals("high", runner.efforts.poll(5, TimeUnit.SECONDS))
+
+        val unsupported = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("model", "m-plain").put("reasoning_effort", "high"))
+        assertEquals("INVALID_ARGUMENT", unsupported.getString("code"))
+        val outOfRange = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("reasoning_effort", "xhigh"))
+        assertEquals("INVALID_ARGUMENT", outOfRange.getString("code"))
+
+        modelChoices = modelChoices.copy(thinkingAllowed = false)
+        assertFalse(startSchema().getJSONObject("properties").has("reasoning_effort"))
+        runner.steps.put { AgentRuntimeWire.RunResult("", ok = true, content = "ok") }
+        val disabled = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("wait_seconds", 5))
+        assertEquals("off", disabled.getString("reasoning_effort"))
+    }
+
+    @Test
+    fun defaultModelExposesItsEffortsWithoutModelSelection() {
+        modelChoices = EtaMcpTaskManager.ModelChoices(
+            restricted = false,
+            options = emptyList(),
+            defaultModel = EtaMcpTaskManager.ModelOption("default-model", "Relay / Astra", listOf("default", "high"), "default"),
+        )
+        val properties = startSchema().getJSONObject("properties")
+        assertFalse(properties.has("model"))
+        assertTrue(properties.has("reasoning_effort"))
+        runner.steps.put { AgentRuntimeWire.RunResult("", ok = true, content = "ok") }
+        val done = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("reasoning_effort", "high").put("wait_seconds", 5))
+        assertFalse(done.has("model"))
+        assertEquals("high", done.getString("reasoning_effort"))
+        assertEquals(DEFAULT_MODEL_MARKER, runner.modelIds.poll(5, TimeUnit.SECONDS))
     }
 
     private fun startSchema(): JSONObject =

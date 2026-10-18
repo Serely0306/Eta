@@ -32,7 +32,8 @@
 | 设备端 MCP 服务：出口脱敏、可逆占位与截图开关 | `13bbbcf` | I19–I22 | 未执行 |
 | 设备端 MCP 服务：委托任务限定可调用的模型 | `d3c4b2f` | I23–I26 | 未执行 |
 | 第三方 Responses 端点发送会话级 `prompt_cache_key`（服务商可关闭）；委托任务状态带模型用量 | `7daef5f` | F3、F4、I27、I28 | 未执行 |
-| 备用模型、厂商助手模型、MCP 可调用模型的选择按服务商分组收纳 | 本提交 | K10、I29 | 未执行 |
+| 备用模型、厂商助手模型、MCP 可调用模型的选择按服务商分组收纳 | `fa6b48d` | K10、I29 | 未执行 |
+| 思考强度：全局默认、“服务商默认”说明、Eta 语音 / 厂商助手 / MCP / 自动任务 / 备用模型各自的模型与强度，`eta_task_start` 的 `reasoning_effort` | 本提交 | F5、F6、I30、I31、K11、L11 | 未执行 |
 | 小爱 8.2.65 唤醒与电源键语音交给 Eta | `7010ad3` | G4–G7 | 未执行 |
 | 计划工具与子 Agent | `e2f14b8`、`c359ab3` | J1–J9 | 未执行 |
 | 模型回退链 | `1548476` | K1–K9 | 未执行 |
@@ -192,6 +193,8 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | F2 `M` | 同一会话中途修改记忆 | 本会话后续轮次的 system 哈希不变；新会话才反映修改 |
 | F3 `M` | Mock 服务（非 api.openai.com）分别以 Chat Completions 与 Responses 两种端点模式各跑两轮；再在 Responses 服务商设置中关闭“发送缓存路由键”重复一次 | Chat Completions 请求不带 `prompt_cache_key`；Responses 请求带，且同一会话两轮的值相同、不同会话不同；关闭开关后 Responses 请求也不带 |
 | F4 `M` | Responses 服务商的自定义请求体中显式设置 `prompt_cache_key` | 请求中的值保持用户设置，不被会话路由键覆盖 |
+| F5 `M` | Mock 模型在内置目录中有 Low–Max 档位；“默认思考强度”保持“服务商默认”发一轮；改为 High 后新建会话再发一轮；改为 XHigh，模型不支持 XHigh 时再发一轮 | 第一轮请求与改动前完全一致（Responses 只有 `reasoning.summary`）；第二轮新会话初始强度为 High，请求带 `reasoning.effort=high`；第三轮按最接近的较低档发送；已有会话的强度不受影响 |
+| F6 `M` | 设置 Eta 语音模型为 `e2e-mock-b`、强度 Low；厂商助手强度 High；分别以 Eta 语音和小爱入口提交 | 语音入口请求发往 `e2e-mock-b` 且 `effort=low`；小爱入口 `effort=high`；关闭“允许思考”后两者都不带强度且为 Off |
 
 ### G. 系统入口与会话归组
 
@@ -248,6 +251,8 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | I27 `M` | 剧本两轮（一次工具调用后回复），Mock 每轮返回固定 usage；再用一个不返回 usage 的剧本跑一次 | 任务状态的 `usage.requests` 为 2，`input_tokens`、`cached_tokens`、`output_tokens` 等于两轮之和；Anthropic 格式 Mock 先报输入、再报累计输出时不重复计数；不返回 usage 时 `requests_without_usage` 等于请求数 |
 | I28 `R` | 经 MCP 用同一 `conversation_id` 在 API A 上跑 AG-14 的 S1 五轮 | 第 2 轮起每轮 `cached_tokens / input_tokens` 约 99%（AG-14 验收） |
 | I29 `R` | MCP 页“电脑端可调用的模型”：展开、收起各服务商并勾选；停用一个已勾选的模型 | 每个服务商一行标题，显示“已选 n / 共 m”，有勾选的默认展开；`eta_task_start` 的 `model.enum` 顺序与列表一致；停用的模型列在最后并标“已停用”，取消勾选后从 `taskModelIds` 移除 |
+| I30 `M` | 勾选 `e2e-mock-a`（Low–Max）并在手机上设强度 Medium；分别不带、带 `reasoning_effort=high`、带 `reasoning_effort=turbo` 启动任务；再关闭“允许思考”启动一次 | `tools/list` 中 `reasoning_effort` 的说明列出档位与“省略时 medium”；前两次请求体分别为 `effort=medium`、`effort=high`，任务状态 `reasoning_effort` 一致；第三次 `INVALID_ARGUMENT` 且没有发出请求；最后一次 `reasoning_effort=off`，请求不带强度 |
+| I31 `R` | 经 MCP 用 `reasoning_effort=high` 在 API A 上跑 AG-14 的 S1 第 1 轮 | 记录代理或任务状态显示强度为 high（AG-16 验收） |
 
 ### J. 计划与子 Agent
 
@@ -281,6 +286,7 @@ Mock 服务按请求中的模型名区分主模型与备用模型（设置中配
 | K8 `M` | 回退链中的模型被停用或删除 | 该条目被跳过，不报错 |
 | K9 `M` | 子 Agent 的主模型失败 | 子 Agent 同样切换到备用模型完成 |
 | K10 `R` | 准备两个以上服务商；在设置中打开“备用模型 1”与“厂商助手模型”的选择弹窗，选一个模型，再选“无”/“跟随默认模型”；随后停用已选模型所在的服务商 | 弹窗按服务商分组，只展开当前所选模型所在的服务商，其余可展开收起；选择结果与改动前一致；停用后设置行显示“（已停用）”而不是“无” |
+| K11 `M` | 主模型 High；备用模型 1 不设强度、备用模型 2 设 Low；剧本让主模型与备用模型 1 依次失败 | 发往备用模型 1 的请求 `effort=high`（跟随主模型），发往备用模型 2 的 `effort=low`；设置行显示“模型 · 强度” |
 
 ### L. 自动任务
 
@@ -298,6 +304,7 @@ Mock 服务按请求中的模型名区分主模型与备用模型（设置中配
 | L8 `M` | 已有 3 个 run 时自动任务触发 | 以并发上限失败，记录失败并发通知 |
 | L9 `M` | 电脑端经 MCP 调用 `manage_automations` list | 返回与设置页一致的列表与下次运行时间 |
 | L10 `M` | 自动任务提示词中让模型调用 ask_user | 提示词已声明无人值守；若仍提问，10 分钟超时后继续并在结论中说明 |
+| L11 `M` | 新建自动任务，指定 `e2e-mock-b` 与强度 High 后立即运行；再停用 `e2e-mock-b` 运行一次；用 `manage_automations` 的 `update` 传 `reasoning_effort=""` | 第一次请求发往 `e2e-mock-b` 且 `effort=high`，列表摘要显示“模型 · 强度”；停用后回落到默认模型，摘要标“（已停用）”；`list` 返回 `models` 与每个任务的 `model`、`reasoning_effort`，置空后为 `follow_default` |
 
 ### M. 屏幕接管与界面路径
 

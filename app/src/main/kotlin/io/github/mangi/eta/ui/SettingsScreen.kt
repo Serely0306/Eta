@@ -42,6 +42,7 @@ import androidx.compose.material.icons.rounded.SwipeUp
 import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.material.icons.rounded.TouchApp
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.VerifiedUser
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.runtime.Composable
@@ -65,6 +66,7 @@ import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.config.PowerAssistantTarget
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.data.model.ModelFallbackSettings
+import io.github.mangi.eta.data.model.ReasoningSettings
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.data.update.AppLatestRelease
@@ -87,8 +89,14 @@ import io.github.mangi.eta.ui.components.EtaSwitchPreference
 import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.LanguagePreference
 import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.AllReasoningEfforts
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
+import io.github.mangi.eta.ui.components.ModelEffortSelection
+import io.github.mangi.eta.ui.components.effortDropdownItems
+import io.github.mangi.eta.ui.components.entryEffortOptions
 import io.github.mangi.eta.ui.components.modelChoiceGroups
+import io.github.mangi.eta.ui.components.reasoningCapabilitiesFor
+import io.github.mangi.eta.ui.components.reasoningEffortLabel
 import io.github.mangi.eta.ui.navigation.AppRoute
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -215,6 +223,14 @@ private fun SettingsPageContent(
     val fallbackSettings by RuntimeConfigRepository.modelFallbackFlow()
         .collectAsState(initial = ModelFallbackSettings())
     val fallbackNoneLabel = stringResource(R.string.settings_model_fallback_none)
+    val reasoningSettings by RuntimeConfigRepository.reasoningSettingsFlow()
+        .collectAsState(initial = ReasoningSettings())
+    val followDefaultEffortLabel = stringResource(R.string.reasoning_effort_follow_default)
+    val followPrimaryEffortLabel = stringResource(R.string.reasoning_effort_follow_primary)
+    // 设置本身写入 DataStore；同步到 RemotePreferences 只影响小布读取的快照，框架未连接时同步失败不提示。
+    fun saveReasoningSettings(next: ReasoningSettings) {
+        coroutineScope.launch { RuntimeConfigRepository.setReasoningSettings(next, EtaApp.serviceInstance) }
+    }
     val providerSummary = selectedProvider?.let { provider ->
         "${provider.name} / ${selectedModel?.displayName ?: stringResource(R.string.settings_model_not_selected)}"
     } ?: stringResource(R.string.settings_not_configured)
@@ -285,9 +301,47 @@ private fun SettingsPageContent(
                         context = context,
                         prefs = agentPrefs,
                         title = stringResource(R.string.ui_deep_thinking_enabled_by_default_c032d6),
+                        summary = stringResource(R.string.settings_allow_thinking_summary),
                         key = Prefs.Keys.AGENT_THINKING_ENABLED,
                         icon = Icons.Rounded.Psychology,
                         iconTint = EtaPreferenceColors.Blue,
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaDropdownPreference(
+                        title = stringResource(R.string.settings_default_reasoning_effort),
+                        summary = stringResource(R.string.settings_default_reasoning_effort_summary),
+                        items = AllReasoningEfforts.map { DropdownItem(text = reasoningEffortLabel(it)) },
+                        selectedIndex = AllReasoningEfforts.indexOf(reasoningSettings.defaultEffort).coerceAtLeast(0),
+                        onSelectedIndexChange = { index ->
+                            AllReasoningEfforts.getOrNull(index)?.let { effort ->
+                                saveReasoningSettings(reasoningSettings.copy(defaultEffort = effort))
+                            }
+                        },
+                        startAction = {
+                            EtaPreferenceIcon(icon = Icons.Rounded.Tune, tint = EtaPreferenceColors.Blue)
+                        },
+                    )
+
+                    EtaPreferenceDivider()
+                    EtaModelSelectPreference(
+                        title = stringResource(R.string.settings_voice_model),
+                        summary = stringResource(R.string.settings_voice_model_summary),
+                        providers = providers,
+                        groups = modelGroups,
+                        selectedId = reasoningSettings.voiceModelId,
+                        emptyOptionLabel = followDefaultModelLabel,
+                        effort = ModelEffortSelection(
+                            selected = reasoningSettings.voiceEffort,
+                            followLabel = followDefaultEffortLabel,
+                            capabilitiesFor = { id -> reasoningCapabilitiesFor(providers, id ?: selectedModelId) },
+                        ),
+                        onSelect = { id, effort ->
+                            saveReasoningSettings(reasoningSettings.copy(voiceModelId = id, voiceEffort = effort))
+                        },
+                        startAction = {
+                            EtaPreferenceIcon(icon = Icons.Rounded.Mic, tint = EtaPreferenceColors.Blue)
+                        },
                     )
 
                     // 回退链：前一个槽位选定后才显示下一个，清空某一槽位时其后的模型依次前移。
@@ -302,7 +356,13 @@ private fun SettingsPageContent(
                             groups = modelGroups,
                             selectedId = currentId,
                             emptyOptionLabel = fallbackNoneLabel,
-                            onSelect = { chosen ->
+                            // “不使用”没有强度；备用模型的强度默认跟随主模型本次的强度。
+                            effort = ModelEffortSelection(
+                                selected = currentId?.let(fallbackSettings.efforts::get),
+                                followLabel = followPrimaryEffortLabel,
+                                capabilitiesFor = { id -> id?.let { reasoningCapabilitiesFor(providers, it) } },
+                            ),
+                            onSelect = { chosen, effort ->
                                 val next = fallbackSettings.modelIds.toMutableList().apply {
                                     if (chosen == null) {
                                         if (slot < size) removeAt(slot)
@@ -312,8 +372,12 @@ private fun SettingsPageContent(
                                         add(chosen)
                                     }
                                 }.distinct()
+                                val efforts = (fallbackSettings.efforts - listOfNotNull(currentId, chosen).toSet()) +
+                                    listOfNotNull(chosen?.let { id -> effort?.let { id to it } })
                                 coroutineScope.launch {
-                                    RuntimeConfigRepository.setModelFallback(fallbackSettings.copy(modelIds = next))
+                                    RuntimeConfigRepository.setModelFallback(
+                                        fallbackSettings.copy(modelIds = next, efforts = efforts),
+                                    )
                                 }
                             },
                             startAction = {
@@ -596,7 +660,7 @@ private fun SettingsPageContent(
                             groups = modelGroups,
                             selectedId = vendorModelId,
                             emptyOptionLabel = followDefaultModelLabel,
-                            onSelect = { modelId ->
+                            onSelect = { modelId, _ ->
                                 coroutineScope.launch {
                                     val synced = RuntimeConfigRepository.setVendorAssistantModelId(
                                         modelId,
@@ -619,6 +683,24 @@ private fun SettingsPageContent(
                                 )
                             },
                             enabled = prefs != null,
+                        )
+
+                        // 强度选项来自厂商助手实际使用的模型（未单独选择时为默认模型）。
+                        val vendorCapabilities = reasoningCapabilitiesFor(providers, vendorModelId ?: selectedModelId)
+                        val vendorEffortOptions = entryEffortOptions(vendorCapabilities)
+                        EtaPreferenceDivider()
+                        EtaDropdownPreference(
+                            title = stringResource(R.string.settings_vendor_reasoning_effort),
+                            summary = stringResource(R.string.settings_vendor_reasoning_effort_summary),
+                            items = effortDropdownItems(vendorEffortOptions, followDefaultEffortLabel, vendorCapabilities?.defaultEffort),
+                            selectedIndex = vendorEffortOptions.indexOf(reasoningSettings.vendorEffort).coerceAtLeast(0),
+                            onSelectedIndexChange = { index ->
+                                saveReasoningSettings(reasoningSettings.copy(vendorEffort = vendorEffortOptions.getOrNull(index)))
+                            },
+                            startAction = {
+                                EtaPreferenceIcon(icon = Icons.Rounded.Tune, tint = EtaPreferenceColors.Blue, enabled = prefs != null)
+                            },
+                            enabled = prefs != null && vendorCapabilities != null,
                         )
 
                         EtaPreferenceDivider()

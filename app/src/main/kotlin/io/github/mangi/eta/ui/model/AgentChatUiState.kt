@@ -20,6 +20,8 @@ internal data class AgentChatUiState(
     val thinkingEnabled: Boolean,
     val reasoningEffort: ReasoningEffort = ReasoningEffort.fromLegacy(thinkingEnabled),
     val availableReasoningEfforts: List<ReasoningEffort> = emptyList(),
+    /** 内置目录标注的服务商默认档位，用于说明“服务商默认”大约对应哪一档。 */
+    val providerDefaultEffort: ReasoningEffort? = null,
     val pendingImages: List<PendingImageUi> = emptyList(),
     val pendingFileReferences: List<PendingFileReferenceUi> = emptyList(),
     val appliedRuntimeRunIds: List<String> = emptyList(),

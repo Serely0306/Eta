@@ -56,8 +56,25 @@ enum class ReasoningEffort(
 
         fun fromLegacy(thinkingEnabled: Boolean): ReasoningEffort =
             if (thinkingEnabled) DEFAULT else OFF
+
+        /** 入口只给出开关（如小布的快速 / 深度思考）：关闭为 Off；开启时沿用配置的强度，配置为 Off 时用 Default。 */
+        fun forToggle(enabled: Boolean, configured: ReasoningEffort): ReasoningEffort =
+            if (!enabled) OFF else configured.takeIf { it.enablesReasoning } ?: DEFAULT
     }
 }
+
+/**
+ * 各入口的思考强度。[defaultEffort] 用于新会话和选“跟随默认强度”的入口；其余字段为 null 时跟随它。
+ * 实际发送前按模型能力就近取档（[ModelReasoningCapabilities.normalize]）。
+ */
+data class ReasoningSettings(
+    val defaultEffort: ReasoningEffort = ReasoningEffort.DEFAULT,
+    /** Eta 语音入口（电源键、助理浮层）单独选择的模型；为空时跟随默认模型。 */
+    val voiceModelId: String? = null,
+    val voiceEffort: ReasoningEffort? = null,
+    /** 厂商助手入口（小爱、小布）的强度；模型在 vendorAssistantModelId 中单独保存。 */
+    val vendorEffort: ReasoningEffort? = null,
+)
 
 object ReasoningEffortSerializer : KSerializer<ReasoningEffort> {
     override val descriptor: SerialDescriptor =

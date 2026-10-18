@@ -23,6 +23,7 @@ internal class EtaMcpRuntimeTaskRunner(context: Context) : EtaMcpTaskManager.Run
         conversationKey: String,
         prompt: String,
         modelId: String?,
+        reasoningEffort: String?,
         onEvent: (AgentEvent) -> Unit,
     ): AgentRuntimeWire.RunResult {
         val history = synchronized(histories) { histories[conversationKey] }.orEmpty()
@@ -30,8 +31,11 @@ internal class EtaMcpRuntimeTaskRunner(context: Context) : EtaMcpTaskManager.Run
             userText = prompt,
             conversationKey = conversationKey,
             title = prompt.take(TITLE_CHARS),
-            // Runtime 按此解析模型，并再次核对是否在勾选范围内。
-            adapterPayload = JSONObject().apply { modelId?.let { put(EtaMcpModelAccess.PAYLOAD_MODEL_ID, it) } },
+            // Runtime 按此解析模型与强度，并再次核对模型是否在勾选范围内。
+            adapterPayload = JSONObject().apply {
+                modelId?.let { put(EtaMcpModelAccess.PAYLOAD_MODEL_ID, it) }
+                reasoningEffort?.let { put(EtaMcpModelAccess.PAYLOAD_REASONING_EFFORT, it) }
+            },
         )
         val result = client.run(
             request = AgentRuntimeWire.RunRequest(

@@ -112,6 +112,7 @@ internal fun AgentChatInputBar(
     isStreaming: Boolean,
     reasoningEffort: ReasoningEffort,
     availableReasoningEfforts: List<ReasoningEffort>,
+    providerDefaultEffort: ReasoningEffort? = null,
     pendingImages: List<PendingImageUi>,
     pendingFileReferences: List<PendingFileReferenceUi>,
     isEditingMessage: Boolean,
@@ -318,6 +319,7 @@ internal fun AgentChatInputBar(
                                 ThinkingEffortChip(
                                     effort = reasoningEffort,
                                     options = availableReasoningEfforts,
+                                    providerDefault = providerDefaultEffort,
                                     enabled = !isStreaming,
                                     popupAnchorTopPx = inputContainerTopPx,
                                     popupMaxHeight = thinkingPopupMaxHeight,
@@ -428,6 +430,7 @@ internal fun AgentChatInputBar(
 private fun ThinkingEffortChip(
     effort: ReasoningEffort,
     options: List<ReasoningEffort>,
+    providerDefault: ReasoningEffort?,
     enabled: Boolean,
     popupAnchorTopPx: Int,
     popupMaxHeight: Dp,
@@ -461,7 +464,7 @@ private fun ThinkingEffortChip(
         ) {
             Icon(
                 imageVector = ImageVector.vectorResource(R.drawable.ic_atom),
-                contentDescription = stringResource(R.string.chat_reasoning_effort, effort.displayName),
+                contentDescription = stringResource(R.string.chat_reasoning_effort, reasoningEffortLabel(effort, providerDefault)),
                 modifier = Modifier.size(ThinkingIconSize),
                 tint = contentColor,
             )
@@ -477,7 +480,7 @@ private fun ThinkingEffortChip(
             ListPopupColumn {
                 options.forEachIndexed { index, option ->
                     DropdownImpl(
-                        text = option.displayName,
+                        text = reasoningEffortLabel(option, providerDefault),
                         optionSize = options.size,
                         isSelected = option == effort,
                         index = index,

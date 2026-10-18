@@ -86,6 +86,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
@@ -119,6 +120,8 @@ internal class AgentAppState(
     private var persistencePaused = false
     private val runtimeRecoveryInProgress = AtomicBoolean(false)
     private val defaultThinkingEnabled = agentBooleanForUi(Prefs.Keys.AGENT_THINKING_ENABLED)
+    /** 设置里的“默认思考强度”，新会话从它开始，发送前再按当前模型就近取档。 */
+    private var defaultReasoningEffort = ReasoningEffort.DEFAULT
     @Volatile
     private var conversationPersistence = AgentConversationPersistence(initialConversations)
     private var currentReasoningCapabilities: ModelReasoningCapabilities? = null
@@ -152,6 +155,7 @@ internal class AgentAppState(
     init {
         refreshConversationSummaries()
         observeRuntimeSelection()
+        observeDefaultReasoningEffort()
         runtimeRecoveryInProgress.set(true)
         scope.launch(Dispatchers.IO) {
             try {
@@ -160,6 +164,29 @@ internal class AgentAppState(
             } finally {
                 runtimeRecoveryInProgress.set(false)
             }
+        }
+    }
+
+    private fun newChatState(): AgentChatHomeUiState = emptyChatState(defaultThinkingEnabled).let { state ->
+        if (defaultThinkingEnabled) state.copy(reasoningEffort = defaultReasoningEffort) else state
+    }
+
+    private fun observeDefaultReasoningEffort() {
+        scope.launch(Dispatchers.IO) {
+            RuntimeConfigRepository.reasoningSettingsFlow()
+                .map { it.defaultEffort }
+                .distinctUntilChanged()
+                .collectLatest { effort ->
+                    withContext(Dispatchers.Main) {
+                        defaultReasoningEffort = effort
+                        // 还没发送过的新会话跟随默认值；已有会话保留各自的强度。
+                        if (selectedConversationId == null && homeState.messages.isEmpty() && defaultThinkingEnabled) {
+                            val next = homeState.copy(thinkingEnabled = effort.enablesReasoning, reasoningEffort = effort)
+                            // 模型能力尚未加载时先不取档，避免被当成不支持思考而改成 Off。
+                            homeState = if (currentReasoningCapabilities != null) next.withCurrentReasoningCapabilities() else next
+                        }
+                    }
+                }
         }
     }
 
@@ -213,6 +240,7 @@ internal class AgentAppState(
             thinkingEnabled = normalized.enablesReasoning,
             reasoningEffort = normalized,
             availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
+            providerDefaultEffort = currentReasoningCapabilities?.defaultEffort,
         )
     }
 
@@ -293,7 +321,7 @@ internal class AgentAppState(
             fileAttachmentOwnerVersion += 1
             homeState = selectedConversationId
                 ?.let(conversationsById::get)
-                ?: emptyChatState(defaultThinkingEnabled)
+                ?: newChatState()
             refreshConversationModel()
             conversationPaneState = conversationPaneState.copy(
                 selectedConversationId = selectedConversationId,
@@ -714,7 +742,7 @@ internal class AgentAppState(
         if (homeState.messageEdit != null) cancelMessageEdit()
         fileAttachmentOwnerVersion += 1
         selectedConversationId = null
-        homeState = emptyChatState(defaultThinkingEnabled)
+        homeState = newChatState()
         refreshConversationModel()
         conversationPaneState = conversationPaneState.copy(
             selectedConversationId = null,
@@ -735,7 +763,7 @@ internal class AgentAppState(
             AgentModelClient.ConversationMessage(role = "assistant", content = text, messageId = greetingId),
         )
         selectedConversationId = id
-        homeState = emptyChatState(defaultThinkingEnabled).withCurrentReasoningCapabilities().copy(
+        homeState = newChatState().withCurrentReasoningCapabilities().copy(
             roleplay = binding,
             history = transcript,
             journal = transcript,
@@ -772,7 +800,7 @@ internal class AgentAppState(
                 homeState = conversationsById.getValue(nextId)
             } else {
                 selectedConversationId = null
-                homeState = emptyChatState(defaultThinkingEnabled)
+                homeState = newChatState()
             }
             refreshConversationModel()
         }
@@ -1044,7 +1072,7 @@ internal class AgentAppState(
             conversationUpdatedAt = conversationUpdatedAt - conversationId
             fileAttachmentOwnerVersion += 1
             selectedConversationId = null
-            homeState = emptyChatState(defaultThinkingEnabled)
+            homeState = newChatState()
             refreshConversationModel()
             conversationPaneState = conversationPaneState.copy(selectedConversationId = null)
             refreshConversationSummaries()
@@ -1802,6 +1830,7 @@ internal class AgentAppState(
             thinkingEnabled = draft.reasoningEffort.enablesReasoning,
             reasoningEffort = draft.reasoningEffort,
             availableReasoningEfforts = currentReasoningCapabilities?.selectableEfforts.orEmpty(),
+            providerDefaultEffort = currentReasoningCapabilities?.defaultEffort,
             pendingImages = draft.pendingImages,
             pendingFileReferences = draft.pendingFileReferences,
             modelId = draft.modelId,
