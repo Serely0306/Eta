@@ -1194,6 +1194,9 @@
   <string name="context_no_model_limit">未知上下文窗口，自动压缩已关闭。仍可手动压缩，也可在设置 → 模型提供商中填写窗口。</string>
   <string name="context_usage_after_response">完成首次回复后显示实测用量</string>
   <string name="context_usage_previous_response">%1$s\n上轮实测</string>
+  <string name="context_session_usage_title">本会话累计</string>
+  <string name="context_session_usage">%1$d 次请求 · 输入 %2$s（缓存 %3$s）· 输出 %4$s</string>
+  <string name="context_session_cost">估算费用 %1$s</string>
   <string name="context_compaction">上下文压缩</string>
   <string name="context_compact_action">压缩上下文</string>
   <string name="settings_auto_compaction">自动压缩上下文</string>

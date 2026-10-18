@@ -98,6 +98,24 @@ class UsagePricingTest {
 
     private fun millis(local: String) = LocalDateTime.parse(local).atZone(zone).toInstant().toEpochMilli()
 
+    @Test
+    fun conversationSummaryCountsEveryRequestButOnlyPricesKnownModels() {
+        val records = listOf(
+            record(prompt = 1_000, cached = 800, output = 100),
+            record(model = "unknown-model", prompt = 1_000, cached = 0, output = 100, subagentIndex = 0),
+            record(hasUsage = false),
+        )
+        val price = BuiltinModelPrices.find(ProviderSourceTypes.CUSTOM, "gpt-6-astra")!!
+        val total = UsageReports.summarize(records) {
+            ModelCostCalculator.costUsd(it, BuiltinModelPrices.find(ProviderSourceTypes.CUSTOM, it.model), 1.0, 7.1)
+        }
+        assertEquals(3, total.requests)
+        assertEquals(1, total.requestsWithoutUsage)
+        assertEquals(2_000L, total.promptTokens)
+        assertEquals(0.4, total.cachedRatio!!, 1e-12)
+        assertEquals(ModelCostCalculator.costUsd(records.first(), price, 1.0, 7.1)!!, total.costUsd!!, 1e-12)
+    }
+
     private fun record(
         providerId: String = "relay",
         model: String = "gpt-6-astra",

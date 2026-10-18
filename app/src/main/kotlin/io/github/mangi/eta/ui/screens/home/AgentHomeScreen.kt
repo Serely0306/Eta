@@ -66,6 +66,7 @@ internal fun AgentHomeScreen(
                 onAction(AgentHomeAction.AnswerQuestion(questionId, selections))
             },
             onSkipQuestion = { questionId -> onAction(AgentHomeAction.SkipQuestion(questionId)) },
+            conversationId = conversationKey,
             modifier = modifier,
         )
     }

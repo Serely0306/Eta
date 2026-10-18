@@ -166,6 +166,7 @@ internal fun AgentChatBody(
     pendingQuestion: PendingQuestion? = null,
     onAnswerQuestion: (String, List<List<String>>) -> Unit = { _, _ -> },
     onSkipQuestion: (String) -> Unit = {},
+    conversationId: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberLazyListState()
@@ -174,8 +175,8 @@ internal fun AgentChatBody(
     val imeBottomPx = WindowInsets.ime.getBottom(density)
     val isKeyboardVisible = imeBottomPx > 0
     val browserSnapshot by AgentBrowserSession.snapshots.collectAsState()
-    val contextUsage = remember(messages, modelPickerState.selectedModel) {
-        latestContextUsage(messages, modelPickerState.selectedModel)
+    val contextUsage = remember(messages, modelPickerState.selectedModel, conversationId) {
+        latestContextUsage(messages, modelPickerState.selectedModel).copy(conversationId = conversationId)
     }
 
     val visibleMessages = remember(messages, messageEdit?.targetMessageId, messageEdit?.preserveFollowingMessages) {

@@ -67,6 +67,7 @@ internal class UsageRecordingProviderClient(
             cacheWriteTokens = (usage?.cacheWriteTokens ?: 0).toLong(),
             outputTokens = (usage?.outputTokens ?: 0).toLong(),
             reasoningTokens = (usage?.reasoningTokens ?: 0).toLong(),
+            sessionId = context?.sessionId.orEmpty(),
         )
     }
 

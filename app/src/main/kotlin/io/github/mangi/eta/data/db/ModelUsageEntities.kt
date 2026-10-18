@@ -18,7 +18,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 @Entity(
     tableName = "model_usage_records",
-    indices = [Index("created_at"), Index("run_id")],
+    indices = [Index("created_at"), Index("run_id"), Index("session_id")],
 )
 internal data class ModelUsageRecordEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -46,6 +46,8 @@ internal data class ModelUsageRecordEntity(
     @ColumnInfo(name = "cache_write_tokens") val cacheWriteTokens: Long,
     @ColumnInfo(name = "output_tokens") val outputTokens: Long,
     @ColumnInfo(name = "reasoning_tokens") val reasoningTokens: Long,
+    /** 模型会话 id：聊天为会话 id，子 Agent 归入主会话；版本 25 之前的记录为空。 */
+    @ColumnInfo(name = "session_id", defaultValue = "''") val sessionId: String = "",
 ) {
     companion object {
         const val STATUS_OK = "ok"
@@ -78,6 +80,9 @@ internal interface ModelUsageDao {
             "ORDER BY created_at DESC, id DESC LIMIT :limit"
     )
     fun betweenFlow(from: Long, to: Long, limit: Int): Flow<List<ModelUsageRecordEntity>>
+
+    @Query("SELECT * FROM model_usage_records WHERE session_id = :sessionId ORDER BY id")
+    fun forSessionFlow(sessionId: String): Flow<List<ModelUsageRecordEntity>>
 
     @Query("SELECT * FROM model_usage_records ORDER BY id LIMIT :limit OFFSET :offset")
     suspend fun page(limit: Int, offset: Int): List<ModelUsageRecordEntity>

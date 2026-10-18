@@ -351,6 +351,7 @@ internal class AgentRuntimeRunExecutor(
             val usageContext = ModelUsageContext(
                 source = request.handoff?.source ?: AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
                 runId = request.runId,
+                sessionId = request.effectiveModelSessionId,
             )
             val completedResponse = ModelUsageScope.run(usageContext) {
                 AgentModelClient.complete(

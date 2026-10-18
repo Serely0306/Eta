@@ -1215,6 +1215,9 @@
   <string name="context_no_model_limit">Context window unknown, so automatic compaction is off. You can still compact manually, or set the window in Settings → Model Providers.</string>
   <string name="context_usage_after_response">Measured after the first response</string>
   <string name="context_usage_previous_response">%1$s\nMeasured last turn</string>
+  <string name="context_session_usage_title">This conversation</string>
+  <string name="context_session_usage">%1$d requests · input %2$s (cached %3$s) · output %4$s</string>
+  <string name="context_session_cost">Estimated cost %1$s</string>
   <string name="context_usage_description">Context usage: %1$s</string>
   <string name="memory_budget_summary">Inject up to %1$s characters per turn. The model reads detailed content as needed</string>
   <string name="memory_over_limit">Over the 1 MiB limit. Remove some content</string>

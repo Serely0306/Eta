@@ -120,6 +120,10 @@ internal object UsageReports {
 
     const val PURPOSE_SUBAGENT = "subagent"
 
+    /** 一组记录的合计（例如一个会话），不按时间范围截取。 */
+    fun summarize(records: List<ModelUsageRecordEntity>, cost: (ModelUsageRecordEntity) -> Double?): UsageGroup =
+        group("", "", records, records.associateWith(cost))
+
     private fun group(
         key: String,
         label: String,

@@ -39,13 +39,14 @@ class UsageRecordingProviderClientTest {
             ProviderResponse(JSONObject().put("content", "ok"))
         }, now = { clock }, sink = records::add)
 
-        ModelUsageScope.run(ModelUsageContext("pc_mcp", "run-1", subagentIndex = 2)) {
+        ModelUsageScope.run(ModelUsageContext("pc_mcp", "run-1", subagentIndex = 2, sessionId = "pc_mcp:task")) {
             client.complete(request(ProviderRequestPurpose.CHAT), AgentRunController())
         }
 
         val record = records.single()
         assertEquals("pc_mcp", record.source)
         assertEquals("run-1", record.runId)
+        assertEquals("pc_mcp:task", record.sessionId)
         assertEquals(2, record.subagentIndex)
         assertEquals("chat", record.purpose)
         assertEquals(ModelUsageRecordEntity.STATUS_OK, record.status)

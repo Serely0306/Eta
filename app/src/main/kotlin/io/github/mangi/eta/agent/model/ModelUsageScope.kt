@@ -1,10 +1,11 @@
 package io.github.mangi.eta.agent.model
 
-/** 用量记录的归属：哪个入口、哪次 run；子 Agent 的请求带序号。 */
+/** 用量记录的归属：哪个入口、哪次 run、哪个模型会话；子 Agent 的请求带序号。 */
 internal data class ModelUsageContext(
     val source: String,
     val runId: String,
     val subagentIndex: Int? = null,
+    val sessionId: String = "",
 )
 
 /**

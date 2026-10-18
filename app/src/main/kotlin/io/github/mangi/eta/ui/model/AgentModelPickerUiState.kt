@@ -37,6 +37,8 @@ internal data class AgentModelOptionUi(
 internal data class AgentContextUsageUi(
     val contextTokens: Int?,
     val contextWindow: Int?,
+    /** 弹窗按它读取本会话在账本中的累计用量；草稿会话为 null。 */
+    val conversationId: String? = null,
 ) {
     val progress: Float?
         get() = contextUsageProgress(contextTokens, contextWindow)

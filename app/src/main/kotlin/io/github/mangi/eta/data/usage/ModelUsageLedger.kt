@@ -45,6 +45,10 @@ internal object ModelUsageLedger {
     fun recordsFlow(from: Long, to: Long, limit: Int = MAX_REPORT_ROWS): Flow<List<ModelUsageRecordEntity>> =
         appContext?.let { EtaDatabase.get(it).modelUsageDao().betweenFlow(from, to, limit) } ?: flowOf(emptyList())
 
+    /** 一个模型会话（聊天为会话 id）的全部记录，含压缩与子 Agent 的请求。 */
+    fun sessionRecordsFlow(sessionId: String): Flow<List<ModelUsageRecordEntity>> =
+        appContext?.let { EtaDatabase.get(it).modelUsageDao().forSessionFlow(sessionId) } ?: flowOf(emptyList())
+
     /** 导出全部记录为 CSV（只有计数与模型信息），费用按当前价格表计算。 */
     suspend fun exportCsv(output: OutputStream, cost: (ModelUsageRecordEntity) -> Double?): Int {
         val context = appContext ?: return 0

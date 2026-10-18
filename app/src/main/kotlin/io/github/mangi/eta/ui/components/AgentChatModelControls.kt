@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,11 +43,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.data.datastore.SettingsDataStore
+import io.github.mangi.eta.data.repository.ProviderRepository
+import io.github.mangi.eta.data.usage.ModelUsageLedger
+import io.github.mangi.eta.data.usage.UsagePriceResolver
+import io.github.mangi.eta.data.usage.UsagePricingSettings
+import io.github.mangi.eta.data.usage.UsageReports
 import io.github.mangi.eta.ui.model.AgentContextUsageUi
 import io.github.mangi.eta.ui.model.AgentModelOptionUi
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
 import io.github.mangi.eta.ui.model.defaultExpandedModelProviderIds
 import io.github.mangi.eta.ui.model.formatContextUsage
+import io.github.mangi.eta.ui.screens.usage.compactTokens
+import io.github.mangi.eta.ui.screens.usage.formatPercent
+import io.github.mangi.eta.ui.screens.usage.formatUsd
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
@@ -320,11 +331,14 @@ internal fun AgentContextUsageButton(
                 },
                 colors = tooltipColors,
             ) {
-                Text(
-                    text = detail,
-                    color = tooltipColors.contentColor,
-                    style = MiuixTheme.textStyles.body2,
-                )
+                Column {
+                    Text(
+                        text = detail,
+                        color = tooltipColors.contentColor,
+                        style = MiuixTheme.textStyles.body2,
+                    )
+                    usage.conversationId?.let { ConversationUsageLines(it, tooltipColors.contentColor) }
+                }
             }
         },
         state = tooltipState,
@@ -351,6 +365,44 @@ internal fun AgentContextUsageButton(
             )
         }
     }
+}
+
+/** 本会话在用量账本中的累计（含压缩与子 Agent），只在弹窗显示时订阅；还没有记录时不显示。 */
+@Composable
+private fun ConversationUsageLines(conversationId: String, color: Color) {
+    val records by remember(conversationId) { ModelUsageLedger.sessionRecordsFlow(conversationId) }
+        .collectAsState(initial = emptyList())
+    val providers by remember { ProviderRepository.providersFlow() }.collectAsState(initial = emptyList())
+    val pricing by remember { SettingsDataStore.usagePricingFlow() }.collectAsState(initial = UsagePricingSettings())
+    val total = remember(records, providers, pricing) {
+        UsageReports.summarize(records, UsagePriceResolver(providers, pricing)::cost)
+    }
+    if (total.requests == 0) return
+    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+    Text(
+        text = stringResource(R.string.context_session_usage_title),
+        color = color,
+        style = MiuixTheme.textStyles.subtitle,
+    )
+    Text(
+        text = stringResource(
+            R.string.context_session_usage,
+            total.requests,
+            compactTokens(total.promptTokens),
+            total.cachedRatio?.let(::formatPercent) ?: "-",
+            compactTokens(total.outputTokens),
+        ),
+        color = color,
+        style = MiuixTheme.textStyles.body2,
+    )
+    Text(
+        text = stringResource(
+            R.string.context_session_cost,
+            total.costUsd?.let(::formatUsd) ?: stringResource(R.string.usage_unpriced_short),
+        ),
+        color = color,
+        style = MiuixTheme.textStyles.body2,
+    )
 }
 
 @Composable
