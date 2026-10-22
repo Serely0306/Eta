@@ -63,7 +63,7 @@ The runtime also manages streaming events, steering, cancellation, and increment
 
 ## A terminal designed for mobile
 
-You can use Eta's terminal yourself or let the agent use it. Each session retains its working directory and environment. The compact view groups input and output by command; the PTY console supports TUIs, keyboard shortcuts, and ANSI rendering. Asynchronous commands and daemon tasks have logs and explicit stop controls.
+You can use Eta's terminal yourself or let the agent use it. Each session retains its working directory and environment. The PTY console is the default view and runs TUIs such as Claude Code, Codex, and Kimi Code: input goes straight to the terminal, an extra-keys bar provides Esc, Ctrl/Alt, arrows, Enter, and paste, and the grid resizes with the soft keyboard. The compact view groups input and output by command. Asynchronous commands and daemon tasks have logs and explicit stop controls.
 
 - **Linux environments:** choose Alpine or Debian. PRoot works without root; rooted devices can also use chroot. The backends have separate installations, with no automatic data migration. PRoot's simulated root identity does not grant Android system privileges.
 - **Development tools:** install Python, Node.js, SSH, APK analysis tools, and Kimi Code as needed.
@@ -79,7 +79,7 @@ Eta's AI features require **your own model-provider API key**. Built-in provider
 
 The provider layer supports OpenAI-compatible Chat Completions, the Responses API, and Anthropic Messages, including SSE streaming, tool calling, image input, and reasoning content. Configure custom endpoints, headers, and request bodies; fetch model lists or add models manually; and override context windows and reasoning effort. Available features depend on the model and API. Some Responses providers also support server-side web search.
 
-Automatic compaction needs the model's context window in tokens, set under Settings → Model Providers. Without it, chat still works and manual compaction remains available. Automatic context compaction is enabled by default under Settings → Context & Extensions; changes apply to the next run, and manual compaction remains available when disabled. Automatic compaction uses the provider's reported input usage and this configured window. Eta does not fill in missing windows or estimate request tokens; manual compaction remains available when input usage is absent.
+Automatic compaction needs the model's context window in tokens, set under Settings → Model Providers. When fetching models, windows reported by the provider are filled in automatically. Without it, chat still works and manual compaction remains available. Automatic context compaction is enabled by default under Settings → Context & Extensions; changes apply to the next run, and manual compaction remains available when disabled. Automatic compaction uses the provider's reported input usage and this configured window. Eta does not fill in missing windows or estimate request tokens; manual compaction remains available when input usage is absent.
 
 ## System assistant entry points
 

@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.runtime
 
 import io.github.mangi.eta.agent.mcp.server.EtaMcpModelAccess
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 
@@ -30,8 +31,12 @@ internal object AgentRuntimeRequestConfigResolver {
             else -> null
         }
 
+    /**
+     * 入口来源按入口设置解析；其余入口只有订阅连接需要 Runtime 重建配置：凭据不进 IPC，
+     * 由 Runtime 按服务商、认证方式与模型从本机存储取回。
+     */
     fun requiresRuntimeConfig(request: AgentRuntimeWire.RunRequest): Boolean =
-        runtimeConfigSource(request) != null
+        runtimeConfigSource(request) != null || ProviderAuthModes.isOAuth(request.config.authMode)
 
     /**
      * 按入口解析模型与强度；null 表示模型不可用，请求应失败。电脑端任务限定了可用模型时由
@@ -49,7 +54,11 @@ internal object AgentRuntimeRequestConfigResolver {
                 )
             }
             AgentRuntimeWire.XIAOAI_HANDOFF_SOURCE -> RuntimeConfigRepository.vendorAssistantRuntimeConfig()
-            else -> null
+            else -> RuntimeConfigRepository.oauthRuntimeConfigFor(
+                providerId = request.config.providerId,
+                authMode = request.config.authMode,
+                modelName = request.config.model,
+            )
         }
 
     /**
@@ -63,12 +72,27 @@ internal object AgentRuntimeRequestConfigResolver {
     ): AgentRuntimeWire.RunRequest {
         if (!requiresRuntimeConfig(request)) return request
         val entry = request.config
+        // 入口来源的强度已由入口设置解析；聊天里选的订阅模型保留会话自己的强度。
+        val preserveReasoningChoice = runtimeConfigSource(request) == null
+        if (preserveReasoningChoice) {
+            require(
+                runtimeConfig.providerId == entry.providerId &&
+                    runtimeConfig.authMode == entry.authMode && runtimeConfig.model == entry.model
+            ) { "账号登录配置已变更，请重新选择服务商和模型" }
+        }
+        val effort = if (preserveReasoningChoice) {
+            runtimeConfig.reasoningCapabilities?.normalize(entry.effectiveReasoningEffort)
+                ?: runtimeConfig.effectiveReasoningEffort
+        } else runtimeConfig.effectiveReasoningEffort
         val config = runtimeConfig.copy(
             terminalTools = entry.terminalTools,
             browserTools = entry.browserTools,
             deviceDirectTools = entry.deviceDirectTools,
             deviceSensitiveReadTools = entry.deviceSensitiveReadTools,
             deviceSensitiveActionTools = entry.deviceSensitiveActionTools,
+            thinkingEnabled = effort.enablesReasoning,
+            reasoningEffort = effort,
+            autoCompactionEnabled = runtimeConfig.autoCompactionEnabled && entry.autoCompactionEnabled,
         )
         val handoff = request.handoff ?: return request.copy(config = config)
         val archivePayload = AgentExternalArchivePayload.from(handoff.payload)

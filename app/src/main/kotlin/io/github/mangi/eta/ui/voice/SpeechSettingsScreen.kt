@@ -39,9 +39,7 @@ internal fun SpeechSettingsScreen(onBack: () -> Unit, onNavigate: (AppRoute) -> 
         onBack = onBack,
     ) {
         if (current == null) {
-            item(key = "loading") {
-                SpeechNote(stringResource(R.string.speech_loading))
-            }
+            item(key = "loading") { SpeechLoadingState(failure = null) }
             return@MiuixScaffoldPage
         }
         item(key = "service_title") {
@@ -51,7 +49,8 @@ internal fun SpeechSettingsScreen(onBack: () -> Unit, onNavigate: (AppRoute) -> 
             EtaPreferenceGroup {
                 EtaArrowPreference(
                     title = stringResource(R.string.speech_recognition_title),
-                    summary = current.asr.label(),
+                    summary = if (current.recognitionEnabled) current.asr.label()
+                        else stringResource(R.string.speech_recognition_disabled),
                     startAction = {
                         EtaPreferenceIcon(icon = Icons.Rounded.Mic, tint = EtaPreferenceColors.Blue)
                     },

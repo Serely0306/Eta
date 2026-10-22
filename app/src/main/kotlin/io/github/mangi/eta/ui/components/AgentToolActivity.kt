@@ -181,7 +181,9 @@ internal fun ToolActivityRow(
             }
             ExpandChevron(
                 expanded = expanded,
-                contentDescription = null,
+                contentDescription = stringResource(
+                    if (expanded) R.string.tool_details_collapse else R.string.tool_details_expand,
+                ),
                 modifier = Modifier.padding(start = 6.dp, end = 8.dp),
             )
         }
@@ -271,7 +273,9 @@ internal fun ToolGroupRow(
             }
             ExpandChevron(
                 expanded = expanded,
-                contentDescription = null,
+                contentDescription = stringResource(
+                    if (expanded) R.string.tool_details_collapse else R.string.tool_details_expand,
+                ),
                 modifier = Modifier.padding(start = 6.dp, end = 8.dp),
             )
         }
@@ -525,7 +529,7 @@ private fun ToolCommandBlock(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 12.dp, end = 5.dp, top = 3.dp, bottom = 3.dp),
+                .padding(start = 12.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -542,8 +546,8 @@ private fun ToolCommandBlock(
                     clipboardManager.setText(AnnotatedString(command))
                     copied = true
                 },
-                minWidth = 28.dp,
-                minHeight = 28.dp,
+                minWidth = 32.dp,
+                minHeight = 32.dp,
             ) {
                 Icon(
                     imageVector = if (copied) Icons.Rounded.Check
@@ -551,7 +555,7 @@ private fun ToolCommandBlock(
                     contentDescription = stringResource(
                         if (copied) R.string.copy_copied else R.string.copy_command,
                     ),
-                    modifier = Modifier.size(13.dp),
+                    modifier = Modifier.size(14.dp),
                     tint = if (copied) {
                         MiuixTheme.colorScheme.primary
                     } else {

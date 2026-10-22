@@ -13,10 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Visibility
-import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,8 +30,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -43,7 +39,6 @@ import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomProviderSetting
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ProviderSetting
-import io.github.mangi.eta.data.model.ReasoningSummaryMode
 import io.github.mangi.eta.data.model.withId
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RemoteModelFetcher
@@ -51,10 +46,10 @@ import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.components.EtaCard
 import io.github.mangi.eta.ui.components.EtaOverlayDialog
 import io.github.mangi.eta.ui.components.EtaPreference
+import io.github.mangi.eta.ui.components.EtaPreferenceDefaults
 import io.github.mangi.eta.ui.components.EtaPreferenceDivider
 import io.github.mangi.eta.ui.components.EtaSwitchPreference
 import io.github.mangi.eta.ui.components.EtaTextButton
-import io.github.mangi.eta.ui.components.EtaWindowSpinnerPreference
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.MiuixPageBottomSpacer
 import io.github.mangi.eta.ui.components.MiuixScaffold
@@ -67,9 +62,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
-import top.yukonga.miuix.kmp.basic.DropdownItem
-import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
@@ -157,7 +149,7 @@ internal fun ModelProviderDetailScreen(
                     selectedTabIndex = currentTab,
                     onTabSelected = { currentTab = it },
                     modifier = Modifier.padding(
-                        horizontal = sidePadding + 12.dp,
+                        horizontal = sidePadding + EtaPreferenceDefaults.SidePadding,
                         vertical = 8.dp,
                     ),
                 )
@@ -203,13 +195,35 @@ private fun ProviderConfigTab(
 ) {
     val context = LocalContext.current
     var headersExpanded by rememberSaveable { mutableStateOf(false) }
-    var apiKeyVisible by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var testStatus by remember { mutableStateOf<String?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showResetDialog by remember { mutableStateOf(false) }
     var isWorking by remember { mutableStateOf(false) }
     var creationCommitted by remember { mutableStateOf(false) }
+    // 只恢复中断提示；回调监听、验证码和授权 URL 随登录会话销毁。
+    var loginInProgress by rememberSaveable(provider.id) { mutableStateOf(false) }
+    var pendingInterruption by remember(provider.id) { mutableStateOf(loginInProgress) }
+    val loginStore = remember(provider.id, scope) { ProviderLoginStore(provider.id, scope) }
+    val loginState by loginStore.state.collectAsState()
+    var browserError by remember(loginState.prompt) { mutableStateOf<String?>(null) }
+    val openBrowser: () -> Unit = {
+        loginState.prompt?.let { browserError = openProviderAccountLink(context, it.authorizationUrl) }
+    }
+    DisposableEffect(loginStore) {
+        onDispose { loginStore.close() }
+    }
+    LaunchedEffect(loginStore, draft.authMode, provider.authMode) {
+        loginStore.load(draft.authMode, interrupted = pendingInterruption)
+        pendingInterruption = false
+    }
+    LaunchedEffect(loginState.phase) {
+        loginInProgress = loginState.phase == ProviderLoginPhase.Saving || loginState.phase == ProviderLoginPhase.Authorizing
+    }
+    LaunchedEffect(loginState.prompt) {
+        val prompt = loginState.prompt
+        if (prompt != null && prompt.userCode == null) openBrowser()
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -227,117 +241,31 @@ private fun ProviderConfigTab(
     ) {
         item(key = "connection") {
             ProviderSection(title = stringResource(R.string.ui_connection_configuration_7d057b)) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    TextField(
-                        value = draft.name,
-                        onValueChange = { onDraftChange(draft.copy(name = it)) },
-                        label = stringResource(R.string.ui_name_1be7ae),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    TextField(
-                        value = draft.baseUrl,
-                        onValueChange = { onDraftChange(draft.copy(baseUrl = it)) },
-                        label = "Base URL",
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    TextField(
-                        value = draft.apiKey,
-                        onValueChange = { onDraftChange(draft.copy(apiKey = it)) },
-                        label = "API Key",
-                        singleLine = true,
-                        visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        trailingIcon = {
-                            IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                                Icon(
-                                    imageVector = if (apiKeyVisible) Icons.Rounded.Visibility else Icons.Rounded.VisibilityOff,
-                                    contentDescription = if (apiKeyVisible) context.getString(R.string.page_hide_bb0e7e) else context.getString(R.string.page_show_71b677),
-                                )
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (provider is AnthropicProviderSetting) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        TextField(
-                            value = draft.anthropicVersion,
-                            onValueChange = { onDraftChange(draft.copy(anthropicVersion = it)) },
-                            label = "anthropic-version",
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                }
-                if (provider !is AnthropicProviderSetting) {
-                    EtaPreferenceDivider(hasLeading = false)
-                    EtaWindowSpinnerPreference(
-                        items = listOf(
-                            DropdownItem(text = "Chat Completions API"),
-                            DropdownItem(text = "Responses API"),
-                        ),
-                        selectedIndex = if (draft.endpointMode == OpenAiEndpointMode.RESPONSES) 1 else 0,
-                        title = stringResource(R.string.ui_endpoint_mode_3c8546),
-                        summary = if (draft.endpointMode == OpenAiEndpointMode.RESPONSES) {
-                            context.getString(R.string.page_using_typed_items_with_semantic_streaming_events_f9c906)
+                ProviderConnectionFields(
+                    provider = provider,
+                    draft = draft,
+                    onDraftChange = onDraftChange,
+                    loginState = loginState,
+                    enabled = !isWorking && !loginState.isBusy,
+                    browserError = browserError,
+                    onOpenBrowser = openBrowser,
+                    onManageUsage = { browserError = openProviderAccountLink(context, "https://chatgpt.com/codex/settings/usage") },
+                    onLogin = {
+                        val validationError = validateProviderDraft(context, draft)
+                        if (validationError != null) {
+                            status = context.getString(R.string.provider_error, validationError)
                         } else {
-                            context.getString(R.string.page_use_standard_chat_completions_ee4b1a)
-                        },
-                        onSelectedIndexChange = { selectedIndex ->
-                            onDraftChange(
-                                draft.copy(
-                                    endpointMode = if (selectedIndex == 1) {
-                                        OpenAiEndpointMode.RESPONSES
-                                    } else {
-                                        OpenAiEndpointMode.CHAT_COMPLETIONS
-                                    },
-                                ),
-                            )
-                        },
-                    )
-                    if (draft.endpointMode == OpenAiEndpointMode.RESPONSES) {
-                        EtaPreferenceDivider(hasLeading = false)
-                        EtaSwitchPreference(
-                            title = stringResource(R.string.ui_server_side_web_search_ddb8e0),
-                            summary = stringResource(R.string.ui_allows_the_model_to_call_web_searches_provided_by_th_2f752f),
-                            checked = draft.hostedWebSearchEnabled,
-                            onCheckedChange = {
-                                onDraftChange(draft.copy(hostedWebSearchEnabled = it))
-                            },
-                        )
-                        EtaPreferenceDivider(hasLeading = false)
-                        EtaSwitchPreference(
-                            title = stringResource(R.string.provider_prompt_cache_key),
-                            summary = stringResource(R.string.provider_prompt_cache_key_summary),
-                            checked = draft.promptCacheKeyEnabled,
-                            onCheckedChange = {
-                                onDraftChange(draft.copy(promptCacheKeyEnabled = it))
-                            },
-                        )
-                        EtaPreferenceDivider(hasLeading = false)
-                        val summaryModes = ReasoningSummaryMode.ALL
-                        EtaWindowSpinnerPreference(
-                            items = listOf(
-                                DropdownItem(text = stringResource(R.string.provider_reasoning_summary_auto)),
-                                DropdownItem(text = stringResource(R.string.provider_reasoning_summary_detailed)),
-                                DropdownItem(text = stringResource(R.string.provider_reasoning_summary_concise)),
-                            ),
-                            selectedIndex = summaryModes.indexOf(draft.reasoningSummary).coerceAtLeast(0),
-                            title = stringResource(R.string.provider_reasoning_summary),
-                            summary = stringResource(R.string.provider_reasoning_summary_summary),
-                            onSelectedIndexChange = { index ->
-                                onDraftChange(draft.copy(reasoningSummary = summaryModes[index]))
-                            },
-                        )
-                    }
-                }
+                            loginStore.login(draft.toProvider(provider))
+                        }
+                    },
+                    onDisconnect = loginStore::disconnect,
+                    onCancel = loginStore::cancel,
+                )
                 EtaPreferenceDivider(hasLeading = false)
                 EtaPreference(
                     title = stringResource(R.string.ui_test_connection_10b7d8),
                     summary = testStatus,
-                    enabled = !isWorking,
+                    enabled = !isWorking && !loginState.isBusy,
                     onClick = {
                         val validationError = validateProviderDraft(context, draft)
                         if (validationError != null) {
@@ -350,20 +278,7 @@ private fun ProviderConfigTab(
                             try {
                                 testStatus = testConnection(
                                     context,
-                                    buildUpdatedProvider(
-                                        source = provider,
-                                        name = draft.name,
-                                        baseUrl = draft.baseUrl,
-                                        apiKey = draft.apiKey,
-                                        systemPrompt = draft.systemPrompt,
-                                        isEnabled = draft.isEnabled,
-                                        endpointMode = draft.endpointMode,
-                                        hostedWebSearchEnabled = draft.hostedWebSearchEnabled,
-                                        anthropicVersion = draft.anthropicVersion,
-                                        customHeaders = draft.headers.map { it.header },
-                                        promptCacheKeyEnabled = draft.promptCacheKeyEnabled,
-                                        reasoningSummary = draft.reasoningSummary,
-                                    )
+                                    draft.toProvider(provider)
                                 )
                             } finally {
                                 isWorking = false
@@ -414,7 +329,7 @@ private fun ProviderConfigTab(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
+                    .padding(horizontal = EtaPreferenceDefaults.SidePadding)
                     .padding(top = 12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -425,7 +340,7 @@ private fun ProviderConfigTab(
                         isNew -> context.getString(R.string.page_create_fcbd09)
                         else -> context.getString(R.string.page_save_configuration_817af1)
                     },
-                    enabled = !isWorking && !creationCommitted,
+                    enabled = !isWorking && !loginState.isBusy && !creationCommitted,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.textButtonColorsPrimary(),
                     onClick = {
@@ -436,20 +351,7 @@ private fun ProviderConfigTab(
                         }
                         scope.launch {
                             isWorking = true
-                            val built = buildUpdatedProvider(
-                                source = provider,
-                                name = draft.name,
-                                baseUrl = draft.baseUrl,
-                                apiKey = draft.apiKey,
-                                systemPrompt = draft.systemPrompt,
-                                isEnabled = draft.isEnabled,
-                                endpointMode = draft.endpointMode,
-                                hostedWebSearchEnabled = draft.hostedWebSearchEnabled,
-                                anthropicVersion = draft.anthropicVersion,
-                                customHeaders = draft.headers.map { it.header },
-                                promptCacheKeyEnabled = draft.promptCacheKeyEnabled,
-                                reasoningSummary = draft.reasoningSummary,
-                            )
+                            val built = draft.toProvider(provider)
                             try {
                                 if (isNew) {
                                     val added = ProviderRepository.addProvider(
@@ -510,7 +412,7 @@ private fun ProviderConfigTab(
                         .padding(horizontal = 16.dp)
                         .padding(top = 12.dp),
                     showIndication = true,
-                    onClick = if (isWorking) {
+                    onClick = if (isWorking || loginState.isBusy) {
                         null
                     } else {
                         {
@@ -589,6 +491,8 @@ private fun ProviderConfigTab(
                 confirmText = if (isWorking) context.getString(R.string.page_resetting_616090) else context.getString(R.string.page_reset_3d8134),
                 cancelEnabled = !isWorking,
                 confirmEnabled = !isWorking,
+                // 重置会覆盖用户改过的连接与模型配置，与删除同属破坏性确认。
+                destructive = true,
                 onCancel = { showResetDialog = false },
                 onConfirm = {
                     scope.launch {

@@ -8,10 +8,14 @@ import androidx.compose.ui.Modifier
 import io.github.mangi.eta.ui.components.AgentChatBody
 import io.github.mangi.eta.ui.components.LocalToolCallDetailSource
 import io.github.mangi.eta.ui.components.ToolCallDetailSource
+import io.github.mangi.eta.ui.components.AgentConversationLoadState
+import io.github.mangi.eta.ui.components.LocalRoleplayChat
 import io.github.mangi.eta.ui.components.chatConversationCompositionKey
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
+import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
 import io.github.mangi.eta.ui.model.AgentHomeAction
 import io.github.mangi.eta.ui.model.AgentModelPickerUiState
+import io.github.mangi.eta.ui.model.roleplayChatUi
 
 /**
  * AgentChatHome：首屏为聊天主舞台。
@@ -25,59 +29,79 @@ internal fun AgentHomeScreen(
     modelPickerState: AgentModelPickerUiState,
     conversationKey: String?,
     onAction: (AgentHomeAction) -> Unit,
+    isLoadingConversation: Boolean = false,
+    conversationLoadFailed: Boolean = false,
+    historyLoadState: ConversationHistoryLoadState = ConversationHistoryLoadState.Idle,
     isDrawerOpen: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    val journal = state.journal.ifEmpty { state.history }
-    val toolDetails = remember(journal, state.messages, state.isStreaming) {
-        ToolCallDetailSource(journal, state.messages, state.isStreaming)
-    }
+    // key 内保持完整分支，避免提前返回遗留无法转换为 DEX 的编译器标记。
     key(chatConversationCompositionKey(conversationKey)) {
-        CompositionLocalProvider(LocalToolCallDetailSource provides toolDetails) {
-            AgentChatBody(
-                messages = state.messages,
-                modelPickerState = modelPickerState,
-                isCompacting = state.isCompacting,
-                input = state.input,
-                isStreaming = state.isStreaming,
-                reasoningEffort = state.reasoningEffort,
-                availableReasoningEfforts = state.availableReasoningEfforts,
-                providerDefaultEffort = state.providerDefaultEffort,
-                pendingImages = state.pendingImages,
-                pendingFileReferences = state.pendingFileReferences,
-                messageEdit = state.messageEdit,
-                characterName = state.roleplay?.characterName,
-                onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
-                onCompactContext = { onAction(AgentHomeAction.CompactContext) },
-                canCompactContext = state.canCompactContext,
-                onModelSelected = { onAction(AgentHomeAction.ModelSelected(it)) },
-                onSubmit = { text -> onAction(AgentHomeAction.SubmitMessage(text)) },
-                onStop = { onAction(AgentHomeAction.StopRun) },
-                onAttachImage = { uri -> onAction(AgentHomeAction.ImageAttached(uri)) },
-                onRemoveImage = { id -> onAction(AgentHomeAction.RemoveImage(id)) },
-                onAttachFiles = { uris -> onAction(AgentHomeAction.FilesAttached(uris)) },
-                onAttachFolder = { uri -> onAction(AgentHomeAction.FolderAttached(uri)) },
-                onAttachFilePath = { path -> onAction(AgentHomeAction.FilePathAttached(path)) },
-                onRemoveFileReference = { id -> onAction(AgentHomeAction.RemoveFileReference(id)) },
-                onEditMessage = { id -> onAction(AgentHomeAction.EditMessage(id)) },
-                onCancelMessageEdit = { onAction(AgentHomeAction.CancelMessageEdit) },
-                onDeleteMessage = { id -> onAction(AgentHomeAction.DeleteMessage(id)) },
-                onRegenerateMessage = { id -> onAction(AgentHomeAction.RegenerateMessage(id)) },
-                onSelectReplyCandidate = { id, index -> onAction(AgentHomeAction.SelectReplyCandidate(id, index)) },
-                onSuggestionClick = { prompt ->
-                    onAction(AgentHomeAction.SubmitMessage(prompt))
-                },
-                onRunTraceClick = { onAction(AgentHomeAction.ExpandRunTrace) },
-                onOpenBrowser = { onAction(AgentHomeAction.OpenBrowser) },
-                isDrawerOpen = isDrawerOpen,
-                pendingQuestion = state.pendingQuestion,
-                onAnswerQuestion = { questionId, selections ->
-                    onAction(AgentHomeAction.AnswerQuestion(questionId, selections))
-                },
-                onSkipQuestion = { questionId -> onAction(AgentHomeAction.SkipQuestion(questionId)) },
-                conversationId = conversationKey,
+        if (!state.isConversationLoaded) {
+            AgentConversationLoadState(
+                isLoading = isLoadingConversation,
+                failed = conversationLoadFailed,
+                onRetry = { onAction(AgentHomeAction.RetryConversationLoad) },
                 modifier = modifier,
             )
+        } else {
+            val journal = state.journal.ifEmpty { state.history }
+            val toolDetails = remember(journal, state.messages, state.isStreaming) {
+                ToolCallDetailSource(journal, state.messages, state.isStreaming)
+            }
+            CompositionLocalProvider(
+                LocalToolCallDetailSource provides toolDetails,
+                LocalRoleplayChat provides state.roleplayChatUi(),
+            ) {
+                AgentChatBody(
+                    messages = state.messages,
+                    modelPickerState = modelPickerState,
+                    isCompacting = state.isCompacting,
+                    input = state.input,
+                    isStreaming = state.isStreaming,
+                    reasoningEffort = state.reasoningEffort,
+                    availableReasoningEfforts = state.availableReasoningEfforts,
+                    providerDefaultEffort = state.providerDefaultEffort,
+                    pendingImages = state.pendingImages,
+                    pendingFileReferences = state.pendingFileReferences,
+                    messageEdit = state.messageEdit,
+                    onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
+                    onCompactContext = { onAction(AgentHomeAction.CompactContext) },
+                    canCompactContext = state.canCompactContext,
+                    onModelSelected = { onAction(AgentHomeAction.ModelSelected(it)) },
+                    onSubmit = { text -> onAction(AgentHomeAction.SubmitMessage(text)) },
+                    onStop = { onAction(AgentHomeAction.StopRun) },
+                    onAttachImage = { uri -> onAction(AgentHomeAction.ImageAttached(uri)) },
+                    onRemoveImage = { id -> onAction(AgentHomeAction.RemoveImage(id)) },
+                    onAttachFiles = { uris -> onAction(AgentHomeAction.FilesAttached(uris)) },
+                    onAttachFolder = { uri -> onAction(AgentHomeAction.FolderAttached(uri)) },
+                    onAttachFilePath = { path -> onAction(AgentHomeAction.FilePathAttached(path)) },
+                    onRemoveFileReference = { id -> onAction(AgentHomeAction.RemoveFileReference(id)) },
+                    onEditMessage = { id -> onAction(AgentHomeAction.EditMessage(id)) },
+                    onCancelMessageEdit = { onAction(AgentHomeAction.CancelMessageEdit) },
+                    onDeleteMessage = { id -> onAction(AgentHomeAction.DeleteMessage(id)) },
+                    onRegenerateMessage = { id -> onAction(AgentHomeAction.RegenerateMessage(id)) },
+                    onSelectReplyCandidate = { id, index -> onAction(AgentHomeAction.SelectReplyCandidate(id, index)) },
+                    onSuggestionClick = { prompt ->
+                        onAction(AgentHomeAction.SubmitMessage(prompt))
+                    },
+                    onRunTraceClick = { onAction(AgentHomeAction.ExpandRunTrace) },
+                    onOpenBrowser = { onAction(AgentHomeAction.OpenBrowser) },
+                    hasEarlierMessages = state.hasEarlierMessages,
+                    messageStartIndex = state.messageStartIndex,
+                    historyLoadState = historyLoadState,
+                    onLoadEarlierMessages = { onAction(AgentHomeAction.LoadEarlierMessages) },
+                    onHistoryViewportChanged = { onAction(AgentHomeAction.HistoryViewportChanged(it)) },
+                    isDrawerOpen = isDrawerOpen,
+                    pendingQuestion = state.pendingQuestion,
+                    onAnswerQuestion = { questionId, selections ->
+                        onAction(AgentHomeAction.AnswerQuestion(questionId, selections))
+                    },
+                    onSkipQuestion = { questionId -> onAction(AgentHomeAction.SkipQuestion(questionId)) },
+                    conversationId = conversationKey,
+                    modifier = modifier,
+                )
+            }
         }
     }
 }

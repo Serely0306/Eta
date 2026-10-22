@@ -88,9 +88,11 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
     ): JSONObject {
         val systemParts = mutableListOf<String>()
         val anthropicMessages = JSONArray()
-        val latestAssistantIndex = (messages.length() - 1 downTo 0).firstOrNull { index ->
-            messages.optJSONObject(index)?.optString("role") == "assistant"
-        }
+        // 当前轮（最后一条真实用户消息之后）的助手消息都原样带回签名块：工具循环中逐轮保持
+        // 同一前缀，缓存才能在每一轮续用；更早轮次统一去掉思考，形态在各轮之间同样稳定。
+        val currentTurnStart = (messages.length() - 1 downTo 0).firstOrNull { index ->
+            messages.optJSONObject(index)?.let { it.optString("role") == "user" && !it.optBoolean("_eta_observation") } == true
+        } ?: -1
         // 观察截图只在当轮使用，下一轮会被移除；滚动缓存点必须落在它之前，后续请求才能命中同一前缀。
         var cacheAnchor: JSONObject? = null
         for (index in 0 until messages.length()) {
@@ -104,7 +106,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                 "assistant" -> appendTurn(
                     anthropicMessages,
                     "assistant",
-                    convertAssistantContent(message, index == latestAssistantIndex),
+                    convertAssistantContent(message, index > currentTurnStart),
                 )
                 "tool" -> appendTurn(
                     anthropicMessages,
@@ -251,7 +253,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
 
     /**
      * input_schema 顶层不接受 oneOf/anyOf/allOf，否则整个请求 400。只在发送副本上移除；
-     * 本地 AgentToolCallValidator 仍按原始 schema 校验，组合约束失败时把错误返回给模型。
+     * 参数交给对应工具执行，执行结果随工具回合返回模型。
      */
     private fun inputSchema(parameters: JSONObject?): JSONObject {
         parameters ?: return JSONObject().put("type", "object")

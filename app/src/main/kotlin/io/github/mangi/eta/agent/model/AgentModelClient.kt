@@ -7,11 +7,13 @@ import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
+import io.github.mangi.eta.agent.tool.AgentToolRequirements
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomBody
 import io.github.mangi.eta.data.model.CustomHeader
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
+import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ProviderTypes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.ReasoningSummaryMode
@@ -19,6 +21,7 @@ import io.github.mangi.eta.data.provider.BuiltinProviders
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -95,6 +98,7 @@ internal object AgentModelClient {
         skillContext: SkillContext = SkillContext.EMPTY,
         memoryContext: AgentMemoryContext = AgentMemoryContext.DISABLED,
         additionalTools: JSONArray = JSONArray(),
+        executionContext: TerminalExecutionContext? = null,
         capabilitiesProvider: () -> AgentToolCapabilities = { AgentToolCapabilities(rootAvailable = false) },
         /** 已展开依赖的停用工具集合；每轮重新读取，变化时同步重建系统提示。 */
         disabledToolsProvider: () -> Set<String> = { emptySet() },
@@ -126,6 +130,7 @@ internal object AgentModelClient {
             rootAvailable = initialCapabilities.rootAvailable,
             roleplayContext = roleplayContext,
             disabledTools = initialDisabledTools,
+            executionContext = executionContext,
         )
         if (rewriteReply) {
             messages.put(messages.length() - 1, AgentConversationCodec.userTextMessage(
@@ -142,7 +147,8 @@ internal object AgentModelClient {
         // 旧 history 中的无效消息可能在组装时被跳过，系统边界不能由 history 条数倒推。
         val systemCount = AgentPromptBuilder.buildSystemMessages(
             config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext,
-            initialDisabledTools,
+            disabledTools = initialDisabledTools,
+            executionContext = executionContext,
         ).length()
         fun toolsFor(capabilities: AgentToolCapabilities, disabledTools: Set<String>): JSONArray {
             if (rewriteReply) return JSONArray()
@@ -180,8 +186,38 @@ internal object AgentModelClient {
                 terminalTools = config.terminalTools
             )
         )
+        // 工具目录与系统提示都是请求前缀，按轮重算会让一次瞬时状态抖动废掉整段缓存。
+        // Root 授权或用户停用的工具真正变化时整体重建；其余能力只增不减：短暂不可用的工具仍保留，
+        // 执行时自行报告错误码。用户中途停用工具很少见，执行时另有 TOOL_DISABLED 兜底。
         var promptRootAvailable = initialCapabilities.rootAvailable
         var promptDisabledTools = initialDisabledTools
+        var publishedTools = tools
+        fun toolsForRound(): JSONArray {
+            val capabilities = capabilitiesProvider()
+            val disabledTools = if (rewriteReply) emptySet() else disabledToolsProvider()
+            if (capabilities.rootAvailable != promptRootAvailable || disabledTools != promptDisabledTools) {
+                val systemMessages = AgentPromptBuilder.buildSystemMessages(
+                    config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
+                    disabledTools = disabledTools,
+                    executionContext = executionContext,
+                )
+                for (index in 0 until systemMessages.length()) {
+                    messages.put(index, systemMessages.getJSONObject(index))
+                }
+                promptRootAvailable = capabilities.rootAvailable
+                promptDisabledTools = disabledTools
+                publishedTools = toolsFor(capabilities, disabledTools)
+                return publishedTools
+            }
+            val published = toolNames(publishedTools)
+            val added = toolsFor(capabilities, disabledTools).let { fresh ->
+                (0 until fresh.length()).map(fresh::getJSONObject).filter { toolName(it) !in published }
+            }
+            if (added.isNotEmpty()) {
+                publishedTools = JSONArray(publishedTools.toString()).also { merged -> added.forEach(merged::put) }
+            }
+            return publishedTools
+        }
         val loop = AgentLoop(
             transcript = transcript,
             systemCount = systemCount,
@@ -193,7 +229,20 @@ internal object AgentModelClient {
             messages = messages,
             tools = tools,
             provider = provider,
-            toolExecutor = toolExecutor,
+            // 目录在运行内只增不减，可见不再等于可用：执行前用同一规则复核，
+            // 中途失去的能力返回与目录过滤一致的错误码，而不是让底层接口给出含糊的失败。
+            toolExecutor = AgentModelClient.ToolExecutor { call ->
+                val unavailable = AgentToolRequirements.find(call.name)
+                    ?.let { capabilitiesProvider().unavailableCode(call.name) }
+                if (unavailable == null) {
+                    toolExecutor.execute(call)
+                } else {
+                    ToolResult(
+                        JSONObject().put("ok", false).put("code", unavailable)
+                            .put("message", "该工具当前不可用（$unavailable），本次未执行").toString(),
+                    )
+                }
+            },
             runController = runController,
             traceFormatter = traceFormatter,
             onEvent = onEvent,
@@ -201,22 +250,7 @@ internal object AgentModelClient {
             roleplayContext = roleplayContext,
             initialSupplementIndex = initialSupplementIndex,
             fallback = usableFallback,
-            toolsForRound = {
-                val capabilities = capabilitiesProvider()
-                val disabledTools = if (rewriteReply) emptySet() else disabledToolsProvider()
-                if (capabilities.rootAvailable != promptRootAvailable || disabledTools != promptDisabledTools) {
-                    val systemMessages = AgentPromptBuilder.buildSystemMessages(
-                        config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
-                        disabledTools,
-                    )
-                    for (index in 0 until systemMessages.length()) {
-                        messages.put(index, systemMessages.getJSONObject(index))
-                    }
-                    promptRootAvailable = capabilities.rootAvailable
-                    promptDisabledTools = disabledTools
-                }
-                toolsFor(capabilities, disabledTools)
-            },
+            toolsForRound = ::toolsForRound,
         )
         val result = try {
             if (compactOnly) loop.compactOnly() else loop.run()
@@ -244,9 +278,21 @@ internal object AgentModelClient {
         )
     }
 
+    private fun toolName(tool: JSONObject): String? = tool.optJSONObject("function")?.optString("name")
+
+    private fun toolNames(tools: JSONArray): Set<String> =
+        (0 until tools.length()).mapNotNullTo(mutableSetOf()) { toolName(tools.getJSONObject(it)) }
+
     private fun ModelConfig.validate() {
         require(baseUrl.isNotBlank()) { "请先配置 API 地址" }
-        require(apiKey.isNotBlank()) { "请先配置 API Key" }
+        when {
+            authMode == ProviderAuthModes.API_KEY -> require(apiKey.isNotBlank()) { "请先配置 API Key" }
+            ProviderAuthModes.isOAuth(authMode) -> {
+                require(providerId.isNotBlank()) { "账号登录缺少服务商标识，请重新选择服务商" }
+                require(apiKey.isEmpty()) { "账号登录配置不能包含 API Key" }
+            }
+            else -> error("不支持的服务商认证方式")
+        }
         require(model.isNotBlank()) { "请先配置模型名" }
         require(
             reasoningCapabilities?.mandatory != true ||
@@ -306,6 +352,7 @@ internal object AgentModelClient {
         val customHeaders: List<CustomHeader> = emptyList(),
         val customBody: List<CustomBody> = emptyList(),
         val autoCompactionEnabled: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+        val authMode: String = ProviderAuthModes.API_KEY,
     ) {
         val usesHostedWebSearch: Boolean
             get() = hostedWebSearchEnabled && providerType == ProviderTypes.OPENAI_COMPATIBLE &&

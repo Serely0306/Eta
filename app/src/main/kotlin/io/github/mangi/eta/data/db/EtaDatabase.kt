@@ -27,7 +27,7 @@ import androidx.room.migration.Migration
         UserPersonaEntity::class,
         ModelUsageRecordEntity::class,
     ],
-    version = 26,
+    version = 27,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -71,6 +71,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_23_24,
                         MIGRATION_24_25,
                         MIGRATION_25_26,
+                        MIGRATION_26_27,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -153,6 +154,15 @@ internal abstract class EtaDatabase : RoomDatabase() {
             database.execSQL(
                 "CREATE INDEX IF NOT EXISTS index_model_usage_records_session_id ON model_usage_records(session_id)"
             )
+        }
+
+        /** 上游 3.3.1 之后的 22→23（服务商认证方式），本分支的 23–26 已被占用，接在 26 之后。 */
+        internal val MIGRATION_26_27 = Migration(26, 27) { database ->
+            val exists = database.query("PRAGMA table_info(model_providers)").use { cursor ->
+                val name = cursor.getColumnIndexOrThrow("name")
+                generateSequence { if (cursor.moveToNext()) cursor.getString(name) else null }.any { it == "auth_mode" }
+            }
+            if (!exists) database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
         }
 
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {

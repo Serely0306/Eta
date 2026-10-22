@@ -24,6 +24,7 @@ data class ConversationSummaryUi(
     val entrySource: ConversationEntrySource? = null,
     /** 会话里派出过的子 Agent，侧栏展开该会话时列出，可点开查看过程。 */
     val subagents: List<ConversationSubagentUi> = emptyList(),
+    val characterAvatarPath: String? = null,
 )
 
 /** 侧栏里的一个子 Agent：所属 run 与 run_subagents 调用，以及它的任务与状态。 */

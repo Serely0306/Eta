@@ -48,7 +48,7 @@ internal class AgentLoop(
         val result: AgentModelClient.ToolResult,
     )
 
-    private var toolCallValidator = AgentToolCallValidator(tools)
+    private var availableToolNames = emptySet<String>()
     private val accumulatedReasoning = StringBuilder()
     private val sensitiveToolCallIds = linkedSetOf<String>()
     private var pendingToolImageMessage: JSONObject? = null
@@ -105,7 +105,9 @@ internal class AgentLoop(
                 JSONArray()
             }
             precedingTools = roundTools
-            toolCallValidator = AgentToolCallValidator(roundTools)
+            availableToolNames = (0 until roundTools.length()).mapNotNullTo(mutableSetOf()) { index ->
+                roundTools.optJSONObject(index)?.optJSONObject("function")?.optString("name")
+            }
             publishTranscript()
             if (purpose.allowsTools) context.compact()
             var roundInputTokens: Int? = null
@@ -348,12 +350,12 @@ internal class AgentLoop(
         toolCall: AgentModelClient.ToolCall,
     ): ToolOutcome {
         runController.throwIfCancelled()
-        toolCallValidator.validate(toolCall)?.let { validationError ->
+        if (toolCall.name !in availableToolNames) {
             return rejectedToolOutcome(
                 round = round,
                 toolCall = toolCall,
-                code = "INVALID_TOOL_ARGUMENTS",
-                message = validationError,
+                code = "TOOL_NOT_AVAILABLE",
+                message = "工具未在本轮能力目录中提供，请使用当前可用工具",
             )
         }
         onEvent(
