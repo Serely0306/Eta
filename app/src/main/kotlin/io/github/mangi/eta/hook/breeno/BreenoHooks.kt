@@ -1449,6 +1449,8 @@ internal object BreenoHooks {
         private fun String.toBreenoToolLabel(): String =
             when (this) {
                 "terminal",
+                "terminal_job",
+                "terminal_daemon",
                 "run_command" -> injected(AgentAppContext.resolve(), R.string.injected_system_tool, "system tool")
                 "open_app" -> injected(AgentAppContext.resolve(), R.string.injected_app_tool, "app tool")
                 "screenshot" -> injected(AgentAppContext.resolve(), R.string.injected_screen_tool, "screen tool")

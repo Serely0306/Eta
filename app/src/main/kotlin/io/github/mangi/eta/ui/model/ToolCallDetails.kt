@@ -84,7 +84,8 @@ internal object ToolCallDetails {
         return TerminalOutput(
             exitCode = if (json.has("exit_code") && !json.isNull("exit_code")) json.optInt("exit_code") else null,
             timedOut = json.optBoolean("timed_out"),
-            stdout = json.text("stdout"),
+            // 后台命令的 read 结果把日志放在 output，没有 stdout。
+            stdout = json.text("stdout").ifEmpty { json.text("output") },
             stderr = json.text("stderr"),
             truncated = json.optBoolean("stdout_truncated") || json.optBoolean("stderr_truncated") ||
                 json.optBoolean("output_truncated"),

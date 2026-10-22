@@ -19,11 +19,16 @@ internal object AgentToolToggles {
         "scroll", "scroll_element", "type_text", "input_text", "replace_text", "clear_text", "paste_text",
     )
 
-    /** 被依赖工具停用后，依赖方拿不到所需的 observation_id、检查结果或正文，随之停用。 */
+    /**
+     * 被依赖工具停用后，依赖方拿不到所需的 observation_id、检查结果或正文，随之停用。
+     * 后台命令同样执行任意命令，关闭终端命令时一并停用，避免绕过终端开关。
+     */
     private val dependencies: Map<String, String> = buildMap {
         screenDependentTools.forEach { put(it, "observe_screen") }
         put("skills_install_from_github", "skills_inspect_github")
         put("skills_read_resource", "skills_read")
+        put("terminal_job", "terminal")
+        put("terminal_daemon", "terminal")
     }
 
     fun family(toolName: String): Set<String> = families[toolName] ?: setOf(toolName)

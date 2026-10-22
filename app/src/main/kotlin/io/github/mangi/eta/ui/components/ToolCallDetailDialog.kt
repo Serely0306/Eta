@@ -610,7 +610,7 @@ private fun hostOf(url: String): String = runCatching { java.net.URI(url).host }
 private fun formatSeconds(durationMs: Long): String =
     if (durationMs < 10_000) "%.1f".format(Locale.ROOT, durationMs / 1_000.0) else (durationMs / 1_000).toString()
 
-internal val TERMINAL_TOOLS = setOf("terminal", "run_command")
+internal val TERMINAL_TOOLS = setOf("terminal", "terminal_job", "terminal_daemon", "run_command")
 private const val LIVE_REFRESH_MS = 2_000L
 private const val PREVIEW_LINES = 6
 private const val MAX_INLINE_LINES = 200

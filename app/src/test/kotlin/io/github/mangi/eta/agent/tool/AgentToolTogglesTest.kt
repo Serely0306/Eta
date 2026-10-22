@@ -31,4 +31,13 @@ class AgentToolTogglesTest {
         assertFalse("skills_read" in AgentToolToggles.effective(setOf("skills_read_resource")))
         assertTrue(AgentToolToggles.effective(emptySet()).isEmpty())
     }
+
+    @Test
+    fun backgroundCommandsFollowTheTerminalCardButCanBeDisabledAlone() {
+        val withoutTerminal = AgentToolToggles.effective(setOf("terminal"))
+        assertTrue("terminal_job" in withoutTerminal)
+        assertTrue("terminal_daemon" in withoutTerminal)
+        assertEquals("terminal", AgentToolToggles.dependencyOf("terminal_job"))
+        assertFalse("terminal" in AgentToolToggles.effective(setOf("terminal_job")))
+    }
 }

@@ -58,6 +58,11 @@ class ToolCallDetailsTest {
         assertTrue(terminal.truncated)
         assertEquals(1_400L, terminal.durationMs)
         assertNull(ToolCallDetails.terminalOutput("""{"ok":true}"""))
+        val job = ToolCallDetails.terminalOutput(
+            """{"action":"read","exit_code":0,"output":"built\n","output_truncated":true,"log_path":"/x/job.log"}""",
+        )!!
+        assertEquals("built\n", job.stdout)
+        assertTrue(job.truncated)
 
         val results = ToolCallDetails.searchResults(
             """{"results":[{"title":"T","url":"https://example.com/a","snippet":"S"},{"title":"","url":""}]}""",

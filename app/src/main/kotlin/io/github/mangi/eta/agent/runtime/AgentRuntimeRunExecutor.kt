@@ -311,6 +311,7 @@ internal class AgentRuntimeRunExecutor(
                 emit = ::emitRunEvent,
                 fallback = fallbackPolicy,
                 saveTranscript = { record -> SubagentTranscriptStore.save(appContext, record) },
+                executionContext = mainLocalTools.terminalExecutionContext,
             )
             // 提问在工具内阻塞等待；问题与结论作为独立事件推给 App、胶囊和恢复日志。
             fun askUser(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {

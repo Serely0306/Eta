@@ -9,6 +9,7 @@ import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.model.ModelFallbackPolicy
 import io.github.mangi.eta.agent.model.ModelUsageScope
 import io.github.mangi.eta.agent.model.AgentToolSchema
+import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.agent.tool.ForegroundResourceLease
 import java.util.concurrent.atomic.AtomicBoolean
@@ -40,6 +41,8 @@ internal class AgentSubagentTool(
     /** 保存子 Agent 的过程（已脱敏）：运行中每轮一次快照，结束时一次最终结果。 */
     private val saveTranscript: (SubagentTranscriptStore.Record) -> Unit = {},
     private val now: () -> Long = System::currentTimeMillis,
+    /** 主 run 的终端执行上下文：子 Agent 与主 Agent 共用同一工作区与默认身份。 */
+    private val executionContext: TerminalExecutionContext? = null,
 ) {
     private class Task(val task: String, val context: String)
 
@@ -141,6 +144,7 @@ internal class AgentSubagentTool(
                 },
                 runController = child,
                 additionalTools = additionalTools,
+                executionContext = executionContext,
                 capabilitiesProvider = capabilitiesProvider,
                 disabledToolsProvider = { disabledTools() + excluded },
                 sessionId = "$parentSessionId:sub:$toolCallId:$index",
@@ -239,6 +243,7 @@ internal class AgentSubagentTool(
             append("- 只用当前公开的工具独立完成；你不能操作手机界面，也不能向用户提问。")
             append("需要界面操作或用户决定的部分，在结论里写明，由主 Agent 处理。\n")
             append("- 你看不到主对话，只依据下面的任务与背景工作，不要假设未提供的信息。\n")
+            append("- terminal_job、terminal_daemon 启动的后台任务在你结束后仍会继续运行；只在确有必要时使用，并在结论里写明任务 id。\n")
             append("- 结论要具体：给出关键事实、文件路径、命令输出要点或来源链接，并说明不确定之处；不寒暄，不复述任务。\n\n")
             append("子任务：\n").append(task.task)
             if (task.context.isNotBlank()) append("\n\n背景：\n").append(task.context)
