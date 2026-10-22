@@ -21,7 +21,10 @@ class ProviderConnectionProfileTest {
         assertEquals("https://chatgpt.com/backend-api/codex", effective.baseUrl)
         assertEquals(OpenAiEndpointMode.RESPONSES, effective.openAiEndpointMode)
         assertEquals("", effective.apiKey)
-        assertEquals(OpenAiResponsesProvider, ProviderClientFactory.getClient(original))
+        // 订阅连接同样经过用量记录（本分支的用量账本），协议按订阅端点选 Responses。
+        val client = ProviderClientFactory.getClient(original)
+        assertTrue(client is UsageRecordingProviderClient)
+        assertEquals(OpenAiResponsesProvider.id, client.id)
         assertEquals("old-api-fixture", original.apiKey)
     }
 
