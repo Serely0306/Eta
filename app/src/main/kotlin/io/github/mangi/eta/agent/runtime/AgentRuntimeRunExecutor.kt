@@ -131,14 +131,16 @@ internal class AgentRuntimeRunExecutor(
             }
             val memoryContext = if (memoryEnabled) {
                 runCatching {
+                    val snapshot = AgentMemoryRepository.snapshot()
                     AgentMemorySessionSnapshots.resolve(
                         sessionId = request.effectiveModelSessionId,
                         contextWindow = request.config.contextWindow,
                         externalEditGeneration = AgentMemoryRepository.externalEditGeneration,
                         history = request.history,
+                        revision = snapshot.revision,
                     ) {
                         AgentMemoryContextBuilder.build(
-                            snapshot = AgentMemoryRepository.snapshot(),
+                            snapshot = snapshot,
                             contextWindow = request.config.contextWindow,
                         )
                     }
@@ -357,7 +359,18 @@ internal class AgentRuntimeRunExecutor(
                     historyTool.execute(call)
                 } else if (call.name in CharacterMemoryTools.NAMES && characterMemoryTools != null) {
                     characterMemoryTools.execute(call)
-                } else routingExecutor.execute(call)
+                } else routingExecutor.execute(call).also { result ->
+                    if (call.name == "memory_write") {
+                        runCatching { JSONObject(result.content) }.getOrNull()
+                            ?.takeIf { it.optBoolean("ok") }
+                            ?.let {
+                                AgentMemorySessionSnapshots.recordOwnWrite(
+                                    request.effectiveModelSessionId,
+                                    it.optString("revision"),
+                                )
+                            }
+                    }
+                }
             }
             // 用量账本按入口与 run 归类；同一线程上的压缩请求一并归入，子 Agent 在自己的线程上继承。
             val usageContext = ModelUsageContext(
@@ -420,6 +433,8 @@ internal class AgentRuntimeRunExecutor(
                 rewriteTargetMessageId = request.rewriteTargetMessageId,
             )
         } catch (throwable: Throwable) {
+            // 失败时历史是否完整落盘不确定，放弃固定的记忆快照；记忆未变时重新注入的内容逐字节相同。
+            AgentMemorySessionSnapshots.forget(request.effectiveModelSessionId)
             cancelled = runController.isCancelled || throwable is AgentRunCancelledException
             val modelFailure = throwable as? AgentModelExecutionException
             val message = if (cancelled) {

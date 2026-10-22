@@ -88,9 +88,11 @@ internal object AgentMemoryContextBuilder {
 
 /**
  * 同一会话的后续 run 复用系统提示中的记忆快照。模型自己的 memory_write 不再改写系统提示，
- * 否则下一轮请求的整段前缀缓存都会失效；写入前 revision 冲突会引导模型先读取最新内容。
- * 用户在设置中修改、上下文窗口变化或会话发生压缩（前缀本来就已改变）时重新取快照。
- * 只保存在 Runtime 进程内存中，进程重启后按当前文件重建。
+ * 否则下一轮请求的整段前缀缓存都会失效；这次写入已经以工具调用留在历史里，写入前 revision
+ * 冲突也会引导模型先读取最新内容。快照记下已知的 revision：本会话写入后由 [recordOwnWrite]
+ * 更新，其他会话或入口写入使 revision 不再一致时重新取快照。用户在设置中修改、上下文窗口
+ * 变化或会话发生压缩（前缀本来就已改变）时同样重新取。运行失败时历史是否完整落盘不确定，
+ * 由 [forget] 丢弃。只保存在 Runtime 进程内存中，进程重启后按当前文件重建。
  */
 internal object AgentMemorySessionSnapshots {
     private const val MAX_SESSIONS = 32
@@ -101,28 +103,40 @@ internal object AgentMemorySessionSnapshots {
         val compactionMarker: String,
     )
 
-    private data class Entry(val key: Key, val context: AgentMemoryContext)
+    private class Entry(val key: Key, val context: AgentMemoryContext, var knownRevision: String)
 
     private val entries = object : LinkedHashMap<String, Entry>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>?): Boolean =
             size > MAX_SESSIONS
     }
 
+    /** [revision] 为当前记忆文件的 revision；为空时不比较（只按键判断）。 */
     fun resolve(
         sessionId: String,
         contextWindow: Int?,
         externalEditGeneration: Long,
         history: List<AgentModelClient.ConversationMessage>,
+        revision: String = "",
         build: () -> AgentMemoryContext,
     ): AgentMemoryContext {
         val key = Key(contextWindow, externalEditGeneration, compactionMarker(history))
         synchronized(entries) {
-            entries[sessionId]?.takeIf { it.key == key }?.let { return it.context }
+            entries[sessionId]
+                ?.takeIf { it.key == key && (revision.isBlank() || it.knownRevision == revision) }
+                ?.let { return it.context }
         }
         val built = build()
-        synchronized(entries) { entries[sessionId] = Entry(key, built) }
+        synchronized(entries) { entries[sessionId] = Entry(key, built, revision) }
         return built
     }
+
+    /** 本会话的 memory_write 成功后调用：这次变化已在历史中，不算外部改动。 */
+    fun recordOwnWrite(sessionId: String, revision: String) {
+        if (revision.isBlank()) return
+        synchronized(entries) { entries[sessionId]?.knownRevision = revision }
+    }
+
+    fun forget(sessionId: String) = synchronized(entries) { entries.remove(sessionId) }
 
     internal fun clear() = synchronized(entries) { entries.clear() }
 

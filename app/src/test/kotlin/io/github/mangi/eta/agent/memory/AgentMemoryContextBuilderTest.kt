@@ -40,6 +40,26 @@ class AgentMemoryContextBuilderTest {
     }
 
     @Test
+    fun ownWritesKeepTheSnapshotWhileOtherWritersRefreshIt() {
+        AgentMemorySessionSnapshots.clear()
+        var content = "# 核心记忆\n旧"
+        fun resolve(revision: String) = AgentMemorySessionSnapshots.resolve(
+            "conversation-1", 128_000, 0, emptyList(), revision,
+        ) { AgentMemoryContextBuilder.build(snapshot(content), 128_000) }.coreContent
+
+        assertEquals("# 核心记忆\n旧", resolve("r1"))
+        content = "# 核心记忆\n本会话写入"
+        AgentMemorySessionSnapshots.recordOwnWrite("conversation-1", "r2")
+        assertEquals("# 核心记忆\n旧", resolve("r2"))
+        content = "# 核心记忆\n他处写入"
+        assertEquals("# 核心记忆\n他处写入", resolve("r3"))
+        content = "# 核心记忆\n失败后"
+        AgentMemorySessionSnapshots.forget("conversation-1")
+        assertEquals("# 核心记忆\n失败后", resolve("r3"))
+        AgentMemorySessionSnapshots.clear()
+    }
+
+    @Test
     fun coreBudgetTracksWindowWithSafeUnknownFallback() {
         assertEquals(8_000, AgentMemoryContextBuilder.coreBudgetChars(null))
         assertEquals(8_000, AgentMemoryContextBuilder.coreBudgetChars(128_000))
