@@ -357,6 +357,62 @@ class AnthropicMessagesProviderTest {
     }
 
     @Test
+    fun consecutiveToolRoundsSendTheEarlierRequestAsAnUnchangedPrefix() {
+        fun toolAssistant(id: String, signature: String) = JSONObject()
+            .put("role", "assistant")
+            .put("content", "")
+            .put("tool_calls", JSONArray().put(JSONObject().put("id", id).put("type", "function")
+                .put("function", JSONObject().put("name", "device_info").put("arguments", "{}"))))
+            .also { message ->
+                AnthropicEphemeralState.attachContentBlocks(message, JSONArray()
+                    .put(JSONObject().put("type", "thinking").put("thinking", "").put("signature", signature))
+                    .put(JSONObject().put("type", "tool_use").put("id", id)
+                        .put("name", "device_info").put("input", JSONObject())))
+            }
+        fun toolResult(id: String, content: String) =
+            JSONObject().put("role", "tool").put("tool_call_id", id).put("content", content)
+        val firstRound = JSONArray()
+            .put(JSONObject().put("role", "system").put("content", "系统"))
+            .put(AgentConversationCodec.userTextMessage("问题"))
+            .put(toolAssistant("toolu_1", "FIRST_SIGNATURE"))
+            .put(toolResult("toolu_1", "结果一"))
+        val secondRound = JSONArray(firstRound.toString())
+            .put(toolAssistant("toolu_2", "SECOND_SIGNATURE"))
+            .put(toolResult("toolu_2", "结果二"))
+        // toString 会丢掉附加在消息对象上的签名块，第二轮重新挂上第一轮的助手消息。
+        secondRound.put(2, firstRound.getJSONObject(2))
+        val tools = JSONArray()
+            .put(JSONObject().put("type", "function").put("function", JSONObject().put("name", "a").put("parameters", JSONObject().put("type", "object"))))
+        fun send(messages: JSONArray): JSONObject {
+            val requestBody = AtomicReference<String>()
+            withAnthropicServer(event("message_stop", JSONObject()), onRequest = requestBody::set) { baseUrl ->
+                AnthropicMessagesProvider.complete(
+                    providerRequest(baseUrl).copy(messages = messages, tools = tools),
+                    AgentRunController(),
+                )
+            }
+            return JSONObject(requestBody.get())
+        }
+        fun withoutCacheControl(messages: JSONArray): List<String> = (0 until messages.length()).map { index ->
+            val message = JSONObject(messages.getJSONObject(index).toString())
+            message.optJSONArray("content")?.let { content ->
+                for (block in 0 until content.length()) content.optJSONObject(block)?.remove("cache_control")
+            }
+            message.toString()
+        }
+
+        val first = send(firstRound)
+        val second = send(secondRound)
+        listOf(first, second).forEach { body ->
+            assertTrue(Regex("\"cache_control\"").findAll(body.toString()).count() <= 4)
+        }
+        val firstMessages = withoutCacheControl(first.getJSONArray("messages"))
+        val secondMessages = withoutCacheControl(second.getJSONArray("messages"))
+        assertEquals(firstMessages, secondMessages.take(firstMessages.size))
+        assertTrue(second.toString().contains("FIRST_SIGNATURE"))
+    }
+
+    @Test
     fun thinkingStreamsThroughToolBoundariesAndCompletesBeforeConnectionCloses() {
         val firstDelta = CountDownLatch(1)
         val completed = CountDownLatch(1)
