@@ -82,7 +82,7 @@ pending steering
 - `update_plan`：模型每次提交完整计划（1–20 步，状态 pending / in_progress / completed，同一时刻最多一步进行中）。Runtime 校验后发布 `PlanUpdated`，胶囊第二行显示当前步骤并标注“步骤 n/m”，电脑端的委托任务快照带上计划。工具不改变设备状态；系统提示要求 3 步以上的任务先建计划，简单任务不用。
 - `run_subagents`：一次派出 1–4 个子 Agent 并行处理相互独立的子问题，每个子 Agent 以新上下文运行，使用与主 run 相同的模型和非界面工具，只把结论（每个最多 8000 字）交回主 Agent。
   - 子 Agent 不开放界面类工具、Agent 浏览器、Skill 管理，也不能提问、建计划或再派子 Agent；需要界面操作或用户决定的步骤写进结论，由主 Agent 处理。
-  - 每个子 Agent 有独立的工具执行器，租约与浏览器归属用 `<runId>-sub-<n>`，关闭时不影响主 run 持有的屏幕租约。
+  - 每个子 Agent 有独立的工具执行器，租约与浏览器归属用 `<runId>-sub-<n>`，关闭时不影响主 run 持有的屏幕租约；终端执行上下文（默认身份与工作区）与主 run 相同。子 Agent 用 `terminal_job`、`terminal_daemon` 启动的后台任务由 App 持有，在子 Agent 结束后继续运行。
   - 主 run 取消时子 Agent 一并取消；单个子 Agent 超过 40 轮未完成即停止并报告。
   - 进度以 `SubagentUpdate` 汇总：胶囊显示“子 Agent n：正在执行的工具”，子 Agent 的内部事件不进入主 run 的消息流。事件的 `detail` 带任务摘要、当前工具的参数摘要和结论开头，只给界面显示，不进日志行；`run_subagents` 工具行展开后按子 Agent 列出状态与当前步骤。
   - 每个子 Agent 的过程（与主会话同样已脱敏）在运行中每次更新（模型回复、工具结果）时覆盖写一次快照，结束（成功、失败或取消）时写入最终结果，存为 `files/subagent_transcripts/<runId>/<调用 id>-<序号>.json`，过大时逐条截短；界面“查看过程”读取它，显示思考、正文与工具行（工具同样可看详情）；运行中的每 2 秒重读一次。30 天后清理，删除会话时按会话的 run 一并删除；不进 Eta 备份。
@@ -99,7 +99,7 @@ pending steering
 
 ## 工具单项开关
 
-类别开关仍是总开关。工具页每张卡片还可单独关闭，关闭的工具名保存在本地 Agent 配置 `agent_disabled_tools`，只由 Runtime 消费。`AgentToolToggles` 定义卡片对应的工具族与调用依赖：关闭 `observe_screen` 时依赖其 `observation_id` 的点击、长按、滑动、滚动与输入一并停用。Runtime 每轮重新读取停用集合，从工具声明中移除并在集合变化时重建系统提示；执行前再次检查，停用工具返回 `TOOL_DISABLED`。
+类别开关仍是总开关。工具页每张卡片还可单独关闭，关闭的工具名保存在本地 Agent 配置 `agent_disabled_tools`，只由 Runtime 消费。`AgentToolToggles` 定义卡片对应的工具族与调用依赖：关闭 `observe_screen` 时依赖其 `observation_id` 的点击、长按、滑动、滚动与输入一并停用；关闭终端命令时 `terminal_job`、`terminal_daemon` 一并停用，二者也可以单独关闭。Runtime 每轮重新读取停用集合，集合或 Root 状态变化时整体重建系统提示与工具声明，其余能力变化时工具目录只增不减；执行前再次检查，停用工具返回 `TOOL_DISABLED`。
 
 ## 可选角色上下文
 
@@ -181,6 +181,8 @@ MCP 地址由用户直接配置，HTTP、HTTPS、局域网与本机地址使用�
 ## 长期记忆
 
 默认助手的现实长期记忆保存在 App 私有目录的 `MEMORY.md` 中。文件使用 UTF-8，安全上限为 1 MiB；仓库在进程内锁中应用变更，并通过 `AtomicFile` 覆盖完整文件。模型写入携带当前内容的 SHA-256 revision，revision 不一致时返回 `MEMORY_CONFLICT`，不会覆盖并发更新。角色剧情使用独立文件，并复用容量、原子写入和冲突检查规则。
+
+同一模型会话（App 会话、电脑端任务、自动任务、语音入口各自的会话）的后续 run 复用系统背景中的记忆快照，保证请求前缀不变：本会话 `memory_write` 成功后只更新快照记下的 revision，不重建；revision 被其他会话或入口改变、设置页编辑、上下文窗口变化或会话压缩后重新取快照；run 失败时丢弃快照。
 
 每次 run 只把 `# 核心记忆` 的预算内内容、一级/二级标题索引和 revision 放入系统背景。核心预算为 `min(32000, max(4000, contextWindow / 16))` 个字符；模型窗口未知时按 128K 计算。没有 `# 核心记忆` 标题时不自动注入正文。其余内容由 `memory_get` 按行分页或按文本检索，单次最多返回 32000 字符。
 
