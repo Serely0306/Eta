@@ -84,6 +84,7 @@ fun ConversationSidePaneScaffold(
     onOpenCharacters: () -> Unit,
     onOpenPermissions: () -> Unit,
     modifier: Modifier = Modifier,
+    onLoadConversationSubagents: (String) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val sceneLifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
@@ -229,6 +230,7 @@ fun ConversationSidePaneScaffold(
                         onConversationRename = onConversationRename,
                         onConversationExport = onConversationExport,
                         onConversationDelete = onConversationDelete,
+                        onLoadSubagents = onLoadConversationSubagents,
                         onOpenSettings = onOpenSettings,
                         onOpenModelProviders = onOpenModelProviders,
                         onOpenTools = onOpenTools,

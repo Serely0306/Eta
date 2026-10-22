@@ -26,6 +26,10 @@ internal interface ConversationDao : ChunkedTextDao {
     @Query("SELECT id, title, created_at, updated_at FROM conversations")
     suspend fun conversationIdentities(): List<ConversationIdentity>
 
+    /** 含指定工具调用记录的会话；侧栏据此为未加载的会话显示子 Agent 入口，只读 id 列。 */
+    @Query("SELECT DISTINCT conversation_id FROM conversation_messages WHERE type = :type AND tool_name = :toolName")
+    suspend fun conversationIdsWithTool(type: String, toolName: String): List<String>
+
     @Query("UPDATE conversations SET title = :title, updated_at = :updatedAt WHERE id = :conversationId")
     suspend fun updateConversationTitle(conversationId: String, title: String, updatedAt: Long)
 

@@ -306,6 +306,7 @@ fun AgentAppRoot(
             onRefreshKimiWeb = appViewModel::refreshKimiWeb,
             onOpenBrowser = { pushRoute(AppRoute.Browser) },
             onSelectConversation = { conversationId -> selectConversation(conversationId) },
+            onLoadConversationSubagents = agentState::loadConversationSubagents,
             onConversationRename = { conversation ->
                 conversationRenameTarget = conversation
             },

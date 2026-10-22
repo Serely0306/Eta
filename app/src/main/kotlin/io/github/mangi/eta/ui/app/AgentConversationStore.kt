@@ -32,6 +32,7 @@ import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
+import io.github.mangi.eta.agent.runtime.AgentSubagentTool
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
@@ -326,6 +327,13 @@ internal object AgentConversationStore {
         query: String,
         matchingNoticeCodes: List<SystemNoticeCode> = emptyList(),
     ): Set<String> = ConversationSearchRepository.search(context, query, matchingNoticeCodes.map { it.wireValue })
+
+    /** 派出过子 Agent 的会话；未加载的会话不在内存里，侧栏靠它显示入口。 */
+    suspend fun subagentConversationIds(context: Context): Set<String> = withContext(Dispatchers.IO) {
+        EtaDatabase.get(context).conversationDao()
+            .conversationIdsWithTool(TYPE_TOOL, AgentSubagentTool.TOOL_NAME)
+            .toSet()
+    }
 
     fun unloadConversation(state: AgentChatHomeUiState): AgentChatHomeUiState = state.copy(
         messages = listOfNotNull(state.messages.lastOrNull()?.let { message -> when (message) {

@@ -567,6 +567,37 @@ class AgentConversationStoreTest {
     }
 
     @Test
+    fun subagentConversationIdsListOnlyConversationsThatRanSubagents() {
+        fun conversation(toolName: String) = AgentChatHomeUiState(
+            messages = listOf(
+                UserMessageUi(id = "user-1", content = "查一下"),
+                ToolActivityMessageUi(
+                    id = "run-1-tool-1-call_1",
+                    toolName = toolName,
+                    status = ToolActivityStatusUi.Success,
+                    argumentsSummary = "",
+                ),
+            ),
+            input = "",
+            isStreaming = false,
+            thinkingEnabled = false,
+        )
+        runBlocking {
+            AgentConversationStore.save(
+                context = context,
+                selectedConversationId = "with-subagents",
+                conversationsById = mapOf(
+                    "with-subagents" to conversation("run_subagents"),
+                    "plain" to conversation("terminal"),
+                ),
+                titles = mapOf("with-subagents" to "a", "plain" to "b"),
+                updatedAt = mapOf("with-subagents" to 2L, "plain" to 1L),
+            )
+            assertEquals(setOf("with-subagents"), AgentConversationStore.subagentConversationIds(context))
+        }
+    }
+
+    @Test
     fun appStateStartsWithSavedConversationsAndListsThemInThePane() {
         runBlocking {
             AgentConversationStore.save(

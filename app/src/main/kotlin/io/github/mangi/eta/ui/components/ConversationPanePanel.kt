@@ -140,6 +140,8 @@ internal fun ConversationPanePanel(
     modifier: Modifier = Modifier,
     /** 初始展开子 Agent 的会话；界面预览用。 */
     initialExpandedSubagents: Set<String> = emptySet(),
+    /** 展开尚未加载的会话时请求加载它，加载后列出子 Agent。 */
+    onLoadSubagents: (String) -> Unit = {},
 ) {
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
@@ -229,6 +231,7 @@ internal fun ConversationPanePanel(
                                         expandedSubagents = if (subagentsOpen) {
                                             expandedSubagents - conversation.id
                                         } else {
+                                            if (conversation.hasUnloadedSubagents) onLoadSubagents(conversation.id)
                                             expandedSubagents + conversation.id
                                         }
                                     },
@@ -513,8 +516,8 @@ private fun ConversationTextRow(
                         .background(MiuixTheme.colorScheme.primary),
                 )
             }
-            if (conversation.subagents.isNotEmpty()) {
-                // 展开按钮单独接收点击，不切换会话。
+            if (conversation.subagents.isNotEmpty() || conversation.hasUnloadedSubagents) {
+                // 展开按钮单独接收点击，不切换会话。未加载的会话先不显示数量，展开时加载。
                 Row(
                     modifier = Modifier
                         .padding(start = ConversationPanelMetrics.ActiveDotGap)
@@ -533,12 +536,14 @@ private fun ConversationTextRow(
                         modifier = Modifier.size(ConversationPanelMetrics.SectionIconSize),
                         tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
                     )
-                    Text(
-                        text = conversation.subagents.size.toString(),
-                        style = MiuixTheme.textStyles.footnote1,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
-                        modifier = Modifier.padding(start = 3.dp),
-                    )
+                    if (conversation.subagents.isNotEmpty()) {
+                        Text(
+                            text = conversation.subagents.size.toString(),
+                            style = MiuixTheme.textStyles.footnote1,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+                            modifier = Modifier.padding(start = 3.dp),
+                        )
+                    }
                     Icon(
                         imageVector = if (subagentsExpanded) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
                         contentDescription = stringResource(R.string.conversation_subagents_toggle),

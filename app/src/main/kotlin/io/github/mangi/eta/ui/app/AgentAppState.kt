@@ -160,6 +160,8 @@ internal class AgentAppState(
     // 侧栏的子 Agent 列表按（消息, 记录）引用缓存：摘要随每个流式事件刷新，只有变化的会话重算。
     // 必须在 init 之前声明：init 里刷新摘要时就会用到。
     private val subagentCache = mutableMapOf<String, Triple<List<AgentChatMessageUi>, List<AgentModelClient.ConversationMessage>, List<ConversationSubagentUi>>>()
+    // 存储里派出过子 Agent 的会话：未加载的会话只有预览，靠它在侧栏显示入口，展开时再加载。
+    private var storedSubagentConversationIds: Set<String> = emptySet()
 
     var homeState by mutableStateOf(
         selectedConversationId?.let(conversationsById::get) ?: emptyChatState(defaultThinkingEnabled)
@@ -180,6 +182,7 @@ internal class AgentAppState(
 
     init {
         refreshConversationSummaries()
+        loadStoredSubagentConversations()
         observeRuntimeSelection()
         observeDefaultReasoningEffort()
         runtimeRecoveryInProgress.set(true)
@@ -638,7 +641,10 @@ internal class AgentAppState(
 
         for (archivedRun in archivedRuns) {
             val payload = AgentExternalArchivePayload.from(archivedRun.handoff.payload) ?: continue
-            val conversationId = archiveConversationId(archivedRun.handoff.source, payload.conversationKey)
+            // 必须加载实际写入的会话：旧编号的会话存在时写入它，未加载就会在占位状态上追加。
+            val conversationId = withContext(Dispatchers.Main.immediate) {
+                externalArchiveTargetId(archivedRun.handoff.source, payload.conversationKey)
+            }
             val saved = withLoadedConversations(setOf(conversationId)) {
                 val importedRunId = withContext(Dispatchers.Main) {
                     importExternalRun(archivedRun).also { refreshConversationSummaries() }
@@ -672,16 +678,16 @@ internal class AgentAppState(
         }
     }
 
+    /** 旧版本按不带来源的编号归档；同一厂商会话已存在时继续写入原会话。 */
+    private fun externalArchiveTargetId(source: String, conversationKey: String): String =
+        legacyArchiveConversationId(source, conversationKey).takeIf { it in conversationsById }
+            ?: archiveConversationId(source = source, conversationKey = conversationKey)
+
     private fun importExternalRun(archivedRun: AgentRunArchiveStore.ArchivedRun): String? {
         val runId = archivedRun.result.runId.ifBlank { archivedRun.handoff.id }
         if (runId.isBlank()) return null
         val payload = AgentExternalArchivePayload.from(archivedRun.handoff.payload) ?: return null
-        // 旧版本按不带来源的编号归档；同一厂商会话已存在时继续写入原会话。
-        val legacyConversationId = legacyArchiveConversationId(archivedRun.handoff.source, payload.conversationKey)
-        val conversationId = legacyConversationId.takeIf { it in conversationsById } ?: archiveConversationId(
-            source = archivedRun.handoff.source,
-            conversationKey = payload.conversationKey,
-        )
+        val conversationId = externalArchiveTargetId(archivedRun.handoff.source, payload.conversationKey)
         val archivedEffort = payload.reasoningEffort
             ?: payload.thinkingEnabled?.let(ReasoningEffort::fromLegacy)
             ?: ReasoningEffort.fromLegacy(defaultThinkingEnabled)
@@ -2198,6 +2204,8 @@ internal class AgentAppState(
                     isActiveRun = state.isStreaming,
                     entrySource = conversationEntrySource(id, conversationTitles[id].orEmpty()),
                     subagents = conversationSubagents(id, state),
+                    hasUnloadedSubagents = !state.isConversationLoaded && subagentCache[id] == null &&
+                        id in storedSubagentConversationIds,
                 )
             }
         val query = conversationPaneState.searchQuery.trim()
@@ -2217,6 +2225,8 @@ internal class AgentAppState(
     }
 
     private fun conversationSubagents(conversationId: String, state: AgentChatHomeUiState): List<ConversationSubagentUi> {
+        // 释放后的会话只剩最后一条消息，沿用它加载时算出的结果；从未加载过的由侧栏展开时加载。
+        if (!state.isConversationLoaded) return subagentCache[conversationId]?.third.orEmpty()
         val journal = state.journal.ifEmpty { state.history }
         subagentCache[conversationId]?.let { (messages, cachedJournal, subagents) ->
             if (messages === state.messages && cachedJournal === journal) return subagents
@@ -2225,6 +2235,38 @@ internal class AgentAppState(
         subagentCache.keys.retainAll(conversationsById.keys)
         subagentCache[conversationId] = Triple(state.messages, journal, subagents)
         return subagents
+    }
+
+    private fun loadStoredSubagentConversations() {
+        scope.launch {
+            val ids = try {
+                AgentConversationStore.subagentConversationIds(appContext)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                AndroidAgentLogger.warn("Agent subagent index failed: type=${failure.safeLogType()}")
+                return@launch
+            }
+            withContext(Dispatchers.Main) {
+                storedSubagentConversationIds = ids
+                refreshConversationSummaries()
+            }
+        }
+    }
+
+    /** 侧栏展开尚未加载的会话：临时加载以算出子 Agent，结果在会话再次释放后仍保留。 */
+    fun loadConversationSubagents(conversationId: String) {
+        scope.launch {
+            try {
+                withLoadedConversations(setOf(conversationId)) {
+                    withContext(Dispatchers.Main) { refreshConversationSummaries() }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                AndroidAgentLogger.warn("Agent subagent load failed: type=${failure.safeLogType()}")
+            }
+        }
     }
 
     // 内容匹配按（查询词, 会话状态引用）缓存：刷新摘要时未变化的会话不重复全文扫描。
