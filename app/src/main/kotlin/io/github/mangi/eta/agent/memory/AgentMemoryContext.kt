@@ -136,7 +136,9 @@ internal object AgentMemorySessionSnapshots {
         synchronized(entries) { entries[sessionId]?.knownRevision = revision }
     }
 
-    fun forget(sessionId: String) = synchronized(entries) { entries.remove(sessionId) }
+    fun forget(sessionId: String) {
+        synchronized(entries) { entries.remove(sessionId) }
+    }
 
     internal fun clear() = synchronized(entries) { entries.clear() }
 
