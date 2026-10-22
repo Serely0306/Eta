@@ -1607,6 +1607,7 @@
   <string name="usage_group_sub">%1$d requests · %2$s tokens · %3$s cache hits</string>
   <string name="usage_group_no_usage">%1$d requests · the provider returned no usage, so no cost</string>
   <string name="usage_unpriced_short">No price</string>
+  <string name="usage_subscription">Subscription</string>
   <string name="usage_logs">Request log</string>
   <string name="usage_filter_provider">Provider</string>
   <string name="usage_filter_purpose">Purpose</string>

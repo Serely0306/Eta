@@ -5,6 +5,7 @@ import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.data.db.ModelUsageRecordEntity
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
+import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.usage.ModelUsageSummary
 import org.json.JSONArray
@@ -88,6 +89,17 @@ class UsageRecordingProviderClientTest {
         assertEquals(3, summary.requests)
         assertEquals(2, summary.requestsWithoutUsage)
         assertEquals(30L, summary.promptTokens)
+    }
+
+    @Test
+    fun subscriptionRequestsRecordTheAuthModeAsEndpoint() {
+        val client = UsageRecordingProviderClient(FakeProvider { ProviderResponse(JSONObject()) }, sink = records::add)
+        val base = request(ProviderRequestPurpose.CHAT)
+        client.complete(
+            base.copy(config = base.config.copy(apiKey = "", authMode = ProviderAuthModes.OPENAI_CHATGPT)),
+            AgentRunController(),
+        )
+        assertEquals(ProviderAuthModes.OPENAI_CHATGPT, records.single().endpoint)
     }
 
     private fun request(purpose: ProviderRequestPurpose) = ProviderRequest(

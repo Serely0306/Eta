@@ -1580,6 +1580,7 @@
   <string name="usage_group_sub">%1$d 次请求 · %2$s tokens · 缓存命中 %3$s</string>
   <string name="usage_group_no_usage">%1$d 次请求 · 服务商未返回用量，无法计费</string>
   <string name="usage_unpriced_short">未计费</string>
+  <string name="usage_subscription">订阅</string>
   <string name="usage_logs">使用记录</string>
   <string name="usage_filter_provider">服务商</string>
   <string name="usage_filter_purpose">用途</string>

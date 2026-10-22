@@ -1,6 +1,7 @@
 package io.github.mangi.eta.data.usage
 
 import io.github.mangi.eta.data.db.ModelUsageRecordEntity
+import io.github.mangi.eta.data.model.ProviderAuthModes
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
@@ -8,13 +9,21 @@ import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 
-/** 价格解析：按规整后的模型 ID 查价格表（从 models.dev 导入或用户填写），对所有服务商生效。 */
+/**
+ * 价格解析：按规整后的模型 ID 查价格表（从 models.dev 导入或用户填写），对所有服务商生效。
+ * 订阅连接（Codex、Grok 账号登录）不按 token 计费，记为 0，不计入金额与额度。
+ */
 internal class UsagePriceResolver(private val settings: UsagePricingSettings) {
     fun price(record: ModelUsageRecordEntity): ModelPrice? = settings.override(record.model)
 
     fun cost(record: ModelUsageRecordEntity): Double? =
-        ModelCostCalculator.costUsd(record, price(record), settings.multiplier(record.providerId), settings.cnyPerUsd)
+        if (record.isSubscription) 0.0
+        else ModelCostCalculator.costUsd(record, price(record), settings.multiplier(record.providerId), settings.cnyPerUsd)
 }
+
+/** 订阅连接的请求在账本的 endpoint 记认证方式，见 UsageRecordingProviderClient。 */
+internal val ModelUsageRecordEntity.isSubscription: Boolean
+    get() = ProviderAuthModes.isOAuth(endpoint)
 
 internal enum class UsageRange { TODAY, DAYS_7, DAYS_30, MONTH }
 

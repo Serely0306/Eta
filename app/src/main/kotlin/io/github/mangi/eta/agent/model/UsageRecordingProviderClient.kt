@@ -4,6 +4,7 @@ import io.github.mangi.eta.agent.runtime.AgentRunCancelledException
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.data.db.ModelUsageRecordEntity
+import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ProviderTypes
 
 /**
@@ -58,7 +59,12 @@ internal class UsageRecordingProviderClient(
             providerName = config.providerName,
             model = config.model,
             modelDisplayName = config.modelDisplayName.ifBlank { config.model },
-            endpoint = if (config.providerType == ProviderTypes.ANTHROPIC) ENDPOINT_ANTHROPIC else config.openAiEndpointMode,
+            // 订阅连接记认证方式，计价时按订阅处理，不套用 API 价格。
+            endpoint = when {
+                ProviderAuthModes.isOAuth(config.authMode) -> config.authMode
+                config.providerType == ProviderTypes.ANTHROPIC -> ENDPOINT_ANTHROPIC
+                else -> config.openAiEndpointMode
+            },
             reasoningEffort = config.effectiveReasoningEffort.wireValue,
             status = status,
             hasUsage = usage != null,

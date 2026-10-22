@@ -67,6 +67,7 @@ import io.github.mangi.eta.data.usage.UsageQuota
 import io.github.mangi.eta.data.usage.UsageRange
 import io.github.mangi.eta.data.usage.UsageReport
 import io.github.mangi.eta.data.usage.UsageReports
+import io.github.mangi.eta.data.usage.isSubscription
 import io.github.mangi.eta.ui.components.EtaArrowPreference
 import io.github.mangi.eta.ui.components.EtaCheckboxPreference
 import io.github.mangi.eta.ui.components.EtaDropdownPreference
@@ -654,7 +655,10 @@ internal fun UsageLogsScreen(onBack: () -> Unit) {
                         onClick = { expanded = if (open) expanded - record.id else expanded + record.id },
                         endActions = {
                             Text(
-                                text = cost?.let(::formatUsd) ?: stringResource(R.string.usage_unpriced_short),
+                                text = when {
+                                    record.isSubscription -> stringResource(R.string.usage_subscription)
+                                    else -> cost?.let(::formatUsd) ?: stringResource(R.string.usage_unpriced_short)
+                                },
                                 style = MiuixTheme.textStyles.body2,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
                             )

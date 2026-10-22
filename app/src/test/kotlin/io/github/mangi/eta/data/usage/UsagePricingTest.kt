@@ -152,6 +152,15 @@ class UsagePricingTest {
         assertTrue(total.costUsd!! > 0)
     }
 
+    @Test
+    fun subscriptionRequestsCostNothingEvenWhenTheModelHasAPrice() {
+        val resolver = UsagePriceResolver(UsagePricingSettings(priceOverrides = mapOf("gpt-6-astra" to astra)))
+        val subscription = record(prompt = 1_000, output = 100).copy(endpoint = "openai_chatgpt")
+        assertTrue(subscription.isSubscription)
+        assertEquals(0.0, resolver.cost(subscription)!!, 0.0)
+        assertTrue(resolver.cost(record(prompt = 1_000, output = 100))!! > 0)
+    }
+
     private fun record(
         providerId: String = "relay",
         model: String = "gpt-6-astra",
