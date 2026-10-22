@@ -568,11 +568,12 @@ class AgentConversationStoreTest {
 
     @Test
     fun subagentConversationIdsListOnlyConversationsThatRanSubagents() {
+        // 消息 id 是全局主键，两个会话各用自己的 id。
         fun conversation(toolName: String) = AgentChatHomeUiState(
             messages = listOf(
-                UserMessageUi(id = "user-1", content = "查一下"),
+                UserMessageUi(id = "user-$toolName", content = "查一下"),
                 ToolActivityMessageUi(
-                    id = "run-1-tool-1-call_1",
+                    id = "run-$toolName-tool-1-call_1",
                     toolName = toolName,
                     status = ToolActivityStatusUi.Success,
                     argumentsSummary = "",
