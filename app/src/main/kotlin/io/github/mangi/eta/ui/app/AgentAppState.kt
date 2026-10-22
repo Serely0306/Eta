@@ -137,6 +137,9 @@ internal class AgentAppState(
     private var conversationsById: Map<String, AgentChatHomeUiState> = initialConversations.conversationsById
     private var conversationTitles: Map<String, String> = initialConversations.titles
     private var conversationUpdatedAt: Map<String, Long> = initialConversations.updatedAt
+    // 侧栏的子 Agent 列表按（消息, 记录）引用缓存：摘要随每个流式事件刷新，只有变化的会话重算。
+    // 必须在 init 之前声明：init 里刷新摘要时就会用到。
+    private val subagentCache = mutableMapOf<String, Triple<List<AgentChatMessageUi>, List<AgentModelClient.ConversationMessage>, List<ConversationSubagentUi>>>()
 
     var homeState by mutableStateOf(
         selectedConversationId?.let(conversationsById::get) ?: emptyChatState(defaultThinkingEnabled)
@@ -1940,9 +1943,6 @@ internal class AgentAppState(
             },
         )
     }
-
-    // 侧栏的子 Agent 列表按（消息, 记录）引用缓存：摘要随每个流式事件刷新，只有变化的会话重算。
-    private val subagentCache = mutableMapOf<String, Triple<List<AgentChatMessageUi>, List<AgentModelClient.ConversationMessage>, List<ConversationSubagentUi>>>()
 
     private fun conversationSubagents(conversationId: String, state: AgentChatHomeUiState): List<ConversationSubagentUi> {
         val journal = state.journal.ifEmpty { state.history }

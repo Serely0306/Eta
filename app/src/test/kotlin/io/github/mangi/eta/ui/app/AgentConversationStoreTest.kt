@@ -467,6 +467,35 @@ class AgentConversationStoreTest {
     }
 
     @Test
+    fun appStateStartsWithSavedConversationsAndListsThemInThePane() {
+        runBlocking {
+            AgentConversationStore.save(
+                context = context,
+                selectedConversationId = "conv-1",
+                conversationsById = mapOf(
+                    "conv-1" to AgentChatHomeUiState(
+                        messages = listOf(UserMessageUi(id = "user-1", content = "hello")),
+                        input = "",
+                        isStreaming = false,
+                        thinkingEnabled = false,
+                    )
+                ),
+                titles = mapOf("conv-1" to "hello"),
+                updatedAt = mapOf("conv-1" to 1L),
+            )
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        try {
+            // 构造时就会刷新侧栏摘要（含子 Agent 列表），之前因字段声明在 init 之后而崩溃。
+            val state = AgentAppState(context, scope)
+            assertEquals(listOf("conv-1"), state.conversationPaneState.conversations.map { it.id })
+            assertTrue(state.conversationPaneState.conversations.single().subagents.isEmpty())
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
     fun savingEmptySnapshotClearsPreviouslyPersistedConversations() {
         runBlocking {
             AgentConversationStore.save(
