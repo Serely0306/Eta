@@ -1182,16 +1182,32 @@ internal class AgentAppState(
         },
     )
 
+    /** 发送；回复中直接发送的文字作为追加要求交给当前回复，不打断（ENG-6 D2）。 */
     fun sendCurrentMessage(submittedText: String? = null) {
-        submitOrQueueCurrentMessage(submittedText = submittedText, immediateInterrupt = false)
+        submitOrQueueCurrentMessage(submittedText = submittedText, queueWhileStreaming = false)
     }
 
+    /**
+     * 输入栏长按发送。上游语义是停掉当前回复后立即发送；本分支改为排进队列，
+     * 本次回复结束后发出（ENG-6 D2）。名称沿用上游，便于以后同步。
+     */
     fun interruptAndSendCurrentMessage(submittedText: String? = null) {
-        submitOrQueueCurrentMessage(submittedText = submittedText, immediateInterrupt = true)
+        submitOrQueueCurrentMessage(submittedText = submittedText, queueWhileStreaming = true)
     }
 
+    /** 队列里点闪电：回复中把这条排队消息立即作为追加交给当前回复（不打断）；空闲时直接发送。 */
     fun steerQueuedMessage(id: String) {
         if (!homeState.isConversationLoaded) return
+        if (homeState.isStreaming && !homeState.isCompacting) {
+            val item = homeState.queuedMessages.firstOrNull { it.id == id } ?: return
+            if (item.pendingImages.isNotEmpty() || item.pendingFileReferences.isNotEmpty()) {
+                Toast.makeText(appContext, appContext.getString(R.string.chat_follow_up_queued), Toast.LENGTH_SHORT).show()
+                return
+            }
+            val remaining = AgentMessageQueueReducer.remove(homeState, id)
+            if (steerCurrentRun(item.content)) updateCurrentConversation(remaining, updateTimestamp = false)
+            return
+        }
         val (nextState, promoted) = AgentMessageQueueReducer.promoteToInterrupt(homeState, id)
         if (promoted == null) return
         updateCurrentConversation(nextState, updateTimestamp = false)
@@ -1222,7 +1238,7 @@ internal class AgentAppState(
 
     private fun submitOrQueueCurrentMessage(
         submittedText: String?,
-        immediateInterrupt: Boolean,
+        queueWhileStreaming: Boolean,
     ) {
         if (!homeState.isConversationLoaded || homeState.isCompacting ||
             selectedConversationId in pendingConversationDeletes) return
@@ -1262,20 +1278,23 @@ internal class AgentAppState(
         }
 
         if (homeState.isStreaming) {
+            // 纯文字的直接发送是追加要求；长按、带附件或不能追加时排队，本次回复结束后发出。
+            val attachments = pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty()
+            if (!queueWhileStreaming && !attachments && prompt.isNotBlank() && steerCurrentRun(prompt)) {
+                if (submittedText == null) updateCurrentConversation(homeState.copy(input = ""), updateTimestamp = false)
+                return
+            }
             val queued = QueuedMessageUi(
                 id = "queue-${UUID.randomUUID()}",
                 content = prompt,
                 pendingImages = pendingImages,
                 pendingFileReferences = pendingFileReferences,
-                immediateInterrupt = immediateInterrupt,
+                immediateInterrupt = false,
             )
             updateCurrentConversation(
                 state = AgentMessageQueueReducer.enqueue(homeState, queued),
                 updateTimestamp = false,
             )
-            if (immediateInterrupt) {
-                requestInterruptCurrentRun()
-            }
             return
         }
 
@@ -1955,6 +1974,44 @@ internal class AgentAppState(
             AgentFileReferenceGateway.Error.ImportTooLarge -> appContext.getString(R.string.capability_import_too_large)
             AgentFileReferenceGateway.Error.ValidationTimedOut -> appContext.getString(R.string.state_ui_path_verification_timed_out_please_try_again_703687)
         }
+
+    /**
+     * 回复中直接发送的文字交给 Runtime steering，在当前轮次结束后进入下一轮，补充消息由
+     * UserSupplementReceived 事件插入会话；有待回答的问题时就是回答。run 已在收尾而拒绝的补充
+     * 改为排队。返回 false 表示不能追加（改写回复、已请求停止），由调用方排队。
+     */
+    private fun steerCurrentRun(prompt: String): Boolean {
+        val conversationId = selectedConversationId ?: return false
+        val runId = runStore.activeRunId(conversationId) ?: return false
+        if (isReplyRewrite(runId) || runStore.isStopRequested(runId)) return false
+        conversationStateForRun(runId).pendingQuestion?.takeIf { it.runId == runId }?.let { pending ->
+            answerQuestion(pending.questionId, AgentUserAnswer.text(prompt))
+            return true
+        }
+        scope.launch(Dispatchers.IO) {
+            val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger).steer(runId, prompt)
+            if (!accepted) withContext(Dispatchers.Main) { queueRejectedSteer(conversationId, prompt) }
+        }
+        return true
+    }
+
+    /** 追加被拒绝的文字放到队尾，不动用户此时的草稿；回复已经结束时直接发出。 */
+    private fun queueRejectedSteer(conversationId: String, prompt: String) {
+        val state = conversationsById[conversationId] ?: return
+        val queued = state.copy(queuedMessages = state.queuedMessages + QueuedMessageUi(
+            id = "queue-${UUID.randomUUID()}",
+            content = prompt,
+            pendingImages = emptyList(),
+            pendingFileReferences = emptyList(),
+            immediateInterrupt = false,
+        ))
+        updateConversation(conversationId, queued, updateTimestamp = false)
+        Toast.makeText(appContext, appContext.getString(R.string.chat_follow_up_queued), Toast.LENGTH_SHORT).show()
+        if (queued.isStreaming || runStore.activeRunId(conversationId) != null) return
+        val (afterPop, next) = AgentMessageQueueReducer.pollNextToSendAfterRun(queued, stoppedByUser = false)
+        updateConversation(conversationId, afterPop, updateTimestamp = false)
+        next?.let { dispatchQueuedMessage(conversationId, it) }
+    }
 
     fun stopCurrentRun() {
         val runId = runStore.activeRunId(selectedConversationId) ?: return
