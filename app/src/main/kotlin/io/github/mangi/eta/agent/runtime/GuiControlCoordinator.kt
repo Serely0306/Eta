@@ -1,6 +1,8 @@
 package io.github.mangi.eta.agent.runtime
 
+import android.content.Context
 import java.util.ArrayDeque
+import java.util.WeakHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -190,7 +192,14 @@ internal class GuiControlCoordinator {
     }
 
     companion object {
-        /** 进程内唯一的手机操作权：Runtime 的各个 run 与电脑端 MCP 直调共用同一份。 */
-        val shared = GuiControlCoordinator()
+        private val byApplication = WeakHashMap<Context, GuiControlCoordinator>()
+
+        /**
+         * 进程内唯一的手机操作权：Runtime 的各个 run 与电脑端 MCP 直调共用同一份。按 Application 实例保存，
+         * 生产环境每个进程只有一个；单测每个用例换新的 Application，上一个用例留下的持有者不会挡住下一个。
+         */
+        fun forApplication(context: Context): GuiControlCoordinator = synchronized(byApplication) {
+            byApplication.getOrPut(context.applicationContext) { GuiControlCoordinator() }
+        }
     }
 }

@@ -33,6 +33,8 @@ import org.json.JSONObject
 internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
     private val appContext = context.applicationContext
     private val tasks = sharedTaskManager(appContext)
+    /** 与 Runtime 的各个 run 共用的手机操作权（进程内唯一）。 */
+    private val guiCoordinator = GuiControlCoordinator.forApplication(appContext)
 
     override fun listTools(): List<EtaMcpTool> = deviceTools() + tasks.tools()
 
@@ -72,7 +74,7 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
         // 调用 release_gui 或空闲一段时间后释放；交接后旧观察失效，须重新 observe_screen。
         val guiOwnerId = "mcp:$sessionKey"
         val controller = AgentRunController()
-        val guiControl = GuiControlCoordinator.shared.openRun(guiOwnerId, controller)
+        val guiControl = guiCoordinator.openRun(guiOwnerId, controller)
         val pendingRelease = AtomicReference<ScheduledFuture<*>?>(null)
         val tools = AgentLocalTools(
             context = appContext,
@@ -94,7 +96,7 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
                     val result = tasks.call(name, arguments)
                     return EtaMcpToolOutcome(text = result.toString(), isError = !result.optBoolean("ok", false))
                 }
-                if (name == RELEASE_GUI && GuiControlCoordinator.shared.state.value.ownerRunId != guiOwnerId) {
+                if (name == RELEASE_GUI && guiCoordinator.state.value.ownerRunId != guiOwnerId) {
                     // 没有持有手机时无需释放；直接执行会先排队等待手机。
                     pendingRelease.getAndSet(null)?.cancel(false)
                     return EtaMcpToolOutcome(text = JSONObject().put("ok", true).put("tool", RELEASE_GUI).toString())
@@ -133,7 +135,7 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
     private fun awaitPhoneAvailable(ownerId: String): Boolean {
         val deadline = SystemClock.uptimeMillis() + GUI_WAIT_MS
         while (true) {
-            val state = GuiControlCoordinator.shared.state.value
+            val state = guiCoordinator.state.value
             if (!state.userPaused && (state.ownerRunId == null || state.ownerRunId == ownerId)) return true
             if (SystemClock.uptimeMillis() >= deadline) return false
             Thread.sleep(GUI_POLL_MS)

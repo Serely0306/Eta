@@ -101,7 +101,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val serviceMessenger = Messenger(IncomingHandler())
 
     private val runs = RuntimeRunRegistry()
-    private val guiControl = GuiControlCoordinator.shared
+    /** 与电脑端 MCP 直调共用的手机操作权，`onCreate` 时按 Application 取得。 */
+    private lateinit var guiControl: GuiControlCoordinator
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     @Volatile private var destroyed = false
     @Volatile private var lastGuiOwnerRunId: String? = null
@@ -161,6 +162,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onCreate() {
         super.onCreate()
+        guiControl = GuiControlCoordinator.forApplication(this)
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
