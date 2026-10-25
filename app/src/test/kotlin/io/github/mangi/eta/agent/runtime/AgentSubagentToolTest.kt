@@ -8,9 +8,15 @@ class AgentSubagentToolTest {
     @Test
     fun subagentsDoNotGetScreenBrowserOrSkillTools() {
         val excluded = AgentSubagentTool.excludedTools(
-            listOf("observe_screen", "tap_element", "launch_app", "browser_use", "skills_read", "terminal", "web_search", "read_file"),
+            listOf(
+                "observe_screen", "tap_element", "launch_app", "release_gui", "set_alarm", "browser_use", "skills_read",
+                "terminal", "web_search", "read_file",
+            ),
         )
-        assertEquals(setOf("observe_screen", "tap_element", "launch_app", "browser_use", "skills_read"), excluded)
+        assertEquals(
+            setOf("observe_screen", "tap_element", "launch_app", "release_gui", "set_alarm", "browser_use", "skills_read"),
+            excluded,
+        )
         assertTrue(listOf("terminal", "web_search", "read_file").none { it in excluded })
     }
 

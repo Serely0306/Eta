@@ -1,10 +1,13 @@
 package io.github.mangi.eta.agent.mcp.server
 
 import android.content.Context
+import android.os.SystemClock
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityKeeper
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentToolCatalog
+import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.runtime.AgentRuntimePolicy
+import io.github.mangi.eta.agent.runtime.GuiControlCoordinator
 import io.github.mangi.eta.agent.tool.AgentLocalTools
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.agent.tool.AgentToolRequirements
@@ -15,12 +18,17 @@ import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.usage.ModelUsageLedger
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 
 /**
  * 把 Eta 自己的本地工具开放给电脑端：工具目录与模型看到的一致，同样遵守工具设置里的分类开关、
- * 单项开关与 Root/无障碍等运行条件；执行走 [AgentLocalTools]，与 Agent run 共用屏幕和浏览器租约。
+ * 单项开关与 Root/无障碍等运行条件；执行走 [AgentLocalTools]，与 Agent run 共用手机操作权，
+ * 浏览器使用电脑端会话自己的页面。
  */
 internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
     private val appContext = context.applicationContext
@@ -60,10 +68,17 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
     }
 
     override fun openSession(sessionKey: String): EtaMcpToolHost.Session {
+        // 电脑端直调与 Runtime 的各个 run 共用进程内的手机操作权：界面工具先取得操作权，
+        // 调用 release_gui 或空闲一段时间后释放；交接后旧观察失效，须重新 observe_screen。
+        val guiOwnerId = "mcp:$sessionKey"
+        val controller = AgentRunController()
+        val guiControl = GuiControlCoordinator.shared.openRun(guiOwnerId, controller)
+        val pendingRelease = AtomicReference<ScheduledFuture<*>?>(null)
         val tools = AgentLocalTools(
             context = appContext,
             logger = AndroidAgentLogger,
             browserRunId = sessionKey,
+            guiControl = guiControl,
             browserToolsEnabled = { permissions().browserTools },
             terminalToolsEnabled = { permissions().terminalTools },
             deviceDirectToolsEnabled = { permissions().deviceDirectTools },
@@ -79,6 +94,16 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
                     val result = tasks.call(name, arguments)
                     return EtaMcpToolOutcome(text = result.toString(), isError = !result.optBoolean("ok", false))
                 }
+                if (name == RELEASE_GUI && GuiControlCoordinator.shared.state.value.ownerRunId != guiOwnerId) {
+                    // 没有持有手机时无需释放；直接执行会先排队等待手机。
+                    pendingRelease.getAndSet(null)?.cancel(false)
+                    return EtaMcpToolOutcome(text = JSONObject().put("ok", true).put("tool", RELEASE_GUI).toString())
+                }
+                val needsPhone = AgentToolRequirements.requiresGuiControl(name) && name != RELEASE_GUI
+                if (needsPhone) {
+                    pendingRelease.getAndSet(null)?.cancel(false)
+                    if (!awaitPhoneAvailable(guiOwnerId)) return phoneBusyOutcome()
+                }
                 val effective = if (EtaMcpPrivacySettings.load().allowImages) arguments else withoutScreenshot(name, arguments)
                 val result = tools.execute(
                     AgentModelClient.ToolCall(
@@ -87,12 +112,40 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
                         argumentsJson = effective.toString(),
                     ),
                 )
+                if (needsPhone) {
+                    // 电脑端可能不调用 release_gui；空闲后自动交还，避免会话开着就一直占着手机。
+                    pendingRelease.getAndSet(
+                        idleReleaser.schedule(Runnable { guiControl.release() }, GUI_IDLE_RELEASE_MS, TimeUnit.MILLISECONDS),
+                    )?.cancel(false)
+                }
                 return outcomeOf(result)
             }
 
-            override fun close() = tools.close()
+            override fun close() {
+                pendingRelease.getAndSet(null)?.cancel(false)
+                tools.close()
+                controller.cancel()
+            }
         }
     }
+
+    /** 手机被 Eta 的任务操作或已交还用户时有界等待，超时返回忙碌，避免电脑端的请求一直挂起。 */
+    private fun awaitPhoneAvailable(ownerId: String): Boolean {
+        val deadline = SystemClock.uptimeMillis() + GUI_WAIT_MS
+        while (true) {
+            val state = GuiControlCoordinator.shared.state.value
+            if (!state.userPaused && (state.ownerRunId == null || state.ownerRunId == ownerId)) return true
+            if (SystemClock.uptimeMillis() >= deadline) return false
+            Thread.sleep(GUI_POLL_MS)
+        }
+    }
+
+    private fun phoneBusyOutcome() = EtaMcpToolOutcome(
+        text = JSONObject().put("ok", false).put("code", "SCREEN_BUSY")
+            .put("message", "手机正在被 Eta 的任务操作或已交给用户，等待后仍未释放，本次未执行；可先做不需要界面的步骤，稍后再试。")
+            .toString(),
+        isError = true,
+    )
 
     private fun ensureAccessibility(toolName: String): ToolExecutionDecision {
         if (!AgentToolRequirements.requiresAccessibility(toolName)) return ToolExecutionDecision.Allow
@@ -122,6 +175,14 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
             }
 
         private val IMAGE_ONLY_TOOLS = setOf("read_image")
+        private const val RELEASE_GUI = "release_gui"
+        private const val GUI_WAIT_MS = 60_000L
+        private const val GUI_POLL_MS = 250L
+        private const val GUI_IDLE_RELEASE_MS = 45_000L
+
+        private val idleReleaser = Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "eta-mcp-gui-release").apply { isDaemon = true }
+        }
 
         /** Skill 工具服务于 Eta 自身的 Agent 指令体系，对电脑端没有意义，不开放。 */
         fun exposed(name: String): Boolean = !name.startsWith("skills_")

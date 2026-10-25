@@ -11,7 +11,7 @@ import io.github.mangi.eta.agent.model.ModelUsageScope
 import io.github.mangi.eta.agent.model.AgentToolSchema
 import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
-import io.github.mangi.eta.agent.tool.ForegroundResourceLease
+import io.github.mangi.eta.agent.tool.AgentToolRequirements
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 import org.json.JSONArray
@@ -221,10 +221,17 @@ internal class AgentSubagentTool(
         /** 只属于主 Agent 的协作工具；列入停用集合，子 Agent 的提示词也不会提到它们。 */
         private val COORDINATOR_TOOLS = setOf(AgentUserQuestion.TOOL_NAME, AgentTaskPlan.TOOL_NAME, TOOL_NAME)
 
-        /** 子 Agent 不开放的目录工具：操作或读取前台界面、占用共享浏览器的工具，以及 Skill 管理。 */
+        /**
+         * 子 Agent 不开放的目录工具：需要手机操作权或无障碍的界面工具、拉起前台界面的工具、
+         * 主 run 的会话浏览器，以及 Skill 管理。
+         */
         fun excludedTools(catalogNames: Iterable<String>): Set<String> = catalogNames.filterTo(mutableSetOf()) { name ->
-            ForegroundResourceLease.resourceFor(name) != null || name.startsWith("skills_")
+            AgentToolRequirements.requiresGuiControl(name) || AgentToolRequirements.requiresAccessibility(name) ||
+                AgentToolRequirements.hasForegroundIntentFallback(name) || name == BROWSER_TOOL ||
+                name.startsWith("skills_")
         }
+
+        private const val BROWSER_TOOL = "browser_use"
 
         private fun parseTasks(raw: String): Result<List<Task>> = runCatching {
             val array = JSONObject(raw.ifBlank { "{}" }).optJSONArray("tasks")

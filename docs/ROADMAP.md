@@ -30,7 +30,7 @@
 
 | 项 | 说明 | 时机 |
 |---|---|---|
-| 多标签页 Agent 浏览器 | 每个会话一个 WebView 标签页（最多 3 个，LRU 回收，Cookie 共享），浏览器页面支持切换标签；完成后去掉 `BROWSER` 租约。改动集中在 `AgentBrowserSession` 与浏览器页面 | 暂缓 |
+| 多标签页 Agent 浏览器 | 每个会话独立的浏览器页面已随上游 `f527108` 合入（Cookie 共享，`BROWSER` 租约已去掉）；浏览器页面内切换标签仍未做 | 暂缓 |
 | 端到端测试落地 | 按 E2E_TESTING.md 实现 debug 测试入口、状态 Provider、Mock 模型服务与运行器，完整执行一轮 | 现有需求全部实现后 |
 | CI 上传 Debug APK | `pr-check.yml` 在手动触发时上传 Debug APK，供真机测试取包 | 随端到端测试落地 |
 | MCP 操作界面时的可视提示 | 电脑端经 MCP 操作屏幕时显示边缘流光或胶囊，便于用户察觉 | MCP 基础功能完成后 |

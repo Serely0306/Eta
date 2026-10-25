@@ -1,6 +1,6 @@
 # 端到端测试方案
 
-本文档描述 Eta 在真机上的端到端（E2E）测试方案。单元测试只覆盖到纯逻辑，跨进程 IPC、浮层窗口、无障碍、Root、系统助手入口和跨 run 资源租约只能在设备上验证。目标是让同一套用例既能由 PC 通过 adb 驱动，也能在 MCP 接口落地后交给 PC 侧 Agent（Claude Code、Codex）或 Eta 自测执行。
+本文档描述 Eta 在真机上的端到端（E2E）测试方案。单元测试只覆盖到纯逻辑，跨进程 IPC、浮层窗口、无障碍、Root、系统助手入口和跨 run 的手机操作权只能在设备上验证。目标是让同一套用例既能由 PC 通过 adb 驱动，也能在 MCP 接口落地后交给 PC 侧 Agent（Claude Code、Codex）或 Eta 自测执行。
 
 当前状态：方案阶段，测试钩子与驱动脚本尚未实现。按计划在现有需求全部实现后统一落地并完整执行一轮；在此之前，每个功能实现时同步维护本文档的用例。
 
@@ -22,7 +22,7 @@
 | 无障碍重绑后结果卡片重取窗口 | `dc99056` | B4 | 未执行 |
 | 小爱、小布会话在侧栏单独归组 | `afd4780` | G1、G3 | 未执行 |
 | 文件工具在 Root 可用时默认 Root（私有目录例外已在 ENG-5 中放弃，改用上游的统一工作区） | `e80f83c` | E1、E2 | 未执行 |
-| 多会话并发、屏幕与浏览器租约、浮层归属 | `9875539` | A1–A10、B1–B3、B5、C5、G2 | 未执行 |
+| 多会话并发、屏幕与浏览器租约、浮层归属（租约部分已在 ENG-6 改用上游的手机操作权） | `9875539` | A1、A8、A9、B1、B3、G2 | 未执行 |
 | 真实模型冒烟 | — | H1–H3 | 未执行 |
 | 设备端 MCP 服务：设备工具、令牌鉴权、会话与设置页 | `ee6391e` | I1–I10 | 未执行 |
 | 设备端 MCP 服务：委托任务与“电脑端”会话分组 | `6dd1dc0` | I11–I15 | 未执行 |
@@ -57,6 +57,7 @@
 | Anthropic 同一轮连续工具调用的前缀与断点数量 | `526c500` | F1 | 未执行 |
 | 订阅连接记账，费用标为订阅 | `249689a` | N15 | 未执行 |
 | 按需加载后的侧栏子 Agent 与外部归档导入 | `fcd4a63` | P3、P4 | 未执行 |
+| 多会话并行改用上游的运行登记与手机操作权（ENG-6 D1）：追加要求、ask_user 胶囊、胶囊拖动与最小化、流光、结果卡片回退浮窗、接管时暂停横幅、子 Agent 排除工具、电脑端直调共用操作权 | 本提交 | A2–A7、A10–A12、B2、B5、C5、H3、I6、I14、J7、L8 | 未执行 |
 
 后续阶段的用例在实现时补充；虚拟屏执行实现时在 M 组追加。
 
@@ -73,7 +74,7 @@
 | 通道 | 方向 | 用途 |
 |---|---|---|
 | `adb shell am start` | PC → 设备 | 向 E2E 指令入口发送提交、停止、回答、追加等指令 |
-| `adb shell content query` | 设备 → PC | 从 E2E 状态 Provider 读取活动 run、浮层归属、租约、待答问题 |
+| `adb shell content query` | 设备 → PC | 从 E2E 状态 Provider 读取活动 run、浮层归属、手机操作权、待答问题 |
 | `adb logcat -s EtaE2E Eta` | 设备 → PC | 结构化事件流与排查日志 |
 | `adb reverse` | 设备 → PC | 被测 run 的模型请求发往 PC 上的 Mock 模型服务 |
 | `screencap` / `uiautomator dump` / `dumpsys window` | 设备 → PC | 失败现场材料 |
@@ -95,7 +96,7 @@ Debug 包是 debuggable 的，可以用 `adb shell run-as io.github.mangi.eta` �
 PC 上运行一个 OpenAI 兼容服务（`/v1/chat/completions`、`/v1/responses`，以及 Anthropic 的 `/v1/messages`），通过 `adb reverse tcp:18080 tcp:18080` 暴露为设备上的 `http://127.0.0.1:18080`。`network_security_config` 已允许明文流量。
 
 - 每个用例附一份剧本：按轮次返回文本或工具调用，例如第 1 轮 `observe_screen`，第 2 轮 `tap_element`，第 3 轮最终回复。
-- 剧本可以设置延迟，用于制造并发重叠（例如让 run A 在持有屏幕租约时停留 20 秒）。
+- 剧本可以设置延迟，用于制造并发重叠（例如让 run A 在持有手机操作权时停留 20 秒）。
 - 服务记录每个请求的结构摘要：工具列表、system 块数量与哈希、`cache_control` 位置、`prompt_cache_key` 是否存在、消息条数。只存哈希和结构，不存正文。
 - Eta 侧通过 E2E 指令入口新增一个独立的 Provider 条目 `e2e-mock` 并只在测试 run 上使用，不修改用户已有的 Provider 和 Key。
 
@@ -129,7 +130,7 @@ PC 上运行一个 OpenAI 兼容服务（`/v1/chat/completions`、`/v1/responses
 |---|---|
 | `runs` | run id、通道、阶段、状态、是否已操作前台、开始时间 |
 | `overlay` | 浮层 run id、胶囊/流光/结果卡片是否存在、`otherRunCount`、结果卡片对应会话 |
-| `leases` | 屏幕与浏览器租约持有者、使用中计数、空闲时长 |
+| `gui` | 手机操作权持有者（run id 或 `mcp:<会话>`）、等待队列、是否交还用户、观察代数 |
 | `questions` | 待回答问题的 run id、question id、选项数量 |
 | `events` | 最近 200 条事件：时间、run id、事件类型、工具名、错误码 |
 | `conversations` | 会话 id、标题长度、`entrySource`、是否运行中 |
@@ -150,30 +151,32 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 
 标记：`M` 为确定性用例（接 Mock 模型或直接调用工具，不依赖真实模型），`R` 需真实模型、真实系统入口或真实客户端，`慢` 表示耗时超过 1 分钟。
 
-### A. 并发运行与资源租约
+### A. 多会话并行与手机操作权
 
 | ID | 场景 | 断言 |
 |---|---|---|
 | A1 `M` | 会话 X、Y 先后提交，剧本均为纯文本多轮 | `runs` 同时出现两个 run；两个会话各自收到结果；互不取消 |
-| A2 `M` | 会话 X 运行中再次提交 | 旧 run 以停止结束，新 run 接管；浮层不出现旧 run 的停止卡片 |
-| A3 `M` | 已有 3 个不同通道的 run，再提交第 4 个 | 第 4 个立即失败并给出上限提示；已有 3 个不受影响 |
-| A4 `M` | run A 执行 `observe_screen` 后剧本停 20 秒；run B 此时调用 `tap_element` | B 等待期间 `leases.SCREEN=A`；A 结束后 B 继续执行，B 的事件晚于 A 的终态 |
-| A5 `M` `慢` | A 持有屏幕租约并持续使用；B 请求屏幕 | 默认 60 秒后 B 的工具结果为 `SCREEN_BUSY`（可用 `timeouts` 缩短） |
-| A6 `M` | A 用完屏幕工具后转为纯文本思考；B 请求屏幕 | 空闲超过 45 秒后 B 取得租约（可缩短）；A 再次请求屏幕时反过来等待 |
-| A7 `M` | A、B 同时调用 `browser_use` | 只有一方持有 `BROWSER`；另一方等待或 `BROWSER_BUSY` |
+| A2 `M` | 会话 X 运行中经指令入口再提交一个 run；另测小爱入口运行中再次唤醒 | 前者以 `CONVERSATION_BUSY` 失败，X 的 run 继续；后者旧 run 停止并排空后新 run 才开始，不并行写同一会话 |
+| A3 `M` | 已有 8 个不同会话的活动 run（含准备中），再提交第 9 个 | 第 9 个以 `RUN_CAPACITY_REACHED` 立即失败；已有的不受影响 |
+| A4 `M` | run A 执行 `observe_screen` 后剧本停 20 秒；run B 此时调用 `tap_element` | B 排队期间 `gui.owner=A`、B 的阶段为等待手机；A 调用 `release_gui` 或结束后 B 取得操作权；B 沿用旧观察时返回 `NO_OBSERVATION`，重新观察后继续 |
+| A5 `M` `慢` | A 持有手机操作权且长时间不释放；B 请求屏幕 | B 一直排队、不超时，不出现 `SCREEN_BUSY`；停止 B 时等待立即结束 |
+| A6 `M` | A 完成界面阶段后调用 `release_gui`，转为纯文本思考；B 请求屏幕 | B 立即取得操作权；A 再次请求屏幕时排在 B 之后 |
+| A7 `M` | 会话 A、B 同时调用 `browser_use`；A 的下一个 run 再调用一次 | 两个会话各用独立页面并行，不出现 `BROWSER_BUSY`；A 的下一个 run 复用 A 的页面，登录 Cookie 共享 |
 | A8 `M` | 停止会话 X 的 run | 只有 X 的 run 终止；Y 继续 |
 | A9 `M` | 两个会话运行中，按返回键退出 Eta 再从桌面打开 | 两个 run 都被重新挂接，事件继续进入各自会话；结束后都有结果 |
-| A10 `M` | 运行中等待屏幕租约时停止该 run | 等待立即结束，不再执行界面操作 |
+| A10 `M` | 运行中排队等待手机操作权时停止该 run | 等待立即结束，不再执行界面操作 |
+| A11 `M` | A 操作界面时在胶囊点暂停；B 此时请求屏幕、C 执行终端命令 | 整机交还用户：A 暂停，B 排队，C 照常执行；停止 A 也不自动恢复，点恢复后 B 才能取得 |
+| A12 `M` | 删除正在运行的会话 | 先停止并保存结果再删除；保存失败时保留会话 |
 
 ### B. 浮层与结果卡片
 
 | ID | 场景 | 断言 |
 |---|---|---|
 | B1 `M` | A 操作界面期间 B 启动（纯文本） | `overlay.run=A`，`otherRunCount=1`，胶囊显示“另有 1 个” |
-| B2 `M` | A 结束出结果卡片，B 随后开始操作界面 | 卡片内容保持 A 的结果；B 的胶囊出现；关闭卡片后 B 的胶囊仍在 |
+| B2 `M` | A 结束出结果卡片，B 随后开始操作界面 | B 取得手机操作权时 A 的卡片收起，浮层换成 B；A 的结果仍在会话里 |
 | B3 `M` | A 结束出结果卡片，B（未操作界面）随后结束 | A 的卡片不被收走 |
 | B4 `R` | 运行中让无障碍服务重绑（备份并重写 `enabled_accessibility_services` 后恢复） | 结果卡片仍出现；无障碍不可用时回退为普通浮窗 |
-| B5 `M` | 浮层 run 结束且没有结果卡片，B 仍在运行 | 浮层交给 B；所有 run 结束且无窗口后服务停止 |
+| B5 `M` | 浮层 run 结束且没有结果卡片，B 仍在运行但不操作界面 | 浮层收起，B 取得手机操作权或提问时才再出现；所有 run 结束且无窗口后服务停止 |
 | B6 `R` | 把胶囊拖到顶栏附近（或最小化后放在那里），让 Agent 点击胶囊下方的控件 | 点击前胶囊上移淡出让路，点击落到目标控件；操作结束后胶囊回到原位，连续操作期间不来回闪动 |
 | B7 `R` | 小爱入口、电脑端委托任务、自动任务各执行一个操作界面的任务，结果卡片上点“回到 Eta” | 都打开这次任务对应的会话（先导入归档）；找不到时停在当前界面，不切到无关会话 |
 
@@ -185,7 +188,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | C2 `M` | App 内发起后切到桌面再提问 | 胶囊进入提问模式；在胶囊上选择后问题消失 |
 | C3 `M` `慢` | 提问后不回答 | 默认 10 分钟后以超时结束等待（可缩短），模型收到超时结果 |
 | C4 `M` | 提问挂起时 `steer` | 文本作为自由回答；问题关闭 |
-| C5 `M` | A 操作界面期间 B 提问（用户不在 Eta） | 浮层切到 B 并展示问题；回答后 B 继续，A 不受影响 |
+| C5 `M` | A 操作界面期间 B 提问（用户不在 Eta） | B 的问题先挂起，A 释放操作权或结束后胶囊切到 B 展示问题；回答后 B 继续，A 不受影响；B 是 App 内发起且主界面可见时由会话面板直接显示 |
 | C6 `M` | 系统入口发起的 run 提问 | 走胶囊，不依赖主界面 |
 
 ### D. 工具开关与提示词
@@ -237,7 +240,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 |---|---|---|
 | H1 `R` | “打开设置里的电池页面” | run 成功结束；最后前台包为设置 |
 | H2 `R` | “用终端查看剩余存储空间” | run 成功结束；调用过 `terminal` |
-| H3 `R` | 两个会话同时执行 H1、H2 | 都成功；没有 `SCREEN_BUSY` 以外的错误码 |
+| H3 `R` | 两个会话同时执行 H1、H2 | 都成功；需要界面的一方按手机操作权排队，不出现 `SCREEN_BUSY` |
 
 ### I. 设备端 MCP 服务
 
@@ -250,7 +253,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | I3 `M` | `initialize`（2025-11-25）后 `tools/list` | 返回 `Mcp-Session-Id`；工具列表与工具设置一致，关闭某工具或分类后从列表消失；不含 `skills_*` |
 | I4 `M` | 不经 `initialize`，以 2026-07-28 头请求 `tools/list` | 结果带 `resultType: complete`；可在 Eta 中把自身添加为 MCP 服务器交叉验证 |
 | I5 `M` | `tools/call` 调用 `terminal` 执行命令；调用一个会失败的工具 | 前者 `isError=false` 且有输出；后者 `isError=true`，文本含错误码 |
-| I6 `M` | MCP 会话 `observe_screen` 后，手机上的 Eta run 调用 `tap_element`；反向再测一次 | 后到的一方等待，前者空闲让出后继续；超时得到 `SCREEN_BUSY` |
+| I6 `M` | MCP 会话 `observe_screen` 后，手机上的 Eta run 调用 `tap_element`；反向再测一次 | MCP 持有时 Eta run 排队，MCP 调用 `release_gui` 或空闲 45 秒后交接；Eta run 持有时 MCP 的界面调用最多等 60 秒，超时得到 `SCREEN_BUSY`；交接后旧 `observation_id` 失效 |
 | I7 `M` | 重新生成令牌；修改端口 | 旧令牌 401；旧端口不再监听，新端口可连 |
 | I8 `M` | 在执行通知中点停止 | 服务停止，MCP 页开关显示关闭；再次打开 Eta 不自动启动 |
 | I9 `M` `慢` | 会话空闲超过 30 分钟后继续调用 | 返回 404；客户端重新 `initialize` 后正常 |
@@ -258,7 +261,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | I11 `M` | `eta_task_start`（Mock 剧本为两步工具调用后回复），`wait_seconds=0` 后用 `eta_task_status` 等待 | 先返回 `running`；随后 `completed`，`result` 为剧本回复，`recent_steps` 含两步 |
 | I12 `M` | 剧本中调用 ask_user；分别用电脑端 `eta_task_answer` 与手机胶囊回答 | 状态为 `waiting_for_answer` 并带问题；任一端回答后问题关闭、任务继续，另一端的迟到回答被忽略 |
 | I13 `M` | 同一 `conversation_id` 连续两个任务；第一个执行中再提交第二个 | 第二个任务能引用第一个任务的上下文；执行中重复提交返回 `CONVERSATION_BUSY` |
-| I14 `M` | 两个不同 `conversation_id` 的任务与一个 App 会话任务同时运行；再提交第 4 个 | 三者并行互不替换；第 4 个以并发上限失败（同 A3） |
+| I14 `M` | 两个不同 `conversation_id` 的任务与一个 App 会话任务同时运行；继续提交到第 9 个 | 前 8 个并行互不替换；第 9 个以并发上限失败（同 A3） |
 | I15 `M` | `eta_task_stop`；任务结束后打开 Eta | 状态为 `stopped`；侧栏“电脑端”分组出现该会话的归档 |
 | I16 `M` | 服务运行时快速连续切换“允许局域网连接”三次 | 每次切换后服务都显示运行中，不出现 Address already in use；最终监听范围与开关一致 |
 | I17 `R` | 按页面复制的命令登记 Claude Code（USB 与局域网各一次），执行 `claude mcp list`；在 Codex 中追加复制的配置后执行 `codex mcp list` | 两个客户端都显示已连接；手机页面“电脑端连接”列出对应客户端名称和“刚刚” |
@@ -289,7 +292,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | J4 `M` | 子 Agent 剧本调用 `observe_screen`、`browser_use`、`ask_user` | Mock 收到的子 Agent 工具列表不含这些工具；强行调用返回 `SUBAGENT_TOOL_UNAVAILABLE` |
 | J5 `M` | 子 Agent 剧本持续调用工具不结束 | 第 40 轮后该子任务停止并报告轮数上限，其余子任务正常返回 |
 | J6 `M` | 子 Agent 执行中停止主 run | 所有子 Agent 的请求中断，主 run 以停止结束 |
-| J7 `M` | 主 Agent 先 `observe_screen` 持有屏幕租约，再派子 Agent，子 Agent 结束后主 Agent 继续操作界面 | 子 Agent 结束不释放主 run 的屏幕租约（`leases.SCREEN` 仍为主 run） |
+| J7 `M` | 主 Agent 先 `observe_screen` 取得手机操作权，再派子 Agent，子 Agent 结束后主 Agent 继续操作界面 | 子 Agent 结束不释放主 run 的操作权（`gui.owner` 仍为主 run）；子 Agent 的工具列表不含界面工具、`release_gui` 与浏览器 |
 | J8 `M` | 工具页关闭 `update_plan` 与 `run_subagents` | Mock 收到的工具列表与系统提示都不再包含它们；从历史强行调用返回 `TOOL_DISABLED` |
 | J9 `M` | 电脑端委托的任务调用 `update_plan` | `eta_task_status` 返回的快照带 `plan` |
 | J10 `M` | 派 3 个子 Agent：一个调用两次 `terminal` 后成功，一个失败，一个运行较久；运行中展开 `run_subagents` 工具行 | 标题下显示“完成 1 · 运行中 1 · 失败 1”；每个子 Agent 一栏，显示任务、运行中的“当前：<工具参数摘要>”、结束后的结论开头；每个子 Agent 都有“查看过程”，包括运行中的 |
@@ -330,7 +333,7 @@ Mock 服务按请求中的模型名区分主模型与备用模型（设置中配
 | L5 `M` | 在会话中让 Eta “每天早上 8 点提醒我喝水” | 调用 `manage_automations` create，设置页出现该任务且触发方式为每天 08:00；再让它删除，任务消失 |
 | L6 `M` | 关闭精确闹钟权限后查看自动任务页 | 显示“允许精确闹钟”入口；任务仍以非精确闹钟排期 |
 | L7 `M` | 同一任务运行中再次“立即运行” | 提示正在运行，不重复启动 |
-| L8 `M` | 已有 3 个 run 时自动任务触发 | 以并发上限失败，记录失败并发通知 |
+| L8 `M` | 已有 8 个活动 run 时自动任务触发 | 以并发上限失败，记录失败并发通知 |
 | L9 `M` | 电脑端经 MCP 调用 `manage_automations` list | 返回与设置页一致的列表与下次运行时间 |
 | L10 `M` | 自动任务提示词中让模型调用 ask_user | 提示词已声明无人值守；若仍提问，10 分钟超时后继续并在结论中说明 |
 | L11 `M` | 新建自动任务，指定 `e2e-mock-b` 与强度 High 后立即运行；再停用 `e2e-mock-b` 运行一次；用 `manage_automations` 的 `update` 传 `reasoning_effort=""` | 第一次请求发往 `e2e-mock-b` 且 `effort=high`，列表摘要显示“模型 · 强度”；停用后回落到默认模型，摘要标“（已停用）”；`list` 返回 `models` 与每个任务的 `model`、`reasoning_effort`，置空后为 `follow_default` |
@@ -446,7 +449,7 @@ Mock 服务通过 prompt 中的剧本标记（`[E2E:run-a]`）把请求对应到
 由 Eta 中的一个“测试会话”调用上述能力驱动其他会话执行用例。限制：
 
 - 测试会话本身也是一个 run，占用一个并发名额，A3 这类用例需要相应调整上限。
-- 测试会话不能操作屏幕，否则会与被测 run 争抢屏幕租约；它只能做提交、查询和断言。
+- 测试会话不能操作屏幕，否则会与被测 run 争抢手机操作权；它只能做提交、查询和断言。
 - 适合非界面用例（D、E、F、G1、G2）和版本更新后的快速自检。
 
 ## 结果记录

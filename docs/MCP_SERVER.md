@@ -45,7 +45,7 @@ http_headers = { Authorization = "Bearer <令牌>" }
 - Root、无障碍、通知访问等运行条件，不满足的工具不出现在列表中；
 - Skill 相关工具不开放（服务于 Eta 自身的指令体系）。
 
-界面类工具操作的是手机的真实屏幕，与手机上的 Eta 任务共用屏幕租约：同一时刻只有一方能操作界面，另一方最多等待 60 秒后得到 `SCREEN_BUSY`。`browser_use` 同理共用 Agent 浏览器。
+界面类工具操作的是手机的真实屏幕，与手机上的 Eta 任务共用手机操作权（`GuiControlCoordinator`）：同一时刻只有一方能操作界面。电脑端调用界面工具时，若手机正被 Eta 的任务操作或已交还用户，最多等待 60 秒，仍未释放则得到 `SCREEN_BUSY`；取得后在调用 `release_gui` 或空闲 45 秒后释放，Eta 的任务在此期间排队等待。操作权交接后旧的 `observation_id` 失效，需重新 `observe_screen`。`browser_use` 使用电脑端会话自己的浏览器页面，登录 Cookie 与手机上共享。
 
 每个 MCP 会话独占一个工具执行环境（屏幕观察缓存、终端会话等），会话空闲 30 分钟后回收，最多同时保留 8 个。
 
@@ -85,7 +85,7 @@ http_headers = { Authorization = "Bearer <令牌>" }
 | `eta_task_stop` | 停止任务 |
 
 - 状态：`running`、`waiting_for_answer`、`completed`、`failed`、`stopped`。
-- 工具范围与工具设置一致；与手机上的任务一起受最多 3 个并发的限制，界面操作同样经屏幕租约串行。
+- 工具范围与工具设置一致；与手机上的任务一起受同时运行上限（8 个）约束，界面操作经手机操作权排队交接。
 
 **可调用的模型**
 

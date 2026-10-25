@@ -25,6 +25,8 @@ internal object AgentToolToggles {
      */
     private val dependencies: Map<String, String> = buildMap {
         screenDependentTools.forEach { put(it, "observe_screen") }
+        // 手机操作权从观察屏幕开始取得；不能观察屏幕时也就没有可释放的操作阶段。
+        put("release_gui", "observe_screen")
         put("skills_install_from_github", "skills_inspect_github")
         put("skills_read_resource", "skills_read")
         put("terminal_job", "terminal")

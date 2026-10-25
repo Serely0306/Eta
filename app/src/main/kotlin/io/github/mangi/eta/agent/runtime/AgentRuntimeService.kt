@@ -45,6 +45,7 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.device.ScreenTakeoverNotificationGuard
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentUserAnswer
@@ -100,7 +101,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     private val serviceMessenger = Messenger(IncomingHandler())
 
     private val runs = RuntimeRunRegistry()
-    private val guiControl = GuiControlCoordinator()
+    private val guiControl = GuiControlCoordinator.shared
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     @Volatile private var destroyed = false
     @Volatile private var lastGuiOwnerRunId: String? = null
@@ -191,6 +192,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     override fun onDestroy() {
         destroyed = true
+        ScreenTakeoverNotificationGuard.onGuiControlChanged(false)
         setKeepScreenOn(false)
         runs.all().forEach { run ->
             run.releaseIncoming()
@@ -1004,6 +1006,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
 
     private fun applyGuiControlState(guiState: GuiControlCoordinator.State) {
         if (destroyed) return
+        ScreenTakeoverNotificationGuard.onGuiControlChanged(guiState.ownerRunId != null && !guiState.userPaused)
         val owner = guiState.ownerRunId?.let(runs::get)
         if (owner != null && displayedRun !== owner) {
             bindDisplayedRun(owner)

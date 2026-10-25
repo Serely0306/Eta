@@ -188,4 +188,9 @@ internal class GuiControlCoordinator {
 
         internal fun notifyStatus(status: GuiControlStatus) = onStatusChanged(status)
     }
+
+    companion object {
+        /** 进程内唯一的手机操作权：Runtime 的各个 run 与电脑端 MCP 直调共用同一份。 */
+        val shared = GuiControlCoordinator()
+    }
 }

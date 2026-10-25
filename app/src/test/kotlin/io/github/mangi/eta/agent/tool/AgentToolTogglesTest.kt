@@ -17,7 +17,7 @@ class AgentToolTogglesTest {
     @Test
     fun disablingObservationStopsDependentGuiToolsButNotIndependentOnes() {
         val effective = AgentToolToggles.effective(setOf("observe_screen"))
-        listOf("observe_screen", "tap", "tap_element", "long_press_element", "scroll_element", "swipe", "type_text")
+        listOf("observe_screen", "tap", "tap_element", "long_press_element", "scroll_element", "swipe", "type_text", "release_gui")
             .forEach { assertTrue(it, it in effective) }
         listOf("press_key", "launch_app", "wait_for_text").forEach { assertFalse(it, it in effective) }
         assertEquals("observe_screen", AgentToolToggles.dependencyOf("tap_element"))
