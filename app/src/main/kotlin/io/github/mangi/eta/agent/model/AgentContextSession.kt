@@ -61,9 +61,9 @@ internal class AgentContextSession(
 
     fun compact(force: Boolean = false, final: Boolean = false) {
         val before = inputTokens
-        if (AnthropicEphemeralState.hasPendingToolResponse(messages)) {
+        if (SignedToolContext.hasPendingResponse(messages)) {
             if (force) {
-                throw AgentContextCompactor.signedAnthropicToolRoundFailure()
+                throw SignedToolContext.compactionFailure(messages)
             }
             return
         }

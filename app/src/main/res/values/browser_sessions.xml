@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_clear_shared_data">Clear all browser data</string>
+    <string name="browser_clear_shared_data_message">All pages will close. Cookies, cache, and website data, including sign-in sessions, will be cleared.</string>
+    <string name="browser_user_action_failed">The browser action could not be completed. Please try again.</string>
+</resources>

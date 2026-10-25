@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -30,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.LayoutDirection
@@ -46,6 +48,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.device.BoundedRootCommandExecutor
 import io.github.mangi.eta.agent.device.DeviceLocationProvider
 import io.github.mangi.eta.agent.device.RootAccess
+import io.github.mangi.eta.agent.runtime.AgentRuntimeService
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.AppearanceSettingsScreen
@@ -67,7 +70,8 @@ import io.github.mangi.eta.ui.pages.providers.CommunityCatalogScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderDetailScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderListScreen
 import io.github.mangi.eta.ui.screens.backup.DataBackupScreen
-import io.github.mangi.eta.ui.screens.browser.AgentBrowserScreen
+import io.github.mangi.eta.ui.screens.browser.AgentBrowserActivity
+import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import io.github.mangi.eta.ui.screens.characters.CharacterDetailScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterEditorScreen
 import io.github.mangi.eta.ui.screens.characters.CharacterLibraryScreen
@@ -90,6 +94,7 @@ import io.github.mangi.eta.ui.screens.terminal.SharedFoldersScreen
 import io.github.mangi.eta.ui.screens.terminal.TerminalEntryScreen
 import io.github.mangi.eta.ui.screens.terminal.WorkspaceScreen
 import io.github.mangi.eta.ui.screens.tools.AgentToolsScreen
+import io.github.mangi.eta.ui.screens.tools.WebToolsSettingsScreen
 import io.github.mangi.eta.ui.voice.SpeechOssScreen
 import io.github.mangi.eta.ui.voice.SpeechRecognitionScreen
 import io.github.mangi.eta.ui.voice.SpeechSettingsScreen
@@ -143,6 +148,14 @@ fun AgentAppRoot(
     var navigationResetKey by rememberSaveable { mutableIntStateOf(0) }
     val appViewModel = viewModel<AgentAppViewModel>()
     val agentState = appViewModel.state
+    val runtimeActive by AgentRuntimeService.keepScreenOn.collectAsState()
+    val view = LocalView.current
+    val keepScreenOn = backStack.lastOrNull() == AppRoute.Home &&
+        agentState.homeState.isStreaming && runtimeActive
+    DisposableEffect(view, keepScreenOn) {
+        view.keepScreenOn = keepScreenOn
+        onDispose { view.keepScreenOn = false }
+    }
     val skills = appViewModel.skills
     val memory = appViewModel.memory
     val permissionHealth = appViewModel.permissionHealth
@@ -259,13 +272,22 @@ fun AgentAppRoot(
     fun selectConversation(conversationId: String) {
         focusManager.clearFocus()
         agentState.selectConversation(conversationId)
+        navigator.popToHome()
         conversationPaneOpen = false
     }
 
     fun createConversation() {
         focusManager.clearFocus()
         agentState.createConversation()
+        navigator.popToHome()
         conversationPaneOpen = false
+    }
+
+    fun openConversationBrowser() {
+        focusManager.clearFocus()
+        val sessionKey = agentState.conversationPaneState.selectedConversationId
+            ?: BrowserSessionRegistry.MANUAL_SESSION_KEY
+        context.startActivity(AgentBrowserActivity.createIntent(context, sessionKey))
     }
 
     @Composable
@@ -304,7 +326,7 @@ fun AgentAppRoot(
             canStopKimiWeb = appViewModel.kimiWebState.canStop,
             onStopKimiWeb = appViewModel::stopKimiWeb,
             onRefreshKimiWeb = appViewModel::refreshKimiWeb,
-            onOpenBrowser = { pushRoute(AppRoute.Browser) },
+            onOpenBrowser = { openConversationBrowser() },
             onSelectConversation = { conversationId -> selectConversation(conversationId) },
             onLoadConversationSubagents = agentState::loadConversationSubagents,
             onConversationRename = { conversation ->
@@ -375,6 +397,10 @@ fun AgentAppRoot(
                                 AgentHomeAction.RetryConversationLoad -> agentState.retryConversationLoad()
                                 is AgentHomeAction.ModelSelected -> agentState.selectModel(action.modelId)
                                 is AgentHomeAction.SubmitMessage -> { requestExecutionNotifications(); agentState.sendCurrentMessage(action.text) }
+                                is AgentHomeAction.InterruptAndSubmitMessage -> { requestExecutionNotifications(); agentState.interruptAndSendCurrentMessage(action.text) }
+                                is AgentHomeAction.SteerQueuedMessage -> { requestExecutionNotifications(); agentState.steerQueuedMessage(action.id) }
+                                is AgentHomeAction.RecallQueuedMessage -> agentState.recallQueuedMessage(action.id, action.currentDraftText)
+                                is AgentHomeAction.RemoveQueuedMessage -> agentState.removeQueuedMessage(action.id)
                                 AgentHomeAction.StopRun -> agentState.stopCurrentRun()
                                 is AgentHomeAction.AnswerQuestion ->
                                     agentState.answerQuestion(action.questionId, AgentUserAnswer.Selected(action.selections))
@@ -408,7 +434,7 @@ fun AgentAppRoot(
                                 AgentHomeAction.OpenPermissions -> pushRoute(AppRoute.Permissions)
                                 AgentHomeAction.OpenSystemEnhance -> pushRoute(AppRoute.SystemEnhance)
                                 AgentHomeAction.OpenSettings -> pushRoute(AppRoute.Settings)
-                                AgentHomeAction.OpenBrowser -> pushRoute(AppRoute.Browser)
+                                AgentHomeAction.OpenBrowser -> openConversationBrowser()
                                 AgentHomeAction.ExpandRunTrace -> Unit
                             }
                         },
@@ -419,9 +445,12 @@ fun AgentAppRoot(
                     )
                 }
             }
-            entry<AppRoute.Browser>(swipeDismiss = swipeDismiss) {
-                RoutedShell(route = AppRoute.Browser) {
-                    AgentBrowserScreen()
+            entry<AppRoute.Browser> { route ->
+                // 保留已保存路由的恢复入口；新打开操作直接进入原生浏览器窗口。
+                LaunchedEffect(route) {
+                    context.startActivity(AgentBrowserActivity.createIntent(context, route.sessionKey))
+                    backStack.remove(route)
+                    if (backStack.isEmpty()) backStack.add(AppRoute.Home)
                 }
             }
             entry<AppRoute.Terminal>(swipeDismiss = swipeDismiss) {
@@ -441,7 +470,8 @@ fun AgentAppRoot(
                     onAction = { action ->
                         when (action) {
                             AgentToolsAction.NavigateBack -> popRoute()
-                            AgentToolsAction.OpenBrowser -> pushRoute(AppRoute.Browser)
+                            AgentToolsAction.OpenBrowser -> openConversationBrowser()
+                            AgentToolsAction.OpenWebToolsSettings -> pushRoute(AppRoute.WebToolsSettings)
                             AgentToolsAction.OpenEnhancements -> pushRoute(AppRoute.SystemEnhance)
                             AgentToolsAction.OpenPermissions -> pushRoute(AppRoute.Permissions)
                             is AgentToolsAction.SetToolEnabled -> {
@@ -451,6 +481,9 @@ fun AgentAppRoot(
                         }
                     },
                 )
+            }
+            entry<AppRoute.WebToolsSettings>(swipeDismiss = swipeDismiss) {
+                WebToolsSettingsScreen(onBack = ::popRoute)
             }
             entry<AppRoute.Skills>(swipeDismiss = swipeDismiss) {
                 LaunchedEffect(Unit) {
@@ -820,14 +853,17 @@ fun AgentAppRoot(
             show = true,
             cornerRadius = DialogDefaults.CornerRadius,
             title = stringResource(R.string.conversation_delete_title),
-            summary = stringResource(R.string.conversation_delete_message),
+            summary = stringResource(if (conversation.isActiveRun) R.string.conversation_stop_and_delete_message else R.string.conversation_delete_message),
             onDismissRequest = { conversationDeleteTarget = null },
         ) {
             MiuixDialogActions(
-                confirmText = stringResource(R.string.action_delete),
+                confirmText = stringResource(if (conversation.isActiveRun) R.string.conversation_stop_and_delete else R.string.action_delete),
                 destructive = true,
                 onCancel = { conversationDeleteTarget = null },
                 onConfirm = {
+                    if ((backStack.lastOrNull() as? AppRoute.Browser)?.sessionKey == conversation.id) {
+                        navigator.popToHome()
+                    }
                     agentState.deleteConversation(conversation.id)
                     conversationDeleteTarget = null
                 },

@@ -241,9 +241,9 @@ private fun AgentTopBar(
         }
     }
 
-    // 首页聊天舞台与浏览器、终端这类整屏工具页没有可驱动折叠的滚动列表，大标题会一直展开、
+    // 首页聊天舞台与终端这类整屏工具页没有可驱动折叠的滚动列表，大标题会一直展开、
     // 白占一屏顶部；它们使用紧凑标题，其余二级内容页统一使用可折叠大标题。
-    val compactTitle = isHome || route is AppRoute.Browser || route is AppRoute.Terminal
+    val compactTitle = isHome || route is AppRoute.Terminal
     if (compactTitle) {
         SmallTopAppBar(
             title = titleForRoute(route),
@@ -421,10 +421,10 @@ private fun TopBarOverflowMenu(
 
 @Composable
 private fun titleForRoute(route: AppRoute?): String = when (route) {
-    is AppRoute.Home -> ""
-    is AppRoute.Browser -> stringResource(R.string.route_browser)
+    is AppRoute.Home, is AppRoute.Browser -> ""
     is AppRoute.Terminal -> stringResource(R.string.route_terminal)
     is AppRoute.Tools -> stringResource(R.string.route_tools)
+    is AppRoute.WebToolsSettings -> stringResource(R.string.web_tools_settings_title)
     is AppRoute.Skills -> stringResource(R.string.route_skills)
     is AppRoute.Characters -> "角色"
     is AppRoute.CharacterDetail -> "角色详情"

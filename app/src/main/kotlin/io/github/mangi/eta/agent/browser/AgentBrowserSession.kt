@@ -19,7 +19,6 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
-import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.graphics.createBitmap
@@ -77,25 +76,16 @@ internal data class BrowserToolResult(
 )
 
 /**
- * Eta 的共享 Agent 浏览器。
+ * 同一会话内由 Agent 与用户共享的浏览器页面。
  *
  * WebView 可以离屏工作，也可以临时挂到 App 的浏览器页面供用户接管。
  */
 // 共享 WebView 必须跨工具调用存活；Activity 容器只在浏览器页面可见时持有，并在 dispose 时解绑。
 @SuppressLint("StaticFieldLeak")
-internal object AgentBrowserSession {
-    private const val TOOL_NAME = "browser_use"
-    private const val DEFAULT_TEXT_CHARS = 8_000
-    private const val MAX_TEXT_CHARS = 12_000
-    private const val NAVIGATION_TIMEOUT_MS = 25_000L
-    private const val JAVASCRIPT_TIMEOUT_MS = 8_000L
-    private const val POST_ACTION_TIMEOUT_MS = 10_000L
-    private const val OFFSCREEN_VIEWPORT_MAX_WIDTH = 1_280
-    private const val OFFSCREEN_VIEWPORT_MAX_HEIGHT = 2_400
-    private const val PREVIEW_MAX_WIDTH = 480
-    private const val PREVIEW_MAX_HEIGHT = 900
-    private const val PREVIEW_QUALITY = 60
-
+internal class AgentBrowserSession(
+    private val onIdle: () -> Unit = {},
+    private val isDataClearing: () -> Boolean = { false },
+) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val operationLock = ReentrantLock()
     private val interrupted = AtomicBoolean(false)
@@ -165,6 +155,9 @@ internal object AgentBrowserSession {
     @Volatile
     private var activeAgentRunId: String? = null
 
+    @Volatile
+    private var closed = false
+
     fun initialize(context: Context) {
         if (appContext == null) {
             synchronized(this) {
@@ -178,12 +171,14 @@ internal object AgentBrowserSession {
         args: JSONObject,
         runId: String,
         toolCallId: String,
+        checkCancellation: () -> Unit = {},
     ): BrowserToolResult {
         val result = executeInternal(
             context = context,
             args = args,
             userInitiated = false,
             agentRunId = runId,
+            checkCancellation = checkCancellation,
         )
         val succeeded = runCatching { JSONObject(result.content).optBoolean("ok", false) }
             .getOrDefault(false)
@@ -228,18 +223,20 @@ internal object AgentBrowserSession {
     fun resetFromUser(): BrowserToolResult {
         val context = appContext
             ?: return errorResult("reset", "BROWSER_NOT_INITIALIZED", "浏览器尚未初始化")
-        return operationLock.withLock {
-            interrupted.set(true)
-            currentLoadWaiter?.complete(LoadOutcome(false, "CANCELLED", "操作已取消"))
-            callOnMain {
-                destroyWebViewOnMain()
-                CookieManager.getInstance().removeAllCookies(null)
-                CookieManager.getInstance().flush()
-                WebStorage.getInstance().deleteAllData()
-                clearSessionStateOnMain()
+        return try {
+            operationLock.withLock {
+                if (closed) return@withLock errorResult("reset", "BROWSER_SESSION_CLOSED", "浏览器会话已关闭")
+                interrupted.set(true)
+                currentLoadWaiter?.complete(LoadOutcome(false, "CANCELLED", "操作已取消"))
+                callOnMain {
+                    destroyWebViewOnMain()
+                    clearSessionStateOnMain()
+                }
+                initialize(context)
+                toolResult(baseEnvelope("reset", ok = true, status = "ok"))
             }
-            initialize(context)
-            toolResult(baseEnvelope("reset", ok = true, status = "ok"))
+        } finally {
+            onIdle()
         }
     }
 
@@ -265,6 +262,7 @@ internal object AgentBrowserSession {
     }
 
     fun attachTo(container: ViewGroup, hostContext: Context) {
+        if (closed) return
         initialize(hostContext)
         val wasAlreadyControlling = userControlActive
         userControlActive = true
@@ -288,7 +286,22 @@ internal object AgentBrowserSession {
                 attachedContainer = null
                 appContext?.let { contextWrapper?.baseContext = it }
                 publishSnapshotOnMain()
+                onIdle()
             }
+        }
+    }
+
+    /** 主线程只尝试回收空闲页面，不等待正在执行的导航或脚本。 */
+    internal fun releaseIdlePage(dispose: Boolean = false): Boolean {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        if (userControlActive || !operationLock.tryLock()) return false
+        return try {
+            if (dispose) closed = true
+            destroyWebViewOnMain()
+            clearSessionStateOnMain()
+            true
+        } finally {
+            operationLock.unlock()
         }
     }
 
@@ -322,6 +335,7 @@ internal object AgentBrowserSession {
         args: JSONObject,
         userInitiated: Boolean,
         agentRunId: String? = null,
+        checkCancellation: () -> Unit = {},
     ): BrowserToolResult {
         initialize(context)
         val action = args.optString("action").trim().lowercase(Locale.ROOT)
@@ -331,10 +345,16 @@ internal object AgentBrowserSession {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return errorResult(action, "MAIN_THREAD_CALL", "浏览器操作不能阻塞主线程")
         }
-
-        return operationLock.withLock {
+        checkCancellation()
+        if (isDataClearing()) return errorResult(action, "BROWSER_DATA_CLEARING", "正在清除浏览器数据，请稍后再试", "blocked")
+        // 等待另一动作时也响应本 run 的取消，不能获得锁后清掉已经到达的取消信号。
+        while (!operationLock.tryLock(100L, TimeUnit.MILLISECONDS)) checkCancellation()
+        return try {
+            checkCancellation()
+            if (closed) return errorResult(action, "BROWSER_SESSION_CLOSED", "浏览器会话已关闭")
+            if (isDataClearing()) return errorResult(action, "BROWSER_DATA_CLEARING", "正在清除浏览器数据，请稍后再试", "blocked")
             if (!userInitiated && userControlActive) {
-                return@withLock errorResult(
+                return errorResult(
                     action = action,
                     code = "USER_CONTROL_ACTIVE",
                     message = "用户正在接管浏览器，请等待用户离开浏览器页面后再继续",
@@ -346,11 +366,12 @@ internal object AgentBrowserSession {
             activeOperationEpoch = epoch
             activeActionIsUserInitiated = userInitiated
             activeAgentRunId = agentRunId.takeUnless { userInitiated }
-            callOnMain {
-                currentError = null
-                publishSnapshotOnMain()
-            }
             try {
+                checkCancellation()
+                callOnMain {
+                    currentError = null
+                    publishSnapshotOnMain()
+                }
                 runCatching {
                     when (action) {
                         "navigate" -> navigate(args)
@@ -374,6 +395,9 @@ internal object AgentBrowserSession {
                 activeActionIsUserInitiated = false
                 if (activeAgentRunId == agentRunId) activeAgentRunId = null
             }
+        } finally {
+            operationLock.unlock()
+            onIdle()
         }
     }
 
@@ -647,13 +671,13 @@ internal object AgentBrowserSession {
     }
 
     private fun throwIfInterrupted() {
-        if (interrupted.get() || activeOperationEpoch == 0L) {
+        if (isDataClearing() || interrupted.get() || activeOperationEpoch == 0L) {
             throw BrowserFailure("CANCELLED", "操作已取消", "cancelled")
         }
     }
 
     private fun requireActiveOperation(epoch: Long) {
-        if (epoch == 0L || activeOperationEpoch != epoch || interrupted.get()) {
+        if (isDataClearing() || epoch == 0L || activeOperationEpoch != epoch || interrupted.get()) {
             throw BrowserFailure("CANCELLED", "操作已取消", "cancelled")
         }
     }
@@ -694,6 +718,8 @@ internal object AgentBrowserSession {
     }
 
     private fun attachWebViewOnMain(view: WebView, container: ViewGroup) {
+        // 前台跟随窗口的硬件加速，不能继承离屏绘制遗留的软件图层。
+        view.setLayerType(View.LAYER_TYPE_NONE, null)
         (view.parent as? ViewGroup)?.takeIf { it !== container }?.removeView(view)
         if (view.parent == null) {
             container.removeAllViews()
@@ -724,7 +750,6 @@ internal object AgentBrowserSession {
         (view.parent as? ViewGroup)?.removeView(view)
         runCatching { view.stopLoading() }
         runCatching { view.clearHistory() }
-        runCatching { view.clearCache(true) }
         runCatching { view.clearFormData() }
         runCatching { view.destroy() }
         webView = null
@@ -752,12 +777,12 @@ internal object AgentBrowserSession {
         val epoch = activeOperationEpoch
         val future = CompletableFuture<String>()
         mainHandler.post {
-            if (webView !== view || interrupted.get() || activeOperationEpoch != epoch || epoch == 0L) {
+            if (isDataClearing() || webView !== view || interrupted.get() || activeOperationEpoch != epoch || epoch == 0L) {
                 future.completeExceptionally(BrowserFailure("CANCELLED", "操作已取消", "cancelled"))
             } else {
                 runCatching {
                     view.evaluateJavascript(BrowserDomScripts.wrap(body)) { raw ->
-                        if (!interrupted.get() && activeOperationEpoch == epoch) {
+                        if (!isDataClearing() && !interrupted.get() && activeOperationEpoch == epoch) {
                             future.complete(raw ?: "null")
                         } else {
                             future.completeExceptionally(BrowserFailure("CANCELLED", "操作已取消", "cancelled"))
@@ -825,7 +850,7 @@ internal object AgentBrowserSession {
             ) else 1f
             val width = (sourceWidth * scale).roundToInt().coerceAtLeast(1)
             val height = (sourceHeight * scale).roundToInt().coerceAtLeast(1)
-            if (view.windowToken == null) view.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
+            // Bitmap Canvas 已决定截图采用软件绘制，不能修改共享 WebView 的持久图层类型。
             val captured = createBitmap(width, height)
             try {
                 Canvas(captured).also { canvas ->
@@ -988,8 +1013,9 @@ internal object AgentBrowserSession {
         if (Looper.myLooper() == Looper.getMainLooper()) block() else mainHandler.post(block)
     }
 
-    private class BrowserClient : WebViewClient() {
+    private inner class BrowserClient : WebViewClient() {
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+            if (webView !== view) return
             currentUrl = url.orEmpty()
             currentHost = hostOf(currentUrl)
             currentTitle = view.title.orEmpty()
@@ -1002,6 +1028,7 @@ internal object AgentBrowserSession {
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
+            if (webView !== view) return
             currentUrl = url.orEmpty()
             currentHost = hostOf(currentUrl)
             committedMainFrameUrl = currentUrl
@@ -1014,12 +1041,14 @@ internal object AgentBrowserSession {
         }
 
         override fun onPageCommitVisible(view: WebView, url: String?) {
+            if (webView !== view) return
             committedMainFrameUrl = url.orEmpty()
             currentPageVisible = true
             publishSnapshotOnMain()
         }
 
         override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+            if (webView !== view) return
             currentUrl = url.orEmpty()
             currentHost = hostOf(currentUrl)
             currentTitle = view.title.orEmpty()
@@ -1027,7 +1056,7 @@ internal object AgentBrowserSession {
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            if (!request.isForMainFrame) return
+            if (webView !== view || !request.isForMainFrame) return
             setNavigationErrorOnMain("NETWORK_ERROR", "页面加载失败，请检查网络连接")
         }
 
@@ -1036,7 +1065,7 @@ internal object AgentBrowserSession {
             request: WebResourceRequest,
             errorResponse: WebResourceResponse,
         ) {
-            if (!request.isForMainFrame) return
+            if (webView !== view || !request.isForMainFrame) return
             currentHttpStatus = errorResponse.statusCode
             if (errorResponse.statusCode >= 400) {
                 currentError = "网页返回 HTTP ${errorResponse.statusCode}"
@@ -1045,6 +1074,7 @@ internal object AgentBrowserSession {
         }
 
         override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+            if (webView !== view) return true
             mainHandler.post {
                 if (webView === view) {
                     destroyWebViewOnMain()
@@ -1060,15 +1090,17 @@ internal object AgentBrowserSession {
         }
     }
 
-    private class BrowserChrome : WebChromeClient() {
+    private inner class BrowserChrome : WebChromeClient() {
         override fun onReceivedTitle(view: WebView, title: String?) {
+            if (webView !== view) return
             currentTitle = title.orEmpty()
             publishSnapshotOnMain()
         }
 
         override fun onProgressChanged(view: WebView, newProgress: Int) {
+            if (webView !== view) return
             currentProgress = newProgress.coerceIn(0, 100)
-            currentLoading = newProgress < 100
+            // 进度回调可能在主页面结束后继续到达，不能反复切换导航的加载状态。
             publishSnapshotOnMain()
         }
     }
@@ -1111,20 +1143,33 @@ internal object AgentBrowserSession {
         val status: String = "error",
     ) : RuntimeException(message)
 
-    private val SUPPORTED_ACTIONS = setOf(
-        "navigate",
-        "get_readable",
-        "get_text",
-        "find_elements",
-        "click",
-        "type",
-        "scroll",
-        "screenshot",
-        "get_page_info",
-        "go_back",
-        "go_forward",
-        "reload",
-        "wait_for_selector",
-    )
+    private companion object {
+        private const val TOOL_NAME = "browser_use"
+        private const val DEFAULT_TEXT_CHARS = 8_000
+        private const val MAX_TEXT_CHARS = 12_000
+        private const val NAVIGATION_TIMEOUT_MS = 25_000L
+        private const val JAVASCRIPT_TIMEOUT_MS = 8_000L
+        private const val POST_ACTION_TIMEOUT_MS = 10_000L
+        private const val OFFSCREEN_VIEWPORT_MAX_WIDTH = 1_280
+        private const val OFFSCREEN_VIEWPORT_MAX_HEIGHT = 2_400
+        private const val PREVIEW_MAX_WIDTH = 480
+        private const val PREVIEW_MAX_HEIGHT = 900
+        private const val PREVIEW_QUALITY = 60
+        private val SUPPORTED_ACTIONS = setOf(
+            "navigate",
+            "get_readable",
+            "get_text",
+            "find_elements",
+            "click",
+            "type",
+            "scroll",
+            "screenshot",
+            "get_page_info",
+            "go_back",
+            "go_forward",
+            "reload",
+            "wait_for_selector",
+        )
+    }
 
 }

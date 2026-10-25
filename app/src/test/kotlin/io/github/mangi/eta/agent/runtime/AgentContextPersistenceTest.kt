@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
+import android.app.Application
 import android.content.Context
 import io.github.mangi.eta.agent.model.AgentContextSnapshot
 import io.github.mangi.eta.agent.model.AgentModelClient
@@ -14,7 +15,8 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+// 数据库由用例管理，避免 EtaApp 的后台预热与关闭、重开数据库竞争。
+@Config(sdk = [36], application = Application::class)
 class AgentContextPersistenceTest {
     private lateinit var context: Context
 

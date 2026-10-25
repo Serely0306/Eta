@@ -25,6 +25,7 @@ internal object CustomHeaderFilter {
         "upgrade",
         "authorization",
         "x-api-key",
+        "x-goog-api-key",
         "anthropic-version"
     )
 
@@ -34,6 +35,7 @@ internal object CustomHeaderFilter {
     private val SENSITIVE_NAMES = setOf(
         "authorization",
         "x-api-key",
+        "x-goog-api-key",
         "api-key"
     )
 

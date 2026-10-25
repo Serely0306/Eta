@@ -12,7 +12,6 @@ internal object AgentRunRecoveryCoordinator {
 
     data class Plan(
         val completed: List<Completed>,
-        /** Runtime 仍在执行、需要重新订阅的 run；不同会话可以同时运行。 */
         val reattach: List<AgentRunCheckpointStore.Checkpoint>,
         val interrupted: List<AgentRunCheckpointStore.Checkpoint>,
     )
@@ -40,13 +39,12 @@ internal object AgentRunRecoveryCoordinator {
             .filterNot { it.runId in locallyObservedRunIds || it.runId in completedRunIds }
             .sortedBy { it.createdAt }
         val active = if (activeStateKnown) unresolved.filter { it.runId in activeRunIds } else emptyList()
-        val activeIds = active.mapTo(mutableSetOf()) { it.runId }
 
         return Plan(
             completed = completed,
             reattach = active,
             interrupted = if (activeStateKnown && terminalStateKnown) {
-                unresolved.filterNot { it.runId in activeIds }
+                unresolved.filterNot { it.runId in activeRunIds }
             } else {
                 emptyList()
             },

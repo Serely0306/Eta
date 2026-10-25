@@ -11,6 +11,18 @@ internal object AgentRuntimeRequestConfigResolver {
     const val PAYLOAD_MODEL_ID = "modelId"
     const val PAYLOAD_REASONING_EFFORT = "reasoningEffort"
 
+    fun constrainPresentation(
+        request: AgentRuntimeWire.RunRequest,
+        isEtaProcess: Boolean,
+    ): AgentRuntimeWire.RunRequest {
+        val supportedEntry = request.handoff?.source in setOf(
+            AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
+            AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE,
+        )
+        if (!request.config.supportsSearchSuggestions || isEtaProcess && supportedEntry) return request
+        return request.copy(config = request.config.copy(supportsSearchSuggestions = false))
+    }
+
     /** Runtime 侧替换入口模型配置时读取的设置。 */
     enum class RuntimeConfigSource {
         DEFAULT_MODEL,
@@ -93,6 +105,7 @@ internal object AgentRuntimeRequestConfigResolver {
             thinkingEnabled = effort.enablesReasoning,
             reasoningEffort = effort,
             autoCompactionEnabled = runtimeConfig.autoCompactionEnabled && entry.autoCompactionEnabled,
+            supportsSearchSuggestions = entry.supportsSearchSuggestions,
         )
         val handoff = request.handoff ?: return request.copy(config = config)
         val archivePayload = AgentExternalArchivePayload.from(handoff.payload)

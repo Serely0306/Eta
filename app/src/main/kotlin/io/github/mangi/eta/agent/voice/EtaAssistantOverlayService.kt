@@ -498,7 +498,7 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
                     runId = runId,
                     prompt = normalized,
                     assistantScreenContext = screen.text,
-                    config = config,
+                    config = config.copy(supportsSearchSuggestions = true),
                     images = runImages,
                     history = conversationHistory,
                     handoff = AgentRuntimeWire.EntryHandoff(

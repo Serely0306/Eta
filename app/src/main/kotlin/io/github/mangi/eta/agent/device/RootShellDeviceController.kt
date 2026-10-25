@@ -3,6 +3,7 @@ package io.github.mangi.eta.agent.device
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.terminal.ShellProcessSupervisor
 import io.github.mangi.eta.core.AgentLogger
 
 import android.content.ClipData
@@ -25,7 +26,18 @@ internal class RootShellDeviceController(
     private val logger: AgentLogger,
     private val screenshotExcludedPackages: () -> Set<String> = { emptySet() },
     private val rootAvailable: () -> Boolean = { RootAccess.isGranted },
-) {
+) : AutoCloseable {
+    private val processSupervisor = ShellProcessSupervisor(rootAvailable = rootAvailable)
+
+    override fun close() {
+        processSupervisor.beginClosing()
+        val processes = processSupervisor.takeRemainingProcesses()
+        if (processes.isEmpty()) return
+        thread(name = "agent-gui-cleanup", isDaemon = true) {
+            processes.forEach(::finishProcess)
+        }
+    }
+
     data class Observation(
         val content: String,
         val image: AgentModelClient.ModelImage?,
@@ -1179,9 +1191,9 @@ internal class RootShellDeviceController(
 
     private fun runRootProcess(command: String, timeoutSeconds: Long): ProcessBytesResult {
         val envelope = RootCommandEnvelope(command)
-        val result = runProcess(timeoutSeconds, "su", "-c", envelope.script)
+        val result = runProcess(timeoutSeconds, envelope.script)
         val rootOutput = envelope.inspect(result.stderr.decodeToString())
-        val completed = result.exitCode >= 0 && result.stderrComplete
+        val completed = result.exitCode >= 0 && result.stderrComplete && !processSupervisor.isClosing
         if (rootOutput.denied(completed)) {
             RootAccess.markDenied()
             logger.warn("Agent root access outcome=denied code=ROOT_REQUIRED")
@@ -1192,15 +1204,10 @@ internal class RootShellDeviceController(
 
     private fun runProcess(
         timeoutSeconds: Long,
-        vararg command: String
+        command: String,
     ): ProcessBytesResult {
-        val process = runCatching {
-            ProcessBuilder(*command)
-                .redirectErrorStream(false)
-                .start()
-        }.getOrElse {
-            return ProcessBytesResult(-1, ByteArray(0), it.message.orEmpty().toByteArray())
-        }
+        val process = processSupervisor.startShellProcess("root", command, mergeStderr = false)
+            ?: return ProcessBytesResult(-1, ByteArray(0), "GUI_PROCESS_UNAVAILABLE".toByteArray())
 
         val output = ByteArrayOutputCollector()
         val stderr = ByteArrayOutputCollector()
@@ -1211,21 +1218,41 @@ internal class RootShellDeviceController(
             process.errorStream.use { input -> stderr.readFrom(input) }
         }
 
-        val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
-        if (!finished) {
-            process.destroyForcibly()
+        try {
+            val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+            if (!finished) {
+                finishProcess(process)
+                outputThread.join(500)
+                stderrThread.join(500)
+                return ProcessBytesResult(
+                    ShellActionOutcomePolicy.PROCESS_TIMEOUT_EXIT_CODE,
+                    output.bytes(),
+                    "命令执行超时".toByteArray(),
+                )
+            }
             outputThread.join(500)
             stderrThread.join(500)
-            return ProcessBytesResult(
-                ShellActionOutcomePolicy.PROCESS_TIMEOUT_EXIT_CODE,
-                output.bytes(),
-                "命令执行超时".toByteArray(),
-            )
+            return ProcessBytesResult(process.exitValue(), output.bytes(), stderr.bytes(), stderr.completed)
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw interrupted
+        } finally {
+            finishProcess(process)
         }
+    }
 
-        outputThread.join(500)
-        stderrThread.join(500)
-        return ProcessBytesResult(process.exitValue(), output.bytes(), stderr.bytes(), stderr.completed)
+    private fun finishProcess(process: Process) {
+        // 取消线程与执行线程可能同时回收；清理期间暂存中断，避免特权终止命令立即中断。
+        val interrupted = Thread.interrupted()
+        try {
+            synchronized(process) {
+                if (process.isAlive) processSupervisor.terminateAndReap(process)
+                else processSupervisor.reapProcess(process)
+                processSupervisor.unregisterProcess(process)
+            }
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
+        }
     }
 
     private fun errorJson(code: String, message: String): String =

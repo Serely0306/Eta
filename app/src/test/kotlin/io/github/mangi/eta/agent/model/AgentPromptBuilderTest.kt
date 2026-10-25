@@ -61,7 +61,7 @@ class AgentPromptBuilderTest {
 
     @Test
     fun currentModelIdentityFollowsConfigWithCustomOrEmptyProviderPrompt() {
-        for (providerPrompt in listOf("自定义回答风格", "")) {
+        for (providerPrompt in listOf("你是小满", "")) {
             val config = modelConfig(providerPrompt, terminalTools = false, browserTools = false)
                 .copy(model = "provider/model-a", modelDisplayName = "显示名称")
             for (modelId in listOf(config.model, "provider/model-b")) {
@@ -73,7 +73,7 @@ class AgentPromptBuilderTest {
                 )
 
                 val identity = messages.systemContents().single { it.contains("当前配置的模型：") }
-                assertTrue(identity.contains("你是 Eta"))
+                assertFalse(messages.systemContents().any { it.contains("你是 Eta") })
                 assertTrue(identity.contains("当前配置的模型：\"$modelId\""))
                 assertFalse(identity.contains(config.modelDisplayName))
                 if (modelId != config.model) assertFalse(identity.contains(config.model))

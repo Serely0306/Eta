@@ -19,6 +19,21 @@ import org.junit.Test
 
 class RuntimeConfigRepositoryTest {
     @Test
+    fun emptyProviderPromptStaysEmptyAcrossRuntimeSerialization() {
+        val provider = OpenAiCompatibleProviderSetting(
+            id = "prompt-provider", name = "测试", baseUrl = "https://example.invalid/v1",
+        )
+        val model = Model(id = "model", modelId = "fixture", displayName = "测试")
+        for (prompt in listOf(null, "", "  ", "你是小满")) {
+            val config = RuntimeConfigRepository.buildRuntimeConfig(provider.copy(systemPrompt = prompt), model)
+            val restored = Json.decodeFromString<AgentModelClient.ModelConfig>(
+                RuntimeConfigRepository.runtimeConfigJson(config),
+            )
+            assertEquals(prompt.orEmpty().trim(), restored.systemPrompt)
+        }
+    }
+
+    @Test
     fun oauthConfigUsesBoundEndpointAndNeverSerializesApiKey() {
         val provider = OpenAiCompatibleProviderSetting(
             id = "oauth-provider",

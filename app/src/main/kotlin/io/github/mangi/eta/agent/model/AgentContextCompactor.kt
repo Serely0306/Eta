@@ -17,8 +17,8 @@ internal class AgentContextCompactor(
         sensitiveIds: Set<String>,
     ): JSONArray {
         controller.throwIfCancelled()
-        if (AnthropicEphemeralState.hasPendingToolResponse(messages)) {
-            throw signedAnthropicToolRoundFailure()
+        if (SignedToolContext.hasPendingResponse(messages)) {
+            throw SignedToolContext.compactionFailure(messages)
         }
         val history = (systemCount until messages.length()).map { messages.getJSONObject(it) }
         val latestUser = history.indexOfLast {
@@ -60,7 +60,9 @@ internal class AgentContextCompactor(
             val withoutResponsesItems = if (ResponsesEphemeralState.outputItems(message) != null) {
                 AgentConversationCodec.toJsonObject(AgentConversationCodec.fromJsonObject(message))
             } else message
-            result.put(AnthropicEphemeralState.withoutContentBlocks(withoutResponsesItems))
+            result.put(GeminiEphemeralState.withoutState(
+                AnthropicEphemeralState.withoutContentBlocks(withoutResponsesItems),
+            ))
         }
         if (result.toString().length >= messages.toString().length) {
             throw failure("CONTEXT_NO_REDUCTION", "摘要未能缩小上下文，原始上下文已保留。")
@@ -69,11 +71,6 @@ internal class AgentContextCompactor(
     }
 
     companion object {
-        fun signedAnthropicToolRoundFailure() = failure(
-            "ANTHROPIC_THINKING_CONTEXT_LOCKED",
-            "当前 Anthropic 工具回合的思考签名绑定原始上下文，提交工具结果前无法压缩上下文。",
-        )
-
         fun canSplit(history: List<JSONObject>, end: Int): Boolean {
             if (end <= 0 || end > history.size) return false
             val last = history[end - 1]

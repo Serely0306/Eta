@@ -18,6 +18,7 @@ import io.github.mangi.eta.data.model.ProviderTypes
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.ReasoningSummaryMode
 import io.github.mangi.eta.data.provider.BuiltinProviders
+import io.github.mangi.eta.data.provider.GeminiModelCapabilities
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -141,6 +142,9 @@ internal object AgentModelClient {
         } else if (!compactOnly) {
             messages.getJSONObject(messages.length() - 1).put("_eta_message_id", initialUserMessageId)
             AssistantScreenContextProjection.attach(messages.getJSONObject(messages.length() - 1), assistantScreenContext)
+        }
+        if (!compactOnly && config.providerType == ProviderTypes.GEMINI) {
+            GeminiEphemeralState.markRunStart(messages.getJSONObject(messages.length() - 1))
         }
         if (compactOnly) messages.remove(messages.length() - 1)
         val transcript = JSONArray()
@@ -340,6 +344,7 @@ internal object AgentModelClient {
         val promptCacheKeyEnabled: Boolean = true,
         /** Responses 请求的思考摘要档位（服务商设置，默认 auto）。 */
         val reasoningSummary: String = ReasoningSummaryMode.AUTO,
+        val supportsSearchSuggestions: Boolean = false,
         val terminalTools: Boolean = false,
         val browserTools: Boolean = true,
         val deviceDirectTools: Boolean = true,
@@ -355,8 +360,14 @@ internal object AgentModelClient {
         val authMode: String = ProviderAuthModes.API_KEY,
     ) {
         val usesHostedWebSearch: Boolean
-            get() = hostedWebSearchEnabled && providerType == ProviderTypes.OPENAI_COMPATIBLE &&
-                openAiEndpointMode == OpenAiEndpointMode.RESPONSES
+            get() = hostedWebSearchEnabled && when (providerType) {
+                ProviderTypes.OPENAI_COMPATIBLE -> openAiEndpointMode == OpenAiEndpointMode.RESPONSES
+                ProviderTypes.GEMINI -> supportsSearchSuggestions && GeminiModelCapabilities.supportsHostedSearch(model)
+                else -> false
+            }
+
+        val hostedWebSearchToolName: String
+            get() = if (providerType == ProviderTypes.GEMINI) "google_search" else "web_search"
 
         val effectiveReasoningEffort: ReasoningEffort
             get() = reasoningEffort ?: ReasoningEffort.fromLegacy(thinkingEnabled)

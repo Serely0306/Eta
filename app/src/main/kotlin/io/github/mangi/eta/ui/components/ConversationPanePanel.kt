@@ -506,6 +506,15 @@ private fun ConversationTextRow(
             conversation.characterName?.takeIf { it != title }?.let { name ->
                 Text(name, style = MiuixTheme.textStyles.footnote1, color = MiuixTheme.colorScheme.onSurfaceVariantSummary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            conversation.runStatus?.let { status ->
+                Text(
+                    text = status,
+                    style = MiuixTheme.textStyles.footnote1,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             }
             if (conversation.isActiveRun) {
                 Box(

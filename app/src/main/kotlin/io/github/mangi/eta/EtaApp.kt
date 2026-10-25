@@ -2,9 +2,11 @@ package io.github.mangi.eta
 
 import io.github.mangi.eta.agent.voice.SpeechOssUpload
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.os.Handler
 import android.os.Looper
 import io.github.mangi.eta.agent.skill.SkillRuntime
+import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.device.ScreenTakeoverNotificationGuard
 import io.github.mangi.eta.agent.terminal.TerminalRuntime
@@ -85,6 +87,20 @@ class EtaApp : Application(), XposedServiceHelper.OnServiceListener {
                 )
             }
         }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+            level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
+            BrowserSessionRegistry.releaseIdlePages()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        BrowserSessionRegistry.releaseIdlePages()
     }
 
     override fun onServiceBind(service: XposedService) {

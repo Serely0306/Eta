@@ -541,7 +541,7 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
                                 partIndex = contentIndex,
                             ),
                             rawContent = partText,
-                            content = ResponsesCitationFormatter.apply(partText, localAnnotations),
+                            content = CitationFormatter.apply(partText, localAnnotations),
                         )
                     }
                 }
@@ -598,7 +598,7 @@ internal object OpenAiResponsesProvider : AgentProviderClient {
             }
         }
         return FinalOutput(
-            text = ResponsesCitationFormatter.apply(text.toString(), annotations),
+            text = CitationFormatter.apply(text.toString(), annotations),
             rawText = text.toString(),
             reasoning = reasoning.toString(),
             toolCalls = calls,

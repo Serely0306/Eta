@@ -19,6 +19,7 @@ data class ConversationSummaryUi(
     val mode: ConversationModeUi,
     val isPinned: Boolean = false,
     val isActiveRun: Boolean = false,
+    val runStatus: String? = null,
     val characterName: String? = null,
     /** 厂商助手入口归档的会话在侧栏单独归组；null 表示普通会话。 */
     val entrySource: ConversationEntrySource? = null,

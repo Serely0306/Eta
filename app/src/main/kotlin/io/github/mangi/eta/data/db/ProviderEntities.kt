@@ -7,6 +7,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.Relation
+import io.github.mangi.eta.data.model.GeminiProviderSetting
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomBody
 import io.github.mangi.eta.data.model.CustomHeader
@@ -127,6 +128,7 @@ internal fun ProviderSetting.toEntity(): ProviderEntity =
             is OpenAiCompatibleProviderSetting -> endpointMode
             is CustomProviderSetting -> endpointMode
             is AnthropicProviderSetting -> OpenAiEndpointMode.CHAT_COMPLETIONS
+            is GeminiProviderSetting -> ""
         },
         hostedWebSearchEnabled = hostedWebSearchEnabled,
         anthropicVersion = when (this) {
@@ -168,6 +170,23 @@ internal fun ProviderWithModels.toDomain(): ProviderSetting {
             anthropicVersion = provider.anthropicVersion.ifBlank {
                 AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION
             },
+        )
+
+        ProviderTypes.GEMINI -> GeminiProviderSetting(
+            id = provider.id,
+            name = provider.name,
+            baseUrl = provider.baseUrl,
+            sourceType = sourceType,
+            apiKey = provider.apiKey,
+            isEnabled = provider.isEnabled,
+            isBuiltIn = provider.isBuiltIn,
+            sortOrder = provider.sortOrder,
+            systemPrompt = provider.systemPrompt,
+            models = domainModels,
+            customHeaders = ProviderJson.decodeHeaders(provider.customHeadersJson),
+            customBody = ProviderJson.decodeBody(provider.customBodyJson),
+            createdAt = provider.createdAt,
+            hostedWebSearchEnabled = provider.hostedWebSearchEnabled,
         )
 
         ProviderTypes.CUSTOM -> CustomProviderSetting(
@@ -218,6 +237,7 @@ private val ProviderSetting.storageType: String
     get() = when (this) {
         is OpenAiCompatibleProviderSetting -> ProviderTypes.OPENAI_COMPATIBLE
         is AnthropicProviderSetting -> ProviderTypes.ANTHROPIC
+        is GeminiProviderSetting -> ProviderTypes.GEMINI
         is CustomProviderSetting -> ProviderTypes.CUSTOM
     }
 

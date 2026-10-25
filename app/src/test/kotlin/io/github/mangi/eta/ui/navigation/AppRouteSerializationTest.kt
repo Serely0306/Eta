@@ -8,12 +8,23 @@ import org.junit.Test
 
 class AppRouteSerializationTest {
     @Test
+    fun legacyBrowserRouteRestoresTheManualPage() {
+        val restored = Json.decodeFromString<AppRoute>(
+            """{"type":"io.github.mangi.eta.ui.navigation.AppRoute.Browser"}""",
+        )
+        assertEquals(AppRoute.Browser(), restored)
+    }
+
+    @Test
     fun allRoutesRoundTripWithMiuixNavJsonConfiguration() {
         val routes = listOf<AppRoute>(
             AppRoute.Home,
-            AppRoute.Browser,
+            AppRoute.Browser(),
+            AppRoute.Browser("conversation-a"),
+            AppRoute.Browser("conversation-b"),
             AppRoute.Terminal,
             AppRoute.Tools,
+            AppRoute.WebToolsSettings,
             AppRoute.Skills,
             AppRoute.Characters,
             AppRoute.CharacterDetail("character"),
@@ -43,6 +54,7 @@ class AppRouteSerializationTest {
             AppRoute.ModelProviderDetail("provider"),
             AppRoute.ModelProviderNew(NewProviderType.OpenAiCompatible),
             AppRoute.ModelProviderNew(NewProviderType.Anthropic),
+            AppRoute.ModelProviderNew(NewProviderType.Gemini),
         )
         val json = Json { ignoreUnknownKeys = true }
 

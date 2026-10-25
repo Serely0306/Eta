@@ -10,6 +10,10 @@ sealed interface AgentHomeAction {
     data class ReasoningEffortChanged(val effort: ReasoningEffort) : AgentHomeAction
     data class ModelSelected(val modelId: String) : AgentHomeAction
     data class SubmitMessage(val text: String) : AgentHomeAction
+    data class InterruptAndSubmitMessage(val text: String) : AgentHomeAction
+    data class SteerQueuedMessage(val id: String) : AgentHomeAction
+    data class RecallQueuedMessage(val id: String, val currentDraftText: String) : AgentHomeAction
+    data class RemoveQueuedMessage(val id: String) : AgentHomeAction
     data object StopRun : AgentHomeAction
     data class AnswerQuestion(val questionId: String, val selections: List<List<String>>) : AgentHomeAction
     data class SkipQuestion(val questionId: String) : AgentHomeAction
@@ -44,6 +48,7 @@ sealed interface AgentToolsAction {
     data object NavigateBack : AgentToolsAction
     data object OpenBrowser : AgentToolsAction
     data class SetToolEnabled(val toolId: String, val enabled: Boolean) : AgentToolsAction
+    data object OpenWebToolsSettings : AgentToolsAction
 }
 
 sealed interface AgentSkillsAction {

@@ -1,6 +1,7 @@
 package io.github.mangi.eta.ui.navigation
 
 import kotlinx.serialization.Serializable
+import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import top.yukonga.miuix.kmp.nav.core.NavKey
 
 @Serializable
@@ -9,13 +10,16 @@ sealed interface AppRoute : NavKey {
     data object Home : AppRoute
 
     @Serializable
-    data object Browser : AppRoute
+    data class Browser(val sessionKey: String = BrowserSessionRegistry.MANUAL_SESSION_KEY) : AppRoute
 
     @Serializable
     data object Terminal : AppRoute
 
     @Serializable
     data object Tools : AppRoute
+
+    @Serializable
+    data object WebToolsSettings : AppRoute
 
     @Serializable
     data object Skills : AppRoute
@@ -112,4 +116,4 @@ sealed interface AppRoute : NavKey {
 }
 
 @Serializable
-enum class NewProviderType { OpenAiCompatible, Anthropic }
+enum class NewProviderType { OpenAiCompatible, Anthropic, Gemini }

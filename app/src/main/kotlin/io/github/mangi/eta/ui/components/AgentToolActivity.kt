@@ -45,7 +45,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
-import io.github.mangi.eta.agent.browser.AgentBrowserSession
 import io.github.mangi.eta.agent.browser.BrowserSessionSnapshot
 import io.github.mangi.eta.agent.overlay.toolDisplayName
 import io.github.mangi.eta.agent.runtime.AgentSubagentTool
@@ -105,8 +104,9 @@ internal fun ToolActivityRow(
 ) {
     var expanded by rememberSaveable(message.id) { mutableStateOf(false) }
     // 只有「当前浏览器」条目订阅实时会话快照，避免每个工具行都跟随快照重组。
-    val browserSnapshot = if (showBrowserShortcut) {
-        AgentBrowserSession.snapshots.collectAsState().value
+    val browser = LocalAgentBrowserSession.current
+    val browserSnapshot = if (showBrowserShortcut && browser != null) {
+        browser.snapshots.collectAsState().value
     } else {
         null
     }
@@ -413,11 +413,12 @@ private fun BrowserPagePreview(
     snapshot: BrowserSessionSnapshot,
     modifier: Modifier = Modifier,
 ) {
+    val browser = LocalAgentBrowserSession.current ?: return
     var preview by remember(snapshot.url) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(snapshot.url, snapshot.isLoading) {
+    LaunchedEffect(browser, snapshot.url, snapshot.isLoading) {
         while (true) {
             val image = withContext(Dispatchers.IO) {
-                AgentBrowserSession.capturePreview()?.let { decodeDataUrlBitmap(it.dataUrl) }
+                browser.capturePreview()?.let { decodeDataUrlBitmap(it.dataUrl) }
             }
             if (image != null) preview = image
             delay(if (snapshot.isLoading) 1_200L else 4_000L)

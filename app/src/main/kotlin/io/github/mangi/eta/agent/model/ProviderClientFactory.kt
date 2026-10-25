@@ -9,6 +9,7 @@ internal object ProviderClientFactory {
     private val responses = UsageRecordingProviderClient(OpenAiResponsesProvider, sink = ModelUsageLedger::record)
     private val chatCompletions = UsageRecordingProviderClient(OpenAiChatCompletionsProvider, sink = ModelUsageLedger::record)
     private val anthropic = UsageRecordingProviderClient(AnthropicMessagesProvider, sink = ModelUsageLedger::record)
+    private val gemini = UsageRecordingProviderClient(GeminiInteractionsProvider, sink = ModelUsageLedger::record)
 
     /** 返回的客户端会把每次请求的用量记进账本；订阅连接按其固定端点选择协议，同样记账。 */
     fun getClient(config: AgentModelClient.ModelConfig): AgentProviderClient {
@@ -24,6 +25,7 @@ internal object ProviderClientFactory {
                 else -> chatCompletions
             }
             ProviderTypes.ANTHROPIC -> anthropic
+            ProviderTypes.GEMINI -> gemini
             else -> error("不支持的 Provider 协议类型：${config.providerType}")
         }
     }

@@ -11,6 +11,10 @@ internal sealed interface AgentEvent {
         TOOL_CALL,
     }
 
+    data class GuiControlChanged(val status: GuiControlStatus) : AgentEvent {
+        override fun toLogLine(): String = "gui_control_changed status=${status.wireValue}"
+    }
+
     data class ContextCompaction(
         val operationId: String,
         val phase: String,
@@ -130,6 +134,15 @@ internal sealed interface AgentEvent {
         override fun toLogLine(): String =
             "assistant_block_end round=$round, kind=$kind, index=$index, " +
                 "name=${name.toSafeLogToken()}, chars=$contentChars"
+    }
+
+    data class SearchSuggestions(
+        val round: Int,
+        val index: Int,
+        val html: String,
+    ) : AgentEvent {
+        override fun toLogLine(): String =
+            "search_suggestions round=$round, index=$index, chars=${html.length}"
     }
 
     data class AssistantReceived(

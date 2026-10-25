@@ -28,6 +28,9 @@ internal class AgentRunController {
     private var pendingQuestionId: String? = null
     private var pendingAnswer: AgentUserAnswer? = null
 
+    val isPaused: Boolean
+        get() = paused
+
     fun cancel() {
         lock.withLock {
             cancelled = true

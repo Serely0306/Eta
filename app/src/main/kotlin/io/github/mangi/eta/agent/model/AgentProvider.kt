@@ -30,7 +30,8 @@ internal data class ProviderCapabilities(
 internal enum class EndpointKind {
     CHAT_COMPLETIONS,
     RESPONSES,
-    ANTHROPIC_MESSAGES
+    ANTHROPIC_MESSAGES,
+    GEMINI_INTERACTIONS,
 }
 
 internal enum class ProviderRequestPurpose {
@@ -141,6 +142,11 @@ internal sealed interface ProviderEvent {
         /** 托管网页搜索的查询词与来源链接；只用于界面，不写日志。 */
         val query: String = "",
         val sources: List<String> = emptyList(),
+    ) : ProviderEvent
+
+    data class SearchSuggestions(
+        val index: Int,
+        val html: String,
     ) : ProviderEvent
 
     data class Completed(

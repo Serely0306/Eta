@@ -14,6 +14,7 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], application = Application::class)
 class BrowserActionArgumentsTest {
+    private val session = AgentBrowserSession()
     @Test
     fun invalidCoordinatesFailBeforeClickCanAccessThePage() {
         listOf("bad", JSONObject().put("value", 10), 0.5, Int.MAX_VALUE.toLong() + 1).forEach { value ->
@@ -43,7 +44,7 @@ class BrowserActionArgumentsTest {
         val method = AgentBrowserSession::class.java.getDeclaredMethod(action, JSONObject::class.java)
             .apply { isAccessible = true }
         try {
-            method.invoke(AgentBrowserSession, args)
+            method.invoke(session, args)
             throw AssertionError("accepted invalid $action arguments")
         } catch (failure: InvocationTargetException) {
             return checkNotNull(failure.cause)
@@ -53,7 +54,7 @@ class BrowserActionArgumentsTest {
     private fun assertInvalidArgumentResult(action: String, failure: Throwable) {
         val method = AgentBrowserSession::class.java.getDeclaredMethod("failureResult", String::class.java, Throwable::class.java)
             .apply { isAccessible = true }
-        val result = method.invoke(AgentBrowserSession, action, failure) as BrowserToolResult
+        val result = method.invoke(session, action, failure) as BrowserToolResult
         val json = JSONObject(result.content)
         assertEquals(json.toString(), "INVALID_ARGUMENT", json.getString("code"))
     }

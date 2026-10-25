@@ -114,6 +114,8 @@ internal object AgentRuntimePolicy {
     private val THINKING_OVERRIDE_KEYS = setOf(
         "thinking",
         "thinking_budget",
+        "thinking_level",
+        "thinking_summaries",
         "reasoning",
         "reasoning_effort",
         "reasoning_budget",

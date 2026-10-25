@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import io.github.mangi.eta.agent.model.AgentTaskPlan
 import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.runtime.AgentEvent
+import io.github.mangi.eta.agent.runtime.GuiControlStatus
 
 /** Agent 浮窗所处的阶段。 */
 internal enum class AgentOverlayPhase { RUNNING, PAUSED, FINISHED, FAILED }
@@ -42,13 +43,19 @@ internal data class AgentOverlayState(
  */
 internal fun AgentOverlayState.applyEvent(event: AgentEvent): AgentOverlayState {
     // 暂停在下一个检查点生效，之前已在途的工具结束等事件不能把文字切回运行态。
-    if (phase == AgentOverlayPhase.PAUSED && event !is AgentEvent.RunFinished && event !is AgentEvent.RunFailed) {
+    if (phase == AgentOverlayPhase.PAUSED && event !is AgentEvent.RunFinished &&
+        event !is AgentEvent.RunFailed && event !is AgentEvent.GuiControlChanged) {
         return this
     }
     return projectEvent(event)
 }
 
 private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState = when (event) {
+    is AgentEvent.GuiControlChanged -> when (event.status) {
+        GuiControlStatus.UserPaused -> copy(phase = AgentOverlayPhase.PAUSED, status = AgentOverlayStatus.Paused)
+        GuiControlStatus.Acquired -> copy(phase = AgentOverlayPhase.RUNNING, status = AgentOverlayStatus.Continuing)
+        GuiControlStatus.Waiting, GuiControlStatus.Released -> this
+    }
     is AgentEvent.RunStarted -> copy(phase = AgentOverlayPhase.RUNNING, status = AgentOverlayStatus.Reasoning, detailText = "")
     is AgentEvent.RoundStarted -> copy(round = event.round).thinkingUnlessWorking()
     is AgentEvent.ProviderRequestStarted -> copy(round = event.round).thinkingUnlessWorking()
@@ -113,6 +120,7 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
         detailText = event.reason,
     )
 
+    is AgentEvent.SearchSuggestions,
     is AgentEvent.AssistantBlockEnd,
     is AgentEvent.AssistantReceived,
     is AgentEvent.ProviderResponseStarted,

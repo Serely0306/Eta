@@ -3,6 +3,7 @@ package io.github.mangi.eta.ui.app
 import android.os.SystemClock
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentTokenUsage
+import io.github.mangi.eta.agent.runtime.SearchSuggestionsBudget
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.SubagentProgressUi
@@ -28,6 +29,7 @@ internal class AgentRunMessageProjector(
         event: AgentEvent,
         messages: List<AgentChatMessageUi>,
     ): List<AgentChatMessageUi> = when (event) {
+        is AgentEvent.GuiControlChanged -> messages
         is AgentEvent.AssistantBlockStart -> startAssistantBlock(runId, event, messages)
         is AgentEvent.AssistantBlockDelta -> when (event.kind) {
             AgentEvent.AssistantBlockKind.TEXT ->
@@ -43,6 +45,7 @@ internal class AgentRunMessageProjector(
                 finalizeThinkingBlock(runId, event.round, event.index, event.replacementContent, messages)
             AgentEvent.AssistantBlockKind.TOOL_CALL -> messages
         }
+        is AgentEvent.SearchSuggestions -> attachSearchSuggestions(runId, event, messages)
         is AgentEvent.UsageReceived -> attachUsage(runId, event.round, event.usage.toUi(), messages)
         is AgentEvent.ToolStarted ->
             startTool(runId, event, finalizeTextRound(runId, event.round, finalizeThinkingRound(runId, event.round, messages)))
@@ -78,6 +81,26 @@ internal class AgentRunMessageProjector(
         is AgentEvent.ToolImagesAttached,
         is AgentEvent.RoundStarted,
         -> messages
+    }
+
+    private fun attachSearchSuggestions(
+        runId: String,
+        event: AgentEvent.SearchSuggestions,
+        messages: List<AgentChatMessageUi>,
+    ): List<AgentChatMessageUi> {
+        val targetId = assistantMessageId(runId, event.round, event.index)
+        val target = messages.filterIsInstance<AgentMessageUi>().firstOrNull { it.id == targetId } ?: return messages
+        if (event.html in target.searchSuggestionsHtml) return messages
+        val budget = SearchSuggestionsBudget()
+        messages.filterIsInstance<AgentMessageUi>()
+            .filter { isAssistantMessageForRound(it.id, runId, event.round) }
+            .forEachIndexed { ordinal, message ->
+                message.searchSuggestionsHtml.forEach { budget.accept(event.round, ordinal, it) }
+            }
+        if (!budget.accept(event.round, messages.size, event.html)) return messages
+        return messages.map { message ->
+            if (message === target) target.copy(searchSuggestionsHtml = target.searchSuggestionsHtml + event.html) else message
+        }
     }
 
     /**

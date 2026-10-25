@@ -18,6 +18,7 @@ internal class AgentRuntimeSession(
     eventSink: ((AgentEvent) -> Unit)? = null,
     resultSink: ((AgentRuntimeWire.RunResult) -> Unit)? = null,
     private val operation: String = AgentRuntimeWire.OP_CHAT,
+    private val beforeTerminalPublish: (AgentRuntimeWire.RunResult) -> Unit = {},
 ) {
     private enum class State {
         RUNNING,
@@ -43,6 +44,7 @@ internal class AgentRuntimeSession(
     }
     private var state = State.RUNNING
     private val replayEvents = mutableListOf<AgentEvent>()
+    private val searchSuggestionsBudget = SearchSuggestionsBudget()
     private val subscribers = mutableListOf<Subscriber>()
 
     private data class Subscriber(
@@ -62,9 +64,14 @@ internal class AgentRuntimeSession(
     val isTerminal: Boolean
         get() = lock.withLock { state == State.TERMINAL }
 
+    val isCommitting: Boolean
+        get() = lock.withLock { state == State.COMMITTING }
+
     fun emit(event: AgentEvent): Boolean =
         lock.withLock {
             if (state != State.RUNNING) return false
+            if (event is AgentEvent.SearchSuggestions &&
+                !searchSuggestionsBudget.accept(event.round, event.index, event.html)) return false
             recordForReplay(event)
             subscribers.forEach { it.eventSink(event) }
             true
@@ -105,7 +112,7 @@ internal class AgentRuntimeSession(
         }
 
     private fun recordForReplay(event: AgentEvent) {
-        val projected = event.recoveryProjection() ?: return
+        val projected = event.replayProjection() ?: return
         if (projected !is AgentEvent.AssistantBlockDelta) {
             replayEvents += projected
             return
@@ -143,9 +150,14 @@ internal class AgentRuntimeSession(
         val commitFailure = runCatching(beforePublish).exceptionOrNull()
         lock.withLock {
             state = State.TERMINAL
+        }
+        // 客户端收到结果即可续发；释放会话占用不能晚于结果，也不能持锁回调宿主。
+        beforeTerminalPublish(result)
+        lock.withLock {
             subscribers.forEach { it.resultSink(result) }
             subscribers.clear()
             replayEvents.clear()
+            searchSuggestionsBudget.clear()
         }
         commitFailure?.let { throw it }
         return true
@@ -166,10 +178,12 @@ internal class AgentRuntimeSession(
             )
         }
         controller.cancel()
+        beforeTerminalPublish(result)
         lock.withLock {
             subscribers.forEach { it.resultSink(result) }
             subscribers.clear()
             replayEvents.clear()
+            searchSuggestionsBudget.clear()
         }
         return true
     }

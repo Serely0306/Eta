@@ -1,6 +1,7 @@
 package io.github.mangi.eta.data.repository
 
 import io.github.mangi.eta.agent.auth.ProviderCredentialBinding
+import io.github.mangi.eta.data.model.GeminiProviderSetting
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomProviderSetting
 import io.github.mangi.eta.data.model.Model
@@ -29,6 +30,6 @@ internal class RemoteModelCatalog(
     private fun ProviderSetting.endpointMode(): String? = when (this) {
         is OpenAiCompatibleProviderSetting -> endpointMode
         is CustomProviderSetting -> endpointMode
-        is AnthropicProviderSetting -> null
+        is AnthropicProviderSetting, is GeminiProviderSetting -> null
     }
 }

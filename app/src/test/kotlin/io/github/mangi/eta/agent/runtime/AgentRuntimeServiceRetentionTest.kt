@@ -30,23 +30,21 @@ class AgentRuntimeServiceRetentionTest {
                 images = emptyList(),
                 history = listOf(AgentModelClient.ConversationMessage("user", "已完成的历史")),
             )
-            val completedContextClass = AgentRuntimeService::class.java.declaredClasses.single {
-                it.simpleName == "CompletedRunContext"
+            val run = RuntimeRunRegistry.Run(request, AgentRuntimeSession(request.runId)).apply {
+                completedContext = RuntimeRunRegistry.CompletedContext(request, AgentModelClient.ModelResponse.Text("完成"))
             }
-            val completedContext = completedContextClass.declaredConstructors.single().apply {
-                isAccessible = true
-            }.newInstance(request, AgentModelClient.ModelResponse.Text("完成"))
-            val retainedContext = AgentRuntimeService::class.java.getDeclaredField("lastCompletedRunContext").apply {
+            val retainedRun = AgentRuntimeService::class.java.getDeclaredField("displayedRun").apply {
                 isAccessible = true
             }
-            retainedContext.set(service, completedContext)
-            assertSame(completedContext, retainedContext.get(service))
+            retainedRun.set(service, run)
+            assertSame(run, retainedRun.get(service))
 
             AgentRuntimeService::class.java.getDeclaredMethod("dismissAndStop").apply {
                 isAccessible = true
             }.invoke(service)
 
-            assertNull(retainedContext.get(service))
+            assertNull(retainedRun.get(service))
+            assertNull(run.completedContext)
         } finally {
             controller.destroy()
         }

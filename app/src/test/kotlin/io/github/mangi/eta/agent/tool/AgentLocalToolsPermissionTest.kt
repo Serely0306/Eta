@@ -6,6 +6,8 @@ import android.content.ClipboardManager
 import io.github.mangi.eta.agent.device.RootShellDeviceController
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentScreenObservationContract
+import io.github.mangi.eta.agent.runtime.AgentRunController
+import io.github.mangi.eta.agent.runtime.GuiControlCoordinator
 import io.github.mangi.eta.core.AgentLogger
 import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONObject
@@ -21,6 +23,53 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class AgentLocalToolsPermissionTest {
+    @Test
+    fun releaseAndUserTakeoverInvalidateBothNodesAndRawScreenCoordinates() {
+        val coordinator = GuiControlCoordinator()
+        val control = coordinator.openRun("gui-test", AgentRunController())
+        val tools = tools(
+            guiControl = control,
+            screenObservationProvider = { observation("observed", it.includeScreenshot) },
+            beforeToolExecution = { name ->
+                if (name in setOf("observe_screen", "release_gui")) ToolExecutionDecision.Allow
+                else ToolExecutionDecision.Reject("ACTION_REACHED", "动作执行前测试边界")
+            },
+        )
+        fun call(name: String, arguments: String = "{}") = JSONObject(
+            tools.execute(AgentModelClient.ToolCall(name, name, arguments)).content,
+        )
+        tools.use {
+            assertTrue(call("observe_screen").getBoolean("ok"))
+            assertEquals("ACTION_REACHED", call("tap", """{"x":1,"y":1,"coordinate_space":"screen"}""").getString("code"))
+            assertTrue(call("release_gui").getBoolean("ok"))
+            assertEquals("NO_OBSERVATION", call("tap", """{"x":1,"y":1,"coordinate_space":"screen"}""").getString("code"))
+            assertEquals("NO_OBSERVATION", call("tap_element", """{"index":0,"observation_id":"observed"}""").getString("code"))
+            assertTrue(call("observe_screen").getBoolean("ok"))
+            assertTrue(coordinator.pauseForUser("gui-test"))
+            assertTrue(coordinator.resumeForUser())
+            assertEquals("NO_OBSERVATION", call("type_text", """{"text":"旧页面不能输入"}""").getString("code"))
+            assertTrue(call("observe_screen").getBoolean("ok"))
+            assertEquals("ACTION_REACHED", call("type_text", """{"text":"新观察后到达动作边界"}""").getString("code"))
+        }
+    }
+
+    @Test
+    fun backgroundToolsDoNotAcquireAnotherRunsGuiControl() {
+        val coordinator = GuiControlCoordinator()
+        val owner = coordinator.openRun("owner", AgentRunController())
+        owner.withAction { }
+        val background = coordinator.openRun("background", AgentRunController())
+        try {
+            tools(guiControl = background).use { tools ->
+                val result = tools.execute(AgentModelClient.ToolCall("terminal", "terminal", "{}"))
+                assertEquals("TERMINAL_TOOLS_DISABLED", JSONObject(result.content).getString("code"))
+                assertEquals("owner", coordinator.state.value.ownerRunId)
+            }
+        } finally {
+            owner.close()
+        }
+    }
+
     @Test
     fun revokedRootRejectsOldPrivilegedCallsBeforeAnyOperation() {
         val root = AtomicBoolean(true)
@@ -357,6 +406,7 @@ class AgentLocalToolsPermissionTest {
         beforeToolExecution: (String) -> ToolExecutionDecision = {
             ToolExecutionDecision.Allow
         },
+        guiControl: GuiControlCoordinator.RunControl? = null,
     ): AgentLocalTools =
         AgentLocalTools(
             context = RuntimeEnvironment.getApplication() as Context,
@@ -370,6 +420,7 @@ class AgentLocalToolsPermissionTest {
             deviceSensitiveReadToolsEnabled = sensitiveReadEnabled,
             screenObservationProvider = screenObservationProvider,
             beforeToolExecution = beforeToolExecution,
+            guiControl = guiControl,
         )
 
     private fun observation(

@@ -18,7 +18,7 @@ class AgentRunRecoveryCoordinatorTest {
             locallyObservedRunIds = emptySet(),
         )
 
-        assertEquals(listOf("run-active"), plan.reattach.map { it.runId })
+        assertEquals("run-active", plan.reattach.single().runId)
         assertTrue(plan.interrupted.isEmpty())
     }
 
@@ -83,7 +83,7 @@ class AgentRunRecoveryCoordinatorTest {
             locallyObservedRunIds = emptySet(),
         )
 
-        assertEquals(listOf("run-active"), plan.reattach.map { it.runId })
+        assertEquals("run-active", plan.reattach.single().runId)
         assertTrue(plan.interrupted.isEmpty())
     }
 
@@ -100,6 +100,22 @@ class AgentRunRecoveryCoordinatorTest {
 
         assertEquals(setOf("run-a", "run-b"), plan.reattach.mapTo(mutableSetOf()) { it.runId })
         assertEquals(listOf("run-stale"), plan.interrupted.map { it.runId })
+    }
+
+    @Test
+    fun mixedConcurrentRunsRecoverWithoutInterruptingOtherActiveRuns() {
+        val plan = AgentRunRecoveryCoordinator.plan(
+            checkpoints = listOf("a", "b", "done", "orphan", "local").map { checkpoint(it) },
+            completedRuns = listOf(completed("done"), completed("local")),
+            activeStateKnown = true,
+            terminalStateKnown = true,
+            activeRunIds = setOf("a", "b", "done", "local"),
+            locallyObservedRunIds = setOf("local"),
+        )
+
+        assertEquals(listOf("done"), plan.completed.map { it.result.result.runId })
+        assertEquals(listOf("a", "b"), plan.reattach.map { it.runId })
+        assertEquals(listOf("orphan"), plan.interrupted.map { it.runId })
     }
 
     private fun checkpoint(

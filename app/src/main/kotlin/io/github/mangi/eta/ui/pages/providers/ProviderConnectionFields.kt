@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
+import io.github.mangi.eta.data.model.GeminiProviderSetting
 import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ProviderAuthModes
@@ -129,7 +130,7 @@ internal fun ProviderConnectionFields(
                 )
             }
         }
-        if (provider !is AnthropicProviderSetting) {
+        if (provider !is AnthropicProviderSetting && provider !is GeminiProviderSetting) {
             EtaPreferenceDivider(hasLeading = false)
             EtaWindowSpinnerPreference(
                 title = stringResource(R.string.ui_endpoint_mode_3c8546),
@@ -146,11 +147,12 @@ internal fun ProviderConnectionFields(
             )
         }
     }
-    if (draft.endpointMode == OpenAiEndpointMode.RESPONSES && provider !is AnthropicProviderSetting) {
+    if (provider is GeminiProviderSetting || (draft.endpointMode == OpenAiEndpointMode.RESPONSES && provider !is AnthropicProviderSetting)) {
         EtaPreferenceDivider(hasLeading = false)
         EtaSwitchPreference(
-            title = stringResource(R.string.ui_server_side_web_search_ddb8e0),
-            summary = stringResource(R.string.ui_allows_the_model_to_call_web_searches_provided_by_th_2f752f),
+            title = if (provider is GeminiProviderSetting) "Google Search" else stringResource(R.string.ui_server_side_web_search_ddb8e0),
+            summary = if (provider is GeminiProviderSetting) null
+                else stringResource(R.string.ui_allows_the_model_to_call_web_searches_provided_by_th_2f752f),
             checked = draft.hostedWebSearchEnabled,
             enabled = enabled,
             onCheckedChange = { onDraftChange(draft.copy(hostedWebSearchEnabled = it)) },

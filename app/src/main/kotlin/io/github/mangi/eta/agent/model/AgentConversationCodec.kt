@@ -142,6 +142,7 @@ internal object AgentConversationCodec {
                 }
                 ResponsesEphemeralState.copyOutputItems(source, message)
                 AnthropicEphemeralState.copyContentBlocks(source, message)
+                GeminiEphemeralState.copyAssistantState(source, message)
             }
 
     fun toolResultMessage(

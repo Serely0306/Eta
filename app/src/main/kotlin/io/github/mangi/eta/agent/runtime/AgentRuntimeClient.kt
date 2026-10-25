@@ -36,6 +36,13 @@ internal class AgentRuntimeClient(
         data object Unavailable : ActiveRunQuery
     }
 
+    sealed interface ActiveRunsQuery {
+        data class Known(val runs: List<AgentRuntimeWire.ActiveRunSnapshot>) : ActiveRunsQuery {
+            val runIds: Set<String> get() = runs.mapTo(linkedSetOf()) { it.runId }
+        }
+        data object Unavailable : ActiveRunsQuery
+    }
+
     sealed interface CompletedRunsQuery {
         data class Known(val runs: List<AgentRuntimeWire.CompletedRun>) : CompletedRunsQuery
         data object Unavailable : CompletedRunsQuery
@@ -240,6 +247,28 @@ internal class AgentRuntimeClient(
                 ActiveRunQuery.Unavailable
             } else {
                 ActiveRunQuery.Known(runIdsRef.get())
+            }
+        }
+    }
+
+    fun queryActiveRuns(): ActiveRunsQuery {
+        val responseLatch = CountDownLatch(1)
+        val response = AtomicReference<List<AgentRuntimeWire.ActiveRunSnapshot>>()
+        val clientMessenger = Messenger(object : Handler(Looper.getMainLooper()) {
+            override fun handleMessage(msg: Message) {
+                if (msg.what != AgentRuntimeWire.MSG_QUERY_ACTIVE_RUNS_RESPONSE) return
+                response.set(AgentRuntimeWire.activeRunsFromBundle(msg.data ?: Bundle()))
+                responseLatch.countDown()
+            }
+        })
+        return withRuntimeMessenger<ActiveRunsQuery>(ActiveRunsQuery.Unavailable) { serviceMessenger ->
+            serviceMessenger.send(Message.obtain(null, AgentRuntimeWire.MSG_QUERY_ACTIVE_RUNS).apply {
+                replyTo = clientMessenger
+            })
+            if (responseLatch.await(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                ActiveRunsQuery.Known(response.get().orEmpty())
+            } else {
+                ActiveRunsQuery.Unavailable
             }
         }
     }

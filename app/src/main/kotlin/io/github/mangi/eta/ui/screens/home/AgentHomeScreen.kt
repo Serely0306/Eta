@@ -10,6 +10,8 @@ import io.github.mangi.eta.ui.components.LocalToolCallDetailSource
 import io.github.mangi.eta.ui.components.ToolCallDetailSource
 import io.github.mangi.eta.ui.components.AgentConversationLoadState
 import io.github.mangi.eta.ui.components.LocalRoleplayChat
+import io.github.mangi.eta.ui.components.LocalAgentBrowserSession
+import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import io.github.mangi.eta.ui.components.chatConversationCompositionKey
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
 import io.github.mangi.eta.ui.model.ConversationHistoryLoadState
@@ -49,9 +51,13 @@ internal fun AgentHomeScreen(
             val toolDetails = remember(journal, state.messages, state.isStreaming) {
                 ToolCallDetailSource(journal, state.messages, state.isStreaming)
             }
+            val browser = remember(conversationKey) {
+                BrowserSessionRegistry.get(conversationKey ?: BrowserSessionRegistry.MANUAL_SESSION_KEY)
+            }
             CompositionLocalProvider(
                 LocalToolCallDetailSource provides toolDetails,
                 LocalRoleplayChat provides state.roleplayChatUi(),
+                LocalAgentBrowserSession provides browser,
             ) {
                 AgentChatBody(
                     messages = state.messages,
@@ -64,12 +70,18 @@ internal fun AgentHomeScreen(
                     providerDefaultEffort = state.providerDefaultEffort,
                     pendingImages = state.pendingImages,
                     pendingFileReferences = state.pendingFileReferences,
+                    queuedMessages = state.queuedMessages,
+                    inputSyncVersion = state.inputSyncVersion,
                     messageEdit = state.messageEdit,
                     onReasoningEffortChange = { onAction(AgentHomeAction.ReasoningEffortChanged(it)) },
                     onCompactContext = { onAction(AgentHomeAction.CompactContext) },
                     canCompactContext = state.canCompactContext,
                     onModelSelected = { onAction(AgentHomeAction.ModelSelected(it)) },
                     onSubmit = { text -> onAction(AgentHomeAction.SubmitMessage(text)) },
+                    onInterruptAndSubmit = { text -> onAction(AgentHomeAction.InterruptAndSubmitMessage(text)) },
+                    onSteerQueuedMessage = { id -> onAction(AgentHomeAction.SteerQueuedMessage(id)) },
+                    onRecallQueuedMessage = { id, draft -> onAction(AgentHomeAction.RecallQueuedMessage(id, draft)) },
+                    onRemoveQueuedMessage = { id -> onAction(AgentHomeAction.RemoveQueuedMessage(id)) },
                     onStop = { onAction(AgentHomeAction.StopRun) },
                     onAttachImage = { uri -> onAction(AgentHomeAction.ImageAttached(uri)) },
                     onRemoveImage = { id -> onAction(AgentHomeAction.RemoveImage(id)) },

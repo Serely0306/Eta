@@ -51,6 +51,7 @@ internal data class EtaBackupDocument(
         const val FORMAT = "eta-backup"
         // 3：会话记录携带最近使用的模型；旧版本备份缺省该字段，导入后跟随默认模型。
         // 4：携带用量账本；旧版本备份没有账本时保留设备上的账本。
+        // 旧版会把未知原生 Provider 当作 OpenAI-compatible，必须通过备份版本阻止错误恢复。
         const val SCHEMA_VERSION = 4
     }
 }
