@@ -223,14 +223,15 @@ internal class AgentSubagentTool(
 
         /**
          * 子 Agent 不开放的目录工具：需要手机操作权或无障碍的界面工具、拉起前台界面的工具、
-         * 主 run 的会话浏览器，以及 Skill 管理。
+         * 释放操作权（子 Agent 从不持有）、主 run 的会话浏览器，以及 Skill 管理。
          */
         fun excludedTools(catalogNames: Iterable<String>): Set<String> = catalogNames.filterTo(mutableSetOf()) { name ->
             AgentToolRequirements.requiresGuiControl(name) || AgentToolRequirements.requiresAccessibility(name) ||
-                AgentToolRequirements.hasForegroundIntentFallback(name) || name == BROWSER_TOOL ||
-                name.startsWith("skills_")
+                AgentToolRequirements.hasForegroundIntentFallback(name) || name == RELEASE_GUI_TOOL ||
+                name == BROWSER_TOOL || name.startsWith("skills_")
         }
 
+        private const val RELEASE_GUI_TOOL = "release_gui"
         private const val BROWSER_TOOL = "browser_use"
 
         private fun parseTasks(raw: String): Result<List<Task>> = runCatching {
