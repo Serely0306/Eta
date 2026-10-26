@@ -21,11 +21,16 @@ internal sealed interface AgentEvent {
         val tokensBefore: Int? = null,
         val tokensAfter: Int? = null,
         val reasonCode: String = "",
+        /** 失败说明，与运行失败时显示的模型错误同源（如“摘要输出达到长度上限”“HTTP 429”），不含对话内容。 */
+        val reasonMessage: String = "",
     ) : AgentEvent {
         val displayMessage: String get() = when (phase) {
             PHASE_STARTED -> RUNNING_DETAIL
             PHASE_COMPLETED -> "上下文已压缩，用量将在下一次模型响应后更新。"
-            else -> "上下文压缩失败，原始上下文已保留。"
+            else -> reasonMessage.trim().trimEnd('。', '.').takeIf(String::isNotEmpty)?.let { reason ->
+                if ("原始上下文已保留" in reason) "上下文压缩失败：$reason。"
+                else "上下文压缩失败：$reason；原始上下文已保留。"
+            } ?: "上下文压缩失败，原始上下文已保留。"
         }
         override fun toLogLine(): String =
             "context_compaction phase=${phase.toSafeLogToken()}, before=$tokensBefore, after=$tokensAfter, code=${reasonCode.toSafeLogToken()}"

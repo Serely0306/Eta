@@ -12,6 +12,7 @@ import org.json.JSONObject
 internal object AnthropicMessagesProvider : AgentProviderClient {
     private const val DEFAULT_MAX_TOKENS = 4096
     private const val ADAPTIVE_MODEL_DEFAULT_MAX_TOKENS = 16_384
+    internal const val COMPACTION_MAX_TOKENS = 32_768
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     private val TOP_LEVEL_COMBINATORS = listOf("oneOf", "anyOf", "allOf")
     private val CACHEABLE_ROLES = setOf("user", "assistant", "tool")
@@ -35,6 +36,29 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
         onEvent: (ProviderEvent) -> Unit
     ): ProviderResponse {
         val config = request.effectiveConfig
+        val defaultMaxTokens = defaultMaxTokens(config.model)
+        // 压缩摘要不限字数，思考也从同一个上限里扣，默认 4096 很容易撞顶；单独给足预算。
+        if (request.purpose != ProviderRequestPurpose.COMPACTION || defaultMaxTokens >= COMPACTION_MAX_TOKENS) {
+            return send(request, config, defaultMaxTokens, null, runController, onEvent)
+        }
+        return try {
+            send(request, config, COMPACTION_MAX_TOKENS, defaultMaxTokens, runController, onEvent)
+        } catch (_: MaxTokensRejected) {
+            // 部分兼容端点的模型输出上限更低，会以 400 拒绝；退回普通请求的默认值重试一次。
+            send(request, config, defaultMaxTokens, null, runController, onEvent)
+        }
+    }
+
+    private class MaxTokensRejected : RuntimeException()
+
+    private fun send(
+        request: ProviderRequest,
+        config: AgentModelClient.ModelConfig,
+        maxTokens: Int,
+        fallbackMaxTokens: Int?,
+        runController: AgentRunController,
+        onEvent: (ProviderEvent) -> Unit,
+    ): ProviderResponse {
         val headers = okhttp3.Headers.Builder()
             .add("Content-Type", "application/json; charset=utf-8")
             .add("Accept", "text/event-stream")
@@ -50,7 +74,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
             .url(ProviderUrls.anthropicMessagesUrl(config.baseUrl))
             .headers(headers)
             .post(
-                buildRequestJson(config, request.messages, request.effectiveTools)
+                buildRequestJson(config, request.messages, request.effectiveTools, maxTokens)
                     .toString()
                     .toRequestBody(JSON_MEDIA_TYPE)
             )
@@ -66,6 +90,9 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                 runController.throwIfCancelled()
                 if (!response.isSuccessful) {
                     val errorBody = response.peekBody(16_384).string()
+                    if (fallbackMaxTokens != null && response.code == 400 && errorBody.contains("max_tokens", ignoreCase = true)) {
+                        throw MaxTokensRejected()
+                    }
                     throw AgentModelFailure.http(response.code, errorBody)
                 }
                 val assistant = readStreamingAssistantMessage(response.body.byteStream(), runController, onEvent)
@@ -84,7 +111,8 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
     private fun buildRequestJson(
         config: AgentModelClient.ModelConfig,
         messages: JSONArray,
-        tools: JSONArray
+        tools: JSONArray,
+        maxTokens: Int,
     ): JSONObject {
         val systemParts = mutableListOf<String>()
         val anthropicMessages = JSONArray()
@@ -127,7 +155,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
 
         return JSONObject()
             .put("model", config.model)
-            .put("max_tokens", defaultMaxTokens(config.model))
+            .put("max_tokens", maxTokens)
             .put("stream", true)
             .put("messages", anthropicMessages)
             .also { request ->

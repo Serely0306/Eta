@@ -102,8 +102,10 @@ internal class AgentContextSession(
             onEvent(AgentEvent.ContextCompaction(operation, AgentEvent.ContextCompaction.PHASE_COMPLETED, before))
         } catch (failure: Exception) {
             runController.throwIfCancelled()
+            // AgentModelFailure 的文案是分类后的错误说明（运行失败时同样显示），不含对话内容；其他异常只给类型名。
             onEvent(AgentEvent.ContextCompaction(operation, "failed", before,
-                reasonCode = (failure as? AgentModelFailure)?.code ?: "CONTEXT_SUMMARY_FAILED"))
+                reasonCode = (failure as? AgentModelFailure)?.code ?: "CONTEXT_SUMMARY_FAILED",
+                reasonMessage = (failure as? AgentModelFailure)?.message ?: failure.javaClass.simpleName))
             if (!final) throw failure
             // 已完成的回答仍成功交付；完整快照随终态 outbox 保存，不依赖先前检查点写入成功。
             committedSnapshot = createSnapshot(messages)

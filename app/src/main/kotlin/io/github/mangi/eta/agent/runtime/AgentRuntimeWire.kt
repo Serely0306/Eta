@@ -777,6 +777,7 @@ internal object AgentRuntimeWire {
                 event.tokensBefore?.let { putInt("tokens_before", it) }
                 event.tokensAfter?.let { putInt("tokens_after", it) }
                 putString("reason_code", event.reasonCode)
+                putString("reason_message", event.reasonMessage)
             }
 
             is AgentEvent.ModelRetryScheduled -> {
@@ -979,6 +980,7 @@ internal object AgentRuntimeWire {
             tokensBefore = bundle.optionalInt("tokens_before"),
             tokensAfter = bundle.optionalInt("tokens_after"),
             reasonCode = bundle.getString("reason_code").orEmpty(),
+            reasonMessage = bundle.getString("reason_message").orEmpty(),
         )
         "model_retry_scheduled" -> AgentEvent.ModelRetryScheduled(
             round = bundle.getInt("round"),

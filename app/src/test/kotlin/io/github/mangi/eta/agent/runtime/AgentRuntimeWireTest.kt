@@ -129,6 +129,8 @@ class AgentRuntimeWireTest {
             AgentEvent.ContextCompaction("manual", "started"),
             AgentEvent.ContextCompaction("automatic", "completed", tokensBefore = 765_000),
             AgentEvent.ContextCompaction("legacy", "completed", tokensBefore = 9_000, tokensAfter = 2_000),
+            AgentEvent.ContextCompaction("automatic", "failed", tokensBefore = 765_000,
+                reasonCode = "CONTEXT_SUMMARY_INVALID", reasonMessage = "模型未返回完整的摘要（摘要输出达到长度上限），原始上下文已保留。"),
         )) {
             val bundle = AgentRuntimeWire.eventToBundle(event)
             assertEquals(event.tokensBefore != null, bundle.containsKey("tokens_before"))

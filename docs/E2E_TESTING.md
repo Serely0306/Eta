@@ -227,6 +227,9 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | F4 `M` | Responses 服务商的自定义请求体中显式设置 `prompt_cache_key` | 请求中的值保持用户设置，不被会话路由键覆盖 |
 | F5 `M` | Mock 模型在内置目录中有 Low–Max 档位；模型编辑里“默认强度”保持“服务商默认”发一轮；改为 High 后新建会话再发一轮；在模型编辑里取消勾选 High 再新建会话发一轮；Eta 语音强度选“跟随模型默认强度”提交一次；拉取该服务商的模型列表后重新打开模型编辑 | 设置页不再有“默认思考强度”；第一轮请求与改动前完全一致（Responses 只有 `reasoning.summary`）；第二轮新会话初始强度为 High，请求带 `reasoning.effort=high`，在新会话里换到另一个模型时强度改为该模型的默认；取消 High 后“默认强度”回到“服务商默认”；语音请求按模型默认强度发送；已有会话的强度不受影响；拉取模型列表后默认强度保留 |
 | F6 `M` | 设置 Eta 语音模型为 `e2e-mock-b`、强度 Low；厂商助手强度 High；分别以 Eta 语音和小爱入口提交 | 语音入口请求发往 `e2e-mock-b` 且 `effort=low`；小爱入口 `effort=high`；关闭“允许思考”后两者都不带强度且为 Off |
+| F7 `M` | 上下文窗口设小的长会话触发自动压缩，Anthropic 格式（强度 High）与 Responses 各一次；Mock 返回 4 万字符的摘要，Responses 一次不带结束原因 | 两次都压缩成功并继续本轮；Anthropic 压缩请求 `max_tokens=32768` 且带 `output_config.effort=high`，普通请求仍是默认上限；Responses 压缩请求不带输出上限、强度与本次 run 一致 |
+| F8 `M` | Anthropic 格式 Mock 对 `max_tokens` 大于 4096 的请求返回 400（错误里提到 max_tokens），触发一次压缩 | 压缩请求先发 32768、被拒后以默认值重发一次并成功；普通对话请求不会重试 |
+| F9 `M` | 自动压缩时 Mock 分别返回 `finish_reason=length` 的半截摘要、HTTP 429；在回答结束后的压缩里再返回一次 length | 聊天里的压缩提示写明原因（“摘要输出达到长度上限”“HTTP 429”）与“原始上下文已保留”，点开显示全文；日志 `context_compaction` 带 `code`；回答结束后的那次压缩失败不影响已交付的回答 |
 
 ### G. 系统入口与会话归组
 

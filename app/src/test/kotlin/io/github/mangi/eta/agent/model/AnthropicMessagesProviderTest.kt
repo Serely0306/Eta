@@ -48,6 +48,52 @@ class AnthropicMessagesProviderTest {
     }
 
     @Test
+    fun compactionGetsLargeOutputBudgetKeepsThinkingAndFallsBackWhenEndpointRejectsIt() {
+        val requests = mutableListOf<JSONObject>()
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val executor = Executors.newSingleThreadExecutor()
+        server.executor = executor
+        var rejectLarge = false
+        server.createContext("/v1/messages") { exchange ->
+            val request = JSONObject(exchange.requestBody.use { it.readBytes().toString(Charsets.UTF_8) })
+            requests += request
+            val (status, body) = if (rejectLarge && request.getInt("max_tokens") > 4096) {
+                400 to """{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens: 32768 > 8192, which is the maximum allowed"}}"""
+            } else {
+                200 to event("message_stop", JSONObject())
+            }
+            val bytes = body.toByteArray(Charsets.UTF_8)
+            exchange.responseHeaders.add("Content-Type", if (status == 200) "text/event-stream" else "application/json")
+            exchange.sendResponseHeaders(status, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val fixture = providerRequest("http://127.0.0.1:${server.address.port}")
+            val compaction = fixture.copy(
+                config = fixture.config.copy(reasoningEffort = ReasoningEffort.HIGH),
+                purpose = ProviderRequestPurpose.COMPACTION,
+            )
+            AnthropicMessagesProvider.complete(compaction, AgentRunController())
+            assertEquals(AnthropicMessagesProvider.COMPACTION_MAX_TOKENS, requests.single().getInt("max_tokens"))
+            assertEquals("high", requests.single().getJSONObject("output_config").getString("effort"))
+
+            requests.clear()
+            rejectLarge = true
+            AnthropicMessagesProvider.complete(compaction, AgentRunController())
+            assertEquals(listOf(AnthropicMessagesProvider.COMPACTION_MAX_TOKENS, 4096), requests.map { it.getInt("max_tokens") })
+
+            // 普通对话不受影响：仍是默认上限，被拒绝时照常报错。
+            requests.clear()
+            AnthropicMessagesProvider.complete(fixture, AgentRunController())
+            assertEquals(4096, requests.single().getInt("max_tokens"))
+        } finally {
+            server.stop(0)
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
     fun toolResultRequestReplaysOrderedThinkingAndRedactedBlocksWithoutPersistingThem() {
         val firstResponse = buildString {
             append(blockStart(0, JSONObject().put("type", "thinking").put("thinking", "先判断")))

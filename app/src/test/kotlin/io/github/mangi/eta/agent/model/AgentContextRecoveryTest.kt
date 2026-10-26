@@ -124,19 +124,56 @@ class AgentContextRecoveryTest {
 
     @Test
     fun invalidSummaryDoesNotRetryAndKeepsOriginalHistory() {
-        for ((content, stop) in listOf("" to "stop", "半截" to "length", "长".repeat(12_001) to "stop")) {
+        val cases = listOf(
+            Triple("", "stop", "摘要为空"),
+            Triple("半截", "length", "摘要输出达到长度上限"),
+            Triple("半截", "incomplete", "服务商标记响应未完成"),
+            Triple("摘要", "content_filter", "被内容过滤拦截"),
+        )
+        for ((content, stop, reason) in cases) {
             val messages = messages()
             val original = messages.toString()
             var requests = 0
+            val events = mutableListOf<AgentEvent>()
             val session = AgentContextSession(config, messages, 1, "operation", provider { _, _ ->
                 requests++
                 response(content, stop)
-            }, AgentRunController(), { emptySet() }, {}, { fail("不应提交无效摘要") })
+            }, AgentRunController(), { emptySet() }, events::add, { fail("不应提交无效摘要") })
             val failure = assertThrows(AgentModelFailure::class.java) { session.compact(force = true) }
             assertEquals("CONTEXT_SUMMARY_INVALID", failure.code)
             assertEquals(1, requests)
             assertEquals(original, messages.toString())
+            // 失败提示带上原因，不再只有固定的“压缩失败”。
+            val failed = events.filterIsInstance<AgentEvent.ContextCompaction>().last()
+            assertEquals("CONTEXT_SUMMARY_INVALID", failed.reasonCode)
+            assertTrue(failed.displayMessage, failed.displayMessage.contains(reason))
+            assertTrue(failed.displayMessage.contains("原始上下文已保留"))
         }
+    }
+
+    @Test
+    fun longSummaryAndMissingFinishReasonAreAccepted() {
+        for ((content, stop) in listOf("长".repeat(40_000) to "stop", "此前任务已完成。" to "", "此前任务已完成。" to "end")) {
+            val messages = messages()
+            val session = AgentContextSession(config, messages, 1, "operation", provider { _, _ ->
+                response(content, stop)
+            }, AgentRunController(), { emptySet() }, {}, {})
+            session.compact(force = true)
+            assertNotNull(session.snapshot())
+            assertTrue(messages.toString().contains(content))
+        }
+    }
+
+    @Test
+    fun failureEventWithoutReasonKeepsGenericMessage() {
+        assertEquals(
+            "上下文压缩失败，原始上下文已保留。",
+            AgentEvent.ContextCompaction("op", "failed").displayMessage,
+        )
+        assertEquals(
+            "上下文压缩失败：模型接口暂时限流（HTTP 429）；原始上下文已保留。",
+            AgentEvent.ContextCompaction("op", "failed", reasonMessage = "模型接口暂时限流（HTTP 429）。").displayMessage,
+        )
     }
 
     @Test
