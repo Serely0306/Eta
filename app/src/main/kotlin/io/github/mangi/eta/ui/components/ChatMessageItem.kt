@@ -96,7 +96,6 @@ import io.github.mangi.eta.ui.model.AgentChatMessageUi
 import io.github.mangi.eta.ui.model.AgentMessageUi
 import io.github.mangi.eta.ui.model.RunTraceMessageUi
 import io.github.mangi.eta.ui.model.SuggestionChipsMessageUi
-import io.github.mangi.eta.ui.screens.usage.compactTokens
 import io.github.mangi.eta.ui.model.SystemNoticeCode
 import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
@@ -922,16 +921,14 @@ internal fun ThinkingRow(
                 text = if (message.isStreaming) {
                     stringResource(R.string.reasoning_in_progress)
                 } else {
-                    val completed = message.elapsedSeconds?.takeIf { it > 0 }?.let { seconds ->
+                    // 推理 token 只记在用量记录里，对话里不显示。
+                    message.elapsedSeconds?.takeIf { it > 0 }?.let { seconds ->
                         pluralStringResource(
                             R.plurals.reasoning_completed_seconds,
                             seconds,
                             seconds,
                         )
                     } ?: stringResource(R.string.reasoning_completed)
-                    message.reasoningTokens?.let { tokens ->
-                        completed + " · " + stringResource(R.string.reasoning_tokens, compactTokens(tokens.toLong()))
-                    } ?: completed
                 },
                 style = MiuixTheme.textStyles.body2,
                 color = if (message.isStreaming) {

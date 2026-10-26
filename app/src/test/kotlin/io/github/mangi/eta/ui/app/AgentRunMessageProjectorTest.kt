@@ -73,22 +73,19 @@ class AgentRunMessageProjectorTest {
     }
 
     @Test
-    fun reasoningTokensGoToLastThinkingBlockOrAPlaceholderBeforeTheRound() {
+    fun reasoningTokensStayInUsageAndNeverAddThinkingBlocks() {
         val projector = AgentRunMessageProjector { 1_000L }
         var messages = projector.appendReasoningDelta("run", 1, 0, "先想", emptyList())
-        messages = projector.appendReasoningDelta("run", 1, 1, "再想", projector.finalizeThinkingBlock("run", 1, 0, null, messages))
         messages = projector.finalizeThinkingRound("run", 1, messages)
+        val before = messages.filterIsInstance<ThinkingMessageUi>()
         messages = projector.applyEvent("run", AgentEvent.UsageReceived(1, AgentTokenUsage(reasoningTokens = 1_800)), messages)
-        assertEquals(listOf(null, 1_800), messages.filterIsInstance<ThinkingMessageUi>().map { it.reasoningTokens })
+        assertEquals(before, messages.filterIsInstance<ThinkingMessageUi>())
 
-        // 服务商推理了但没有返回思考内容：补一个空思考块，放在这一轮的回答之前。
+        // 服务商推理了但没有返回思考内容：不再补“思考已完成”的空块，用量仍记在回答上。
         var silent = projector.appendTextDelta("run2", 1, 0, "回答", emptyList())
         silent = projector.applyEvent("run2", AgentEvent.UsageReceived(1, AgentTokenUsage(outputTokens = 50, reasoningTokens = 400)), silent)
-        val placeholder = silent.first() as ThinkingMessageUi
-        assertEquals("run2-thinking-1-usage", placeholder.id)
-        assertEquals("", placeholder.content)
-        assertEquals(400, placeholder.reasoningTokens)
-        assertTrue(silent[1] is AgentMessageUi)
+        assertTrue(silent.none { it is ThinkingMessageUi })
+        assertEquals(400, (silent.single() as AgentMessageUi).usage?.reasoningTokens)
     }
 
     @Test
@@ -692,5 +689,43 @@ class AgentRunMessageProjectorTest {
         assertEquals("上下文压缩已中断", interruptedNotice.detail)
         assertFalse(interruptedNotice.running)
         assertEquals(base + completed, projector.finishContextCompaction(runId, base + completed, "上下文压缩已中断"))
+    }
+
+    @Test
+    fun finishedThinkingKeepsItsDurationWhenTheRunEndsLater() {
+        var now = 1_000L
+        val projector = AgentRunMessageProjector(nowElapsedRealtime = { now })
+        var messages = projector.appendReasoningDelta("run", round = 1, index = 0, delta = "第一段思考", emptyList())
+        now = 4_000L
+        messages = projector.finalizeThinkingRound("run", round = 1, messages)
+        now = 6_000L
+        messages = projector.appendReasoningDelta("run", round = 2, index = 0, delta = "第二段思考", messages)
+        now = 8_000L
+        messages = projector.finalizeThinkingRound("run", round = 2, messages)
+
+        now = 120_000L
+        messages = projector.finalizeRun("run", messages)
+        messages = projector.finalizeThinking("run", messages)
+
+        assertEquals(listOf(3, 2), messages.filterIsInstance<ThinkingMessageUi>().map { it.elapsedSeconds })
+    }
+
+    @Test
+    fun toolStartTimeIsRecordedOnTheMessageSoTheTimerSurvivesLeavingTheConversation() {
+        var now = 5_000L
+        val projector = AgentRunMessageProjector(nowElapsedRealtime = { now })
+        var messages = projector.startTool(
+            "run",
+            AgentEvent.ToolStarted(round = 1, toolCallId = "call_1", name = "run_subagents", argsPreview = "{}"),
+            emptyList(),
+        )
+        now = 9_000L
+        messages = projector.startTool(
+            "run",
+            AgentEvent.ToolStarted(round = 1, toolCallId = "call_1", name = "run_subagents", argsPreview = "{}"),
+            messages,
+        )
+
+        assertEquals(5_000L, messages.filterIsInstance<ToolActivityMessageUi>().single().startedAtElapsedMs)
     }
 }

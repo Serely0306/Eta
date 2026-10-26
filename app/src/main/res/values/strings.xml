@@ -572,7 +572,7 @@
   <string name="tool_detail_truncated_short">Truncated</string>
   <string name="tool_detail_sensitive">Arguments and results of sensitive tools are only used in the current turn and are not saved to the conversation.</string>
   <string name="tool_detail_unavailable">Full content was not saved for this entry. Showing the summary.</string>
-  <string name="tool_detail_pending">Full content is available after this turn finishes.</string>
+  <string name="tool_detail_pending">Full content is available once the tool finishes.</string>
   <string name="tool_detail_source_note">Content comes from the tool results saved in this conversation.</string>
   <string name="tool_detail_exit_code">Exit code %1$d</string>
   <string name="tool_detail_timed_out">Timed out</string>
@@ -639,7 +639,6 @@
   <string name="shell_command">Shell command</string>
   <string name="reasoning_in_progress">Reasoning…</string>
   <string name="reasoning_completed">Reasoning completed</string>
-  <string name="reasoning_tokens">%1$s reasoning tokens</string>
   <string name="reasoning_content_unavailable">The provider returned no reasoning content. With the Responses API, you can set Reasoning summary to Detailed in the provider settings.</string>
   <plurals name="reasoning_completed_seconds">
     <item quantity="one">Reasoning completed · %d second</item>

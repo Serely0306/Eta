@@ -354,11 +354,11 @@ internal fun AgentOverlayCapsule(
     }
 }
 
-/** 运行中是旋转的弧形光点，暂停为静止空心环，结束为实心点；只在运行时持有帧动画。 */
+/** 运行中是旋转的弧形光点，暂停为静止空心环，结束为实心点；只在运行且亮屏时持有帧动画。 */
 @Composable
 private fun PhaseIndicator(phase: AgentOverlayPhase, accent: Color) {
     val size = 14.dp
-    if (phase != AgentOverlayPhase.RUNNING) {
+    if (phase != AgentOverlayPhase.RUNNING || !ScreenInteractivity.interactive) {
         Box(
             modifier = Modifier
                 .size(size)

@@ -76,13 +76,13 @@ internal fun AgentTimelinePreview() {
         MiuixScaffoldPage(title = "工具与思考", onBack = {}) {
             item(key = "thinking") {
                 ThinkingRow(
-                    message = ThinkingMessageUi("run-thinking-1-0", "先用终端看分区占用。", false, 12, true, reasoningTokens = 1_800),
+                    message = ThinkingMessageUi("run-thinking-1-0", "先用终端看分区占用。", false, 12, true),
                     retainedStreamingState = null,
                 )
             }
             item(key = "thinking-empty") {
                 ThinkingRow(
-                    message = ThinkingMessageUi("run-thinking-2-usage", "", false, null, true, reasoningTokens = 400),
+                    message = ThinkingMessageUi("run-thinking-2-0", "", false, null, true),
                     retainedStreamingState = null,
                 )
             }

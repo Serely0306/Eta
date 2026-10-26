@@ -54,6 +54,7 @@ import io.github.mangi.eta.agent.overlay.AgentHapticFeedback
 import io.github.mangi.eta.agent.overlay.PendingQuestion
 import io.github.mangi.eta.agent.overlay.AgentOverlayGlow
 import io.github.mangi.eta.agent.overlay.ScreenCornerRadii
+import io.github.mangi.eta.agent.overlay.ScreenInteractivity
 import io.github.mangi.eta.agent.overlay.AgentOverlayCapsule
 import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.AgentResultCard
@@ -163,6 +164,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     override fun onCreate() {
         super.onCreate()
         guiControl = GuiControlCoordinator.forApplication(this)
+        ScreenInteractivity.ensureRegistered(this)
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
@@ -441,6 +443,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 sendResultTo(replyTo, AgentRuntimeWire.RunResult(
                     request.runId, false, "", admission.message,
                     operation = request.operation, rewriteTargetMessageId = request.rewriteTargetMessageId,
+                    errorCode = admission.code,
                 ))
                 return null
             }

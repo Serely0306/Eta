@@ -69,6 +69,29 @@ class SubagentDetailsTest {
     }
 
     @Test
+    fun earlierBatchesOutsideTheLoadedPageComeFromStoredToolRows() {
+        // 三批都用 call_0（有的服务商每轮从 call_0 编号）；只加载了最后一页，前两批只在库里。
+        fun batch(task: String, result: String) = listOf(
+            ConversationMessage(role = "assistant", toolCallsJson = JSONArray().put(JSONObject().put("id", "call_0")
+                .put("type", "function").put("function", JSONObject().put("name", "run_subagents")
+                    .put("arguments", JSONObject().put("tasks", JSONArray().put(JSONObject().put("task", task))).toString())))
+                .toString()),
+            ConversationMessage(role = "tool", toolCallId = "call_0",
+                content = JSONObject().put("ok", true).put("results", JSONArray().put(JSONObject().put("ok", true).put("result", result))).toString()),
+        )
+        val journal = batch("第一批", "一") + batch("第二批", "二") + batch("第三批", "三")
+        fun row(run: String) = ToolActivityMessageUi("$run-tool-1-call_0", "run_subagents", ToolActivityStatusUi.Unknown, "")
+        val stored = listOf(row("run-1"), row("run-2"), row("run-3"))
+        val loaded = listOf(ToolActivityMessageUi("run-3-tool-1-call_0", "run_subagents", ToolActivityStatusUi.Success, ""))
+
+        val subagents = SubagentDetails.forConversation(loaded, journal, stored)
+
+        assertEquals(listOf("run-1", "run-2", "run-3"), subagents.map { it.runId })
+        assertEquals(listOf("第一批", "第二批", "第三批"), subagents.map { it.progress.task })
+        assertEquals(listOf("一", "二", "三"), subagents.map { it.progress.conclusion })
+    }
+
+    @Test
     fun finishedSubagentsAreRestoredFromArgumentsAndResults() {
         val detail = ToolCallDetail(
             argumentsJson = """{"tasks":[{"task":"查日志"},{"task":"查网页"}]}""",

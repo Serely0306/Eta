@@ -127,7 +127,7 @@ data class ThinkingMessageUi(
     val isStreaming: Boolean,
     val elapsedSeconds: Int? = null,
     val collapsed: Boolean = false,
-    /** 本轮请求的推理 token（来自 usage），记在该轮最后一个思考块上。 */
+    /** 旧版本记在思考块上的推理 token，只为读写已有记录保留；界面不再显示，推理 token 看用量记录。 */
     val reasoningTokens: Int? = null,
 ) : AgentChatMessageUi
 
@@ -166,6 +166,8 @@ data class ToolActivityMessageUi(
     val imageCount: Int = 0,
     /** run_subagents 运行中的各子 Agent 进度；只在运行期存在，结束后从会话记录与过程文件读取。 */
     val subagents: List<SubagentProgressUi> = emptyList(),
+    /** 开始执行时的 `elapsedRealtime`；运行计时以它为起点，切换会话后回来不从 0 重计。不写入归档。 */
+    val startedAtElapsedMs: Long? = null,
 ) : AgentChatMessageUi
 
 @Immutable

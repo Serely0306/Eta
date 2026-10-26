@@ -84,7 +84,7 @@ http_headers = { Authorization = "Bearer <令牌>" }
 | `eta_task_steer` | 运行中追加要求 |
 | `eta_task_stop` | 停止任务 |
 
-- 状态：`running`、`waiting_for_answer`、`completed`、`failed`、`stopped`。
+- 状态：`running`、`waiting_for_answer`、`completed`、`failed`、`stopped`。`failed` 时 `error` 是给人看的说明；运行登记拒绝的任务另带 `code`（`RUN_CAPACITY_REACHED`、`CONVERSATION_BUSY`、`RUN_ID_CONFLICT`），与 `eta_task_start` 同步拒绝时的 `code` 同名。
 - 工具范围与工具设置一致；与手机上的任务一起受同时运行上限（8 个）约束，界面操作经手机操作权排队交接。
 
 **可调用的模型**

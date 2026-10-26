@@ -48,6 +48,23 @@ class ToolCallDetailsTest {
     }
 
     @Test
+    fun runIdIsTakenFromToolMessageIdForCheckpointReads() {
+        assertEquals("6f1c-run-a", ToolCallDetails.runId("6f1c-run-a-tool-12-call_0"))
+        assertEquals("run", ToolCallDetails.runId("run-tool-1-call-with-dashes"))
+        assertNull(ToolCallDetails.runId("assistant-run-1"))
+
+        // 运行中只在本 run 的检查点里找：序号按本 run 的工具行数，前一个 run 的同名调用不占位。
+        val checkpoint = listOf(
+            assistantCall("call_0", "terminal", """{"command":"pwd"}"""),
+            ConversationMessage(role = "tool", toolCallId = "call_0", content = """{"stdout":"live"}"""),
+        )
+        val earlier = tool("run-a-tool-1-call_0")
+        val current = tool("run-b-tool-1-call_0")
+        val runMessages = listOf(earlier, current).filter { it.id.startsWith("run-b-tool-") }
+        assertEquals("""{"stdout":"live"}""", ToolCallDetails.find(checkpoint, runMessages, current)!!.result)
+    }
+
+    @Test
     fun terminalSearchAndPagePayloadsAreParsed() {
         val terminal = ToolCallDetails.terminalOutput(
             """{"exit_code":2,"timed_out":false,"stdout":"a\nb","stderr":null,"stdout_truncated":true,"duration_ms":1400}""",

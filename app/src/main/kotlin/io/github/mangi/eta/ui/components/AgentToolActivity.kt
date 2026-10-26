@@ -127,7 +127,7 @@ internal fun ToolActivityRow(
     // 每个工具都能展开：至少有“详情”入口，完整参数与结果从会话记录读取。
     var showDetail by remember(message.id) { mutableStateOf(false) }
     var detailComposed by remember(message.id) { mutableStateOf(false) }
-    val elapsedSeconds = rememberRunningSeconds(message.id, running)
+    val elapsedSeconds = rememberRunningSeconds(message.id, running, message.startedAtElapsedMs)
 
     Column(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -372,13 +372,14 @@ private fun ToolActivityDetail(
 }
 
 /**
- * 运行计时只在工具执行中组合，每秒仅使这一小段文字重组。起点按条目身份保存，
- * 滚出视口再回来时继续计时；它是界面侧的近似值，不写入归档。
+ * 运行计时只在工具执行中组合，每秒仅使这一小段文字重组。起点优先取工具开始事件时记下的时间，
+ * 切换会话再回来时继续计时；旧条目没有起点时按条目身份保存。它是界面侧的近似值，不写入归档。
  */
 @Composable
-private fun rememberRunningSeconds(id: String, running: Boolean): Int? {
+private fun rememberRunningSeconds(id: String, running: Boolean, startedAtElapsedMs: Long?): Int? {
     if (!running) return null
-    val startedAt = rememberSaveable(id) { SystemClock.elapsedRealtime() }
+    val fallbackStartedAt = rememberSaveable(id) { SystemClock.elapsedRealtime() }
+    val startedAt = startedAtElapsedMs ?: fallbackStartedAt
     var seconds by remember(id) { mutableIntStateOf(0) }
     LaunchedEffect(id, startedAt) {
         while (true) {

@@ -37,6 +37,7 @@ import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import io.github.mangi.eta.agent.runtime.AgentExecutionService
 import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
 import io.github.mangi.eta.agent.runtime.SubagentTranscriptStore
+import io.github.mangi.eta.agent.runtime.AgentSubagentTool
 import io.github.mangi.eta.agent.runtime.AgentRunArchiveStore
 import io.github.mangi.eta.agent.runtime.AgentRunCheckpointStore
 import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
@@ -151,6 +152,10 @@ internal class AgentAppState(
     private val subagentCache = mutableMapOf<String, Triple<List<AgentChatMessageUi>, List<AgentModelClient.ConversationMessage>, List<ConversationSubagentUi>>>()
     // 存储里派出过子 Agent 的会话：未加载的会话只有预览，靠它在侧栏显示入口，展开时再加载。
     private var storedSubagentConversationIds: Set<String> = emptySet()
+    // 只加载了最近几页的会话，库里全部工具行（按加载窗口的第一条消息记版本，窗口变了就重查），
+    // 让侧栏也能列出更早批次的子 Agent。
+    private val storedToolRows = mutableMapOf<String, Pair<String?, List<ToolActivityMessageUi>>>()
+    private val storedToolRowsLoading = mutableSetOf<String>()
 
     var homeState by mutableStateOf(
         selectedConversationId?.let(conversationsById::get) ?: emptyChatState(defaultThinkingEnabled)
@@ -2434,13 +2439,45 @@ internal class AgentAppState(
         // 释放后的会话只剩最后一条消息，沿用它加载时算出的结果；从未加载过的由侧栏展开时加载。
         if (!state.isConversationLoaded) return subagentCache[conversationId]?.third.orEmpty()
         val journal = state.journal.ifEmpty { state.history }
+        val stored = storedToolRowsFor(conversationId, state)
         subagentCache[conversationId]?.let { (messages, cachedJournal, subagents) ->
             if (messages === state.messages && cachedJournal === journal) return subagents
         }
-        val subagents = SubagentDetails.forConversation(state.messages, journal)
+        val subagents = SubagentDetails.forConversation(state.messages, journal, stored)
         subagentCache.keys.retainAll(conversationsById.keys)
         subagentCache[conversationId] = Triple(state.messages, journal, subagents)
         return subagents
+    }
+
+    /** 有更早的页没加载、且可能派过子 Agent 时，从库里补全部工具行；查完清掉缓存重算一次。 */
+    private fun storedToolRowsFor(conversationId: String, state: AgentChatHomeUiState): List<ToolActivityMessageUi> {
+        if (!state.hasEarlierMessages) return emptyList()
+        val mayHaveSubagents = conversationId in storedSubagentConversationIds ||
+            state.messages.any { it is ToolActivityMessageUi && it.toolName == AgentSubagentTool.TOOL_NAME }
+        if (!mayHaveSubagents) return emptyList()
+        val window = state.messages.firstOrNull()?.id
+        val cached = storedToolRows[conversationId]
+        if (cached?.first == window) return cached.second
+        if (storedToolRowsLoading.add(conversationId)) {
+            scope.launch {
+                val rows = try {
+                    AgentConversationStore.toolRows(appContext, conversationId)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    AndroidAgentLogger.warn("Agent stored tool rows failed: type=${failure.safeLogType()}")
+                    emptyList()
+                }
+                withContext(Dispatchers.Main) {
+                    storedToolRowsLoading.remove(conversationId)
+                    storedToolRows.keys.retainAll(conversationsById.keys)
+                    storedToolRows[conversationId] = window to rows
+                    subagentCache.remove(conversationId)
+                    refreshConversationSummaries()
+                }
+            }
+        }
+        return cached?.second.orEmpty()
     }
 
     private fun loadStoredSubagentConversations() {

@@ -38,18 +38,26 @@ internal object SubagentDetails {
         }
     }
 
-    /** 一个会话里派出过的全部子 Agent（按调用顺序）；运行中的取实时进度，结束的从会话记录还原。 */
+    /**
+     * 一个会话里派出过的全部子 Agent（按调用顺序）；运行中的取实时进度，结束的从会话记录还原。
+     * [storedToolRows] 是库里这个会话的全部工具行：按页加载时更早的批次不在 [messages] 里，
+     * 它们排在已加载的消息之前，用来补齐列表并保持同一调用 id 的序号。
+     */
     fun forConversation(
         messages: List<AgentChatMessageUi>,
         journal: List<AgentModelClient.ConversationMessage>,
-    ): List<ConversationSubagentUi> =
-        messages.filterIsInstance<ToolActivityMessageUi>()
+        storedToolRows: List<ToolActivityMessageUi> = emptyList(),
+    ): List<ConversationSubagentUi> {
+        val loadedIds = messages.mapTo(HashSet()) { it.id }
+        val all = storedToolRows.filter { it.id !in loadedIds } + messages
+        return all.filterIsInstance<ToolActivityMessageUi>()
             .filter { it.toolName == AgentSubagentTool.TOOL_NAME }
             .flatMap { message ->
                 val ids = runAndCallId(message.id) ?: return@flatMap emptyList()
-                message.subagents.ifEmpty { fromDetail(ToolCallDetails.find(journal, messages, message)) }
+                message.subagents.ifEmpty { fromDetail(ToolCallDetails.find(journal, all, message)) }
                     .map { ConversationSubagentUi(ids.first, ids.second, it) }
             }
+    }
 
     /**
      * 子 Agent 过程转成与主会话相同的思考、正文与工具行；首条用户消息是任务，不重复显示。

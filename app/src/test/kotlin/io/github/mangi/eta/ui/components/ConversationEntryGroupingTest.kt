@@ -38,4 +38,22 @@ class ConversationEntryGroupingTest {
         ).drawerSectionKeys()
         assertEquals(listOf("Pinned", "Entry(source=XiaoAi)", "Entry(source=Breeno)", "Today"), keys)
     }
+
+    @Test
+    fun entryGroupsGetADateLabelAtEachDayBoundary() {
+        val now = System.currentTimeMillis()
+        val day = 24 * 60 * 60 * 1000L
+        fun summary(id: String, ageDays: Int, label: String) = ConversationSummaryUi(
+            id = id, title = id, preview = "", timeLabel = label, updatedAtMillis = now - ageDays * day,
+            mode = ConversationModeUi.Chat, entrySource = ConversationEntrySource.Computer,
+        )
+        val labels = listOf(
+            summary("a", 0, "10:20"),
+            summary("b", 0, "09:00"),
+            summary("c", 2, "10月23日"),
+            summary("d", 2, "10月23日"),
+            summary("e", 3, "10月22日"),
+        ).entryDateLabelKeys()
+        assertEquals(listOf("Today", null, "Dated(label=10月23日)", null, "Dated(label=10月22日)"), labels)
+    }
 }

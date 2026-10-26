@@ -30,6 +30,9 @@ internal interface ConversationDao : ChunkedTextDao {
     @Query("SELECT DISTINCT conversation_id FROM conversation_messages WHERE type = :type AND tool_name = :toolName")
     suspend fun conversationIdsWithTool(type: String, toolName: String): List<String>
 
+    @Query("SELECT id, tool_name FROM conversation_messages WHERE conversation_id = :conversationId AND type = :type ORDER BY sort_index ASC")
+    suspend fun toolRowRefs(conversationId: String, type: String): List<ConversationToolRowRef>
+
     @Query("UPDATE conversations SET title = :title, updated_at = :updatedAt WHERE id = :conversationId")
     suspend fun updateConversationTitle(conversationId: String, title: String, updatedAt: Long)
 

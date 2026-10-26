@@ -25,6 +25,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.referentialEqualityPolicy
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,6 +46,7 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.OpenAiResponsesProvider
 import io.github.mangi.eta.agent.overlay.toolDisplayName
+import io.github.mangi.eta.agent.runtime.AgentRunCheckpointStore
 import io.github.mangi.eta.agent.runtime.SubagentTranscriptStore
 import io.github.mangi.eta.ui.markdown.MarkdownTone
 import io.github.mangi.eta.ui.markdown.StaticMarkdown
@@ -70,10 +72,14 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal class ToolCallDetailSource(
     private val journal: List<AgentModelClient.ConversationMessage>,
     private val messages: List<AgentChatMessageUi>,
-    /** 本轮的工具结果要等 run 结束才写入记录。 */
+    /** 本轮的工具结果要等 run 结束才写入记录；运行中改从检查点读取已完成的工具。 */
     val runInProgress: Boolean,
 ) {
     fun find(message: ToolActivityMessageUi): ToolCallDetail? = ToolCallDetails.find(journal, messages, message)
+
+    /** 检查点只含这个 run 的记录，同一调用 id 的序号也只在这个 run 的工具行里数。 */
+    fun findInRun(runId: String, transcript: List<AgentModelClient.ConversationMessage>, message: ToolActivityMessageUi): ToolCallDetail? =
+        ToolCallDetails.find(transcript, messages.filter { it.id.startsWith("$runId-tool-") }, message)
 }
 
 internal val LocalToolCallDetailSource = compositionLocalOf<ToolCallDetailSource?>(referentialEqualityPolicy()) { null }
@@ -81,8 +87,30 @@ internal val LocalToolCallDetailSource = compositionLocalOf<ToolCallDetailSource
 @Composable
 internal fun rememberToolCallDetail(message: ToolActivityMessageUi): ToolCallDetail? {
     val source = LocalToolCallDetailSource.current
-    return remember(source, message) { source?.find(message) }
+    val recorded = remember(source, message) { source?.find(message) }
+    val runId = remember(message.id) { ToolCallDetails.runId(message.id) }
+    val context = LocalContext.current.applicationContext
+    var live by remember(message.id) { mutableStateOf<ToolCallDetail?>(null) }
+    val readCheckpoint = recorded == null && source?.runInProgress == true && runId != null &&
+        message.status != ToolActivityStatusUi.Running
+    // 流式输出时 source 每段文字都会重建，不作为 key，避免反复读库。
+    val latestSource by rememberUpdatedState(source)
+    val latestMessage by rememberUpdatedState(message)
+    LaunchedEffect(readCheckpoint, runId, message.status) {
+        if (!readCheckpoint || runId == null) return@LaunchedEffect
+        // 工具结果写进检查点与完成事件到达界面几乎同时，读不到时稍后再试。
+        repeat(CHECKPOINT_READ_ATTEMPTS) {
+            val transcript = AgentRunCheckpointStore.transcript(context, runId)
+            live = latestSource?.findInRun(runId, transcript, latestMessage)
+            if (live != null) return@LaunchedEffect
+            delay(CHECKPOINT_RETRY_MS)
+        }
+    }
+    return recorded ?: live
 }
+
+private const val CHECKPOINT_READ_ATTEMPTS = 5
+private const val CHECKPOINT_RETRY_MS = 1_000L
 
 /** 展开的终端行：输出默认显示前几行，可就地展开；退出码、耗时与截断说明在下方一行。 */
 @Composable

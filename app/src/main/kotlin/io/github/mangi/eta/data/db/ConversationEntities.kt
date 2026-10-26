@@ -63,6 +63,11 @@ internal data class ConversationIdentity(
 
 internal data class ConversationMessageContent(val id: String, val content: String)
 
+internal data class ConversationToolRowRef(
+    val id: String,
+    @ColumnInfo(name = "tool_name") val toolName: String?,
+)
+
 @Serializable
 @Entity(
     tableName = "conversation_context_checkpoints",

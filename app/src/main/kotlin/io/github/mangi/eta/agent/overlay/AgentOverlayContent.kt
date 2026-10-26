@@ -138,7 +138,8 @@ internal fun AgentOverlayGlow(state: AgentOverlayState, corners: ScreenCornerRad
     LaunchedEffect(Unit) { shown = true }
     val reveal by animateFloatAsState(if (shown) 1f else 0f, tween(420), label = "edge_reveal")
 
-    val rotation = if (running) {
+    // 熄屏时停住光带，不让无限动画逐帧请求重绘。
+    val rotation = if (running && ScreenInteractivity.interactive) {
         val transition = rememberInfiniteTransition(label = "edge_light")
         transition.animateFloat(
             initialValue = 0f,

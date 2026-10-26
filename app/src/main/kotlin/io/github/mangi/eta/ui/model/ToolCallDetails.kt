@@ -39,10 +39,15 @@ internal data class WebPageContent(val url: String, val title: String, val text:
  */
 internal object ToolCallDetails {
     private val MESSAGE_ID = Regex("^.*-tool-\\d+-(.+)$")
+    private val RUN_ID = Regex("^(.*)-tool-\\d+-.+$")
     private val prettyJson = Json { prettyPrint = true }
 
     fun toolCallId(messageId: String): String? =
         MESSAGE_ID.find(messageId)?.groupValues?.get(1)?.takeUnless { it == "unknown" }
+
+    /** 工具行 id 是 `<run>-tool-<轮>-<调用 id>`，取出 run。 */
+    fun runId(messageId: String): String? =
+        RUN_ID.find(messageId)?.groupValues?.get(1)?.takeIf(String::isNotBlank)
 
     fun find(
         journal: List<AgentModelClient.ConversationMessage>,

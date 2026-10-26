@@ -102,6 +102,7 @@ internal class EtaMcpTaskManager(
         var planJson: String? = null
         var result: String? = null
         var error: String? = null
+        var errorCode: String? = null
         var finishedAt: Long? = null
         var stopRequested = false
         val usage = UsageTotals()
@@ -290,6 +291,7 @@ internal class EtaMcpTaskManager(
         }
         task.result = result.content.takeIf { result.ok }
         task.error = result.error.takeUnless { result.ok }
+        task.errorCode = result.errorCode.takeUnless { result.ok }
         task.currentTool = null
         task.questionId = null
         task.question = null
@@ -399,6 +401,8 @@ internal class EtaMcpTaskManager(
                 usageFor(task)?.let { put("usage", it) }
                 task.result?.let { put("result", it) }
                 task.error?.let { put("error", it) }
+                // 与 start 同步拒绝时的 code 同名，电脑端不必按中文说明判断原因。
+                task.errorCode?.let { put("code", it) }
                 put("hint", hintFor(task.status))
             }
     }

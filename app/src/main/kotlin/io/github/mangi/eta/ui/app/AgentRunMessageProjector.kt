@@ -114,48 +114,12 @@ internal class AgentRunMessageProjector(
         messages: List<AgentChatMessageUi>,
     ): List<AgentChatMessageUi> {
         if (usage.isEmpty) return messages
-        val withReasoning = attachReasoningTokens(runId, round, usage.reasoningTokens, messages)
-        val targetIndex = withReasoning.indexOfLast { message ->
+        val targetIndex = messages.indexOfLast { message ->
             message is AgentMessageUi && isAssistantMessageForRound(message.id, runId, round)
         }
-        if (targetIndex < 0) return withReasoning
-        return withReasoning.mapIndexed { index, message ->
+        if (targetIndex < 0) return messages
+        return messages.mapIndexed { index, message ->
             if (index == targetIndex && message is AgentMessageUi) message.copy(usage = usage) else message
-        }
-    }
-
-    /**
-     * 推理 token 记在该轮最后一个思考块上。服务商推理了却没有返回任何思考内容时补一个空思考块，
-     * 放在该轮第一条消息之前，让界面能看出这一轮想了多少。
-     */
-    private fun attachReasoningTokens(
-        runId: String,
-        round: Int,
-        reasoningTokens: Int?,
-        messages: List<AgentChatMessageUi>,
-    ): List<AgentChatMessageUi> {
-        val tokens = reasoningTokens?.takeIf { it > 0 } ?: return messages
-        val thinkingIndex = messages.indexOfLast { it is ThinkingMessageUi && isThinkingMessageForRound(it.id, runId, round) }
-        if (thinkingIndex >= 0) {
-            return messages.mapIndexed { index, message ->
-                if (index == thinkingIndex && message is ThinkingMessageUi) message.copy(reasoningTokens = tokens) else message
-            }
-        }
-        val placeholder = ThinkingMessageUi(
-            id = "$runId-thinking-$round-usage",
-            content = "",
-            isStreaming = false,
-            collapsed = true,
-            reasoningTokens = tokens,
-        )
-        val roundStart = messages.indexOfFirst { message ->
-            (message is AgentMessageUi && isAssistantMessageForRound(message.id, runId, round)) ||
-                (message is ToolActivityMessageUi && message.id.startsWith("$runId-tool-$round-"))
-        }
-        return if (roundStart < 0) {
-            messages + placeholder
-        } else {
-            messages.subList(0, roundStart) + placeholder + messages.subList(roundStart, messages.size)
         }
     }
 
@@ -473,6 +437,7 @@ internal class AgentRunMessageProjector(
             status = ToolActivityStatusUi.Running,
             argumentsSummary = event.argsPreview,
             command = event.command,
+            startedAtElapsedMs = nowElapsedRealtime(),
         )
         if (messages.any { it.id == message.id }) return messages
         return messages + message
@@ -520,6 +485,7 @@ internal class AgentRunMessageProjector(
             toolName = event.name,
             status = ToolActivityStatusUi.Running,
             argumentsSummary = "",
+            startedAtElapsedMs = nowElapsedRealtime(),
         )
         return if (messages.any { it.id == message.id }) messages else messages + message
     }
@@ -610,13 +576,18 @@ internal class AgentRunMessageProjector(
         thinkingStartedAt.keys.removeAll { it.startsWith("$runId-thinking-") }
     }
 
+    /** 时长只在块从流式转为结束时定格；已结束的块在整轮收尾或恢复时保持原值，不再按“开始到现在”累计。 */
     private fun ThinkingMessageUi.finished(authoritativeContent: String? = null): ThinkingMessageUi =
         copy(
             content = authoritativeContent ?: content,
             isStreaming = false,
-            elapsedSeconds = thinkingStartedAt[id]?.let { startedAt ->
-                ((nowElapsedRealtime() - startedAt) / 1000).toInt().coerceAtLeast(0)
-            } ?: elapsedSeconds,
+            elapsedSeconds = if (!isStreaming) {
+                elapsedSeconds
+            } else {
+                thinkingStartedAt[id]?.let { startedAt ->
+                    ((nowElapsedRealtime() - startedAt) / 1000).toInt().coerceAtLeast(0)
+                } ?: elapsedSeconds
+            },
             collapsed = true,
         )
 

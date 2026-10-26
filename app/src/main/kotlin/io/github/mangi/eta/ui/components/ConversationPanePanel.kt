@@ -29,7 +29,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccountTree
+import androidx.compose.material.icons.rounded.Alarm
 import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
@@ -43,6 +45,7 @@ import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SportsBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -146,8 +149,19 @@ internal fun ConversationPanePanel(
     // state.conversations 已由 AgentAppState 按标题、预览与消息内容过滤。
     val query = state.searchQuery.trim()
     val groups = remember(state.conversations) { state.conversations.groupForDrawer() }
-    // 厂商入口分组默认收起，避免每次唤醒新建的会话挤占普通对话；搜索或选中其中的会话时自动展开。
-    var expandedEntrySources by remember { mutableStateOf(emptySet<ConversationEntrySource>()) }
+    // 每个分组都能收起：入口分组默认收起，避免每次唤醒新建的会话挤占普通对话；置顶与按时间的分段默认展开。
+    // 这里只记用户改过的分组；搜索时全部展开。
+    var sectionExpansion by remember { mutableStateOf(emptyMap<String, Boolean>()) }
+    // 选中会话时把它所在的分组展开一次（例如从结果卡片回到某个电脑端会话），之后仍可收起。
+    // 外部入口的会话可能稍后才导入进列表，所以也按它所在的分组触发。
+    val selectedSectionKey = remember(groups, state.selectedConversationId) {
+        state.selectedConversationId?.let { selected ->
+            groups.firstOrNull { group -> group.items.any { it.id == selected } }?.sectionKey
+        }
+    }
+    LaunchedEffect(state.selectedConversationId, selectedSectionKey) {
+        selectedSectionKey?.let { sectionExpansion = sectionExpansion + (it to true) }
+    }
     // 有子 Agent 的会话可在侧栏展开，列出它派出过的子 Agent；点开查看过程。
     var expandedSubagents by remember { mutableStateOf(initialExpandedSubagents) }
     // 记住是哪一个子 Agent，弹窗打开期间从最新的会话摘要里取它的状态，运行中的进度随之更新。
@@ -199,30 +213,27 @@ internal fun ConversationPanePanel(
                 } else {
                     groups.forEach { group ->
                         val entrySource = (group.section as? ConversationDrawerSection.Entry)?.source
-                        val expanded = entrySource == null || query.isNotBlank() ||
-                            entrySource in expandedEntrySources ||
-                            group.items.any { it.id == state.selectedConversationId }
-                        item(key = "section-${group.section}") {
+                        val sectionKey = group.sectionKey
+                        val expanded = query.isNotBlank() || (sectionExpansion[sectionKey] ?: (entrySource == null))
+                        item(key = "section-$sectionKey") {
                             ConversationSectionHeader(
                                 group = group,
                                 expanded = expanded,
-                                onToggle = entrySource?.let { source ->
-                                    {
-                                        expandedEntrySources = if (source in expandedEntrySources) {
-                                            expandedEntrySources - source
-                                        } else {
-                                            expandedEntrySources + source
-                                        }
-                                    }
-                                },
+                                onToggle = if (query.isBlank()) {
+                                    { sectionExpansion = sectionExpansion + (sectionKey to !expanded) }
+                                } else null,
                             )
                         }
+                        if (!expanded) return@forEach
+                        // 入口分组不按时间分段，组内按日期加小标题。
+                        val rows = if (entrySource != null) group.items.withDateLabels() else group.items.map { null to it }
                         items(
-                            items = if (expanded) group.items else emptyList(),
-                            key = { it.id },
-                        ) { conversation ->
+                            items = rows,
+                            key = { (_, conversation) -> conversation.id },
+                        ) { (dateSection, conversation) ->
                             val subagentsOpen = conversation.id in expandedSubagents
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                dateSection?.let { ConversationDateLabel(it) }
                                 ConversationTextRow(
                                     conversation = conversation,
                                     selected = conversation.id == state.selectedConversationId,
@@ -406,7 +417,13 @@ private fun ConversationSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            imageVector = if (onToggle != null) Icons.Rounded.Mic else Icons.Rounded.Schedule,
+            imageVector = when ((group.section as? ConversationDrawerSection.Entry)?.source) {
+                ConversationEntrySource.XiaoAi, ConversationEntrySource.Breeno -> Icons.Rounded.Mic
+                ConversationEntrySource.Computer -> Icons.Rounded.Computer
+                // 与工具 manage_automations 的图标一致。
+                ConversationEntrySource.Automation -> Icons.Rounded.Alarm
+                null -> Icons.Rounded.Schedule
+            },
             contentDescription = null,
             modifier = Modifier.size(ConversationPanelMetrics.SectionIconSize),
             tint = MiuixTheme.colorScheme.onSurfaceVariantActions,
@@ -745,7 +762,38 @@ private fun DockEntry(
 private data class ConversationDrawerGroup(
     val section: ConversationDrawerSection,
     val items: List<ConversationSummaryUi>,
-)
+) {
+    /** 收起状态与列表 key 共用；按日期的分段以日期文字区分。 */
+    val sectionKey: String get() = section.toString()
+}
+
+internal fun List<ConversationSummaryUi>.entryDateLabelKeys(): List<String?> = withDateLabels().map { it.first?.toString() }
+
+/** 入口分组内按日期分段：每段第一条带上它的日期（今天或日期文字），其余为 null。 */
+private fun List<ConversationSummaryUi>.withDateLabels(): List<Pair<ConversationDrawerSection?, ConversationSummaryUi>> {
+    var previous: ConversationDrawerSection? = null
+    return map { conversation ->
+        val section = conversation.drawerSection()
+        (section.takeIf { it != previous } to conversation).also { previous = section }
+    }
+}
+
+@Composable
+private fun ConversationDateLabel(section: ConversationDrawerSection) {
+    Text(
+        text = when (section) {
+            is ConversationDrawerSection.Dated -> section.label
+            else -> stringResource(R.string.conversation_section_today)
+        },
+        color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+        style = MiuixTheme.textStyles.footnote2,
+        modifier = Modifier.padding(
+            start = ConversationPanelMetrics.RowHorizontalPadding,
+            top = 4.dp,
+            bottom = 2.dp,
+        ),
+    )
+}
 
 private sealed interface ConversationDrawerSection {
     data object Pinned : ConversationDrawerSection

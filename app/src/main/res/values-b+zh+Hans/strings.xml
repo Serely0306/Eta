@@ -563,7 +563,7 @@
   <string name="tool_detail_truncated_short">已截断</string>
   <string name="tool_detail_sensitive">敏感工具的参数和结果只在当轮使用，没有保存到会话记录。</string>
   <string name="tool_detail_unavailable">这条记录没有保存完整内容，下面是摘要。</string>
-  <string name="tool_detail_pending">本轮结束后可以查看完整内容。</string>
+  <string name="tool_detail_pending">工具执行完成后可以查看完整内容。</string>
   <string name="tool_detail_source_note">内容来自会话记录里保存的工具结果。</string>
   <string name="tool_detail_exit_code">退出码 %1$d</string>
   <string name="tool_detail_timed_out">执行超时</string>
@@ -621,7 +621,6 @@
   <string name="shell_command">Shell 命令</string>
   <string name="reasoning_in_progress">正在思考…</string>
   <string name="reasoning_completed">思考已完成</string>
-  <string name="reasoning_tokens">%1$s 推理 tokens</string>
   <string name="reasoning_content_unavailable">服务商没有返回思考内容。使用 Responses 接口时，可以在服务商设置里把“思考摘要”改成“详细”。</string>
   <plurals name="reasoning_completed_seconds">
       <item quantity="other">思考已完成 · 用时 %d 秒</item>

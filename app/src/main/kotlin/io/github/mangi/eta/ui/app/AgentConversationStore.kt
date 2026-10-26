@@ -335,6 +335,21 @@ internal object AgentConversationStore {
             .toSet()
     }
 
+    /**
+     * 会话里全部工具行的 id 与工具名（按顺序），不受按页加载影响。侧栏用它找出没加载那几页里的
+     * `run_subagents`，并保持同一调用 id 的序号与完整记录一致。
+     */
+    suspend fun toolRows(context: Context, conversationId: String): List<ToolActivityMessageUi> = withContext(Dispatchers.IO) {
+        EtaDatabase.get(context).conversationDao().toolRowRefs(conversationId, TYPE_TOOL).map { row ->
+            ToolActivityMessageUi(
+                id = row.id,
+                toolName = row.toolName.orEmpty(),
+                status = ToolActivityStatusUi.Unknown,
+                argumentsSummary = "",
+            )
+        }
+    }
+
     fun unloadConversation(state: AgentChatHomeUiState): AgentChatHomeUiState = state.copy(
         messages = listOfNotNull(state.messages.lastOrNull()?.let { message -> when (message) {
             is UserMessageUi -> message.copy(content = message.content.take(256), images = emptyList())
@@ -509,7 +524,8 @@ internal object AgentConversationStore {
                 )
             }
 
-            TYPE_THINKING -> ThinkingMessageUi(
+            // 旧版本为显示推理 token 补的空思考块（id 以 -usage 结尾）不再显示。
+            TYPE_THINKING -> if (content.isBlank() && id.endsWith("-usage")) null else ThinkingMessageUi(
                 id = id,
                 content = content,
                 isStreaming = false,

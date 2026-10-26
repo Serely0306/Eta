@@ -277,6 +277,25 @@ class EtaMcpTaskManagerTest {
     }
 
     @Test
+    fun failedTaskCarriesTheRuntimeErrorCode() {
+        val started = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "第九个").put("wait_seconds", 0))
+        runner.steps.put {
+            AgentRuntimeWire.RunResult("", ok = false, content = "", error = "同时运行的任务已达上限，请等待任务完成后再试",
+                errorCode = "RUN_CAPACITY_REACHED")
+        }
+        val failed = manager.call(EtaMcpTaskManager.STATUS, JSONObject().put("task_id", started.getString("task_id")).put("wait_seconds", 5))
+        assertEquals("failed", failed.getString("status"))
+        assertEquals("RUN_CAPACITY_REACHED", failed.getString("code"))
+
+        // 没有错误码的失败（如模型请求失败）不带 code。
+        val other = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("wait_seconds", 0))
+        runner.steps.put { AgentRuntimeWire.RunResult("", ok = false, content = "", error = "模型接口请求失败") }
+        val plain = manager.call(EtaMcpTaskManager.STATUS, JSONObject().put("task_id", other.getString("task_id")).put("wait_seconds", 5))
+        assertEquals("failed", plain.getString("status"))
+        assertFalse(plain.has("code"))
+    }
+
+    @Test
     fun stopCancelsRunAndReportsStopped() {
         val started = manager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "长任务").put("wait_seconds", 0))
         val taskId = started.getString("task_id")

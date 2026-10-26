@@ -10,6 +10,7 @@ import io.github.mangi.eta.data.db.RuntimeInFlightEventEntity
 import io.github.mangi.eta.data.db.RuntimeInFlightRunEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 
 /**
  * 在途 run 的 UI 事件、完整脱敏 transcript 与模型上下文快照。
@@ -108,6 +109,12 @@ internal object AgentRunCheckpointStore {
                 }
                 .toList()
         }
+
+    /** 运行中查看工具详情用：本 run 已完成工具批次的脱敏 transcript；run 已结束或不是 App 发起时为空。 */
+    suspend fun transcript(context: Context, runId: String): List<AgentModelClient.ConversationMessage> =
+        withContext(Dispatchers.IO) {
+            EtaDatabase.get(context.applicationContext).runtimeRunDao().inFlightTranscript(runId)
+        }?.let(AgentConversationCodec::decodeTranscript).orEmpty()
 
     fun saveTranscript(context: Context, runId: String, transcript: List<AgentModelClient.ConversationMessage>) {
         runBlocking(Dispatchers.IO) {

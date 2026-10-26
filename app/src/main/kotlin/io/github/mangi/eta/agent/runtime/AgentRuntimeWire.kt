@@ -162,6 +162,7 @@ internal object AgentRuntimeWire {
     private const val KEY_CONTENT = "content"
     private const val KEY_REASONING_CONTENT = "reasoning_content"
     private const val KEY_ERROR = "error"
+    private const val KEY_ERROR_CODE = "error_code"
     private const val KEY_RESULT = "result"
     private const val KEY_TRANSCRIPT_JSON = "transcript_json"
     private const val KEY_HANDOFF = "handoff"
@@ -269,6 +270,8 @@ internal object AgentRuntimeWire {
         val contextSnapshotRef: String = "",
         val operation: String = OP_CHAT,
         val rewriteTargetMessageId: String? = null,
+        /** 机器可读的失败原因（如准入被拒的 `RUN_CAPACITY_REACHED`）；[error] 是给人看的说明。 */
+        val errorCode: String? = null,
     )
 
     data class EntryHandoff(
@@ -597,6 +600,7 @@ internal object AgentRuntimeWire {
             ),
         )
         putString(KEY_ERROR, error?.boundedText(MAX_DRAIN_CONTENT_CHARS))
+        errorCode?.let { putString(KEY_ERROR_CODE, it) }
         putString(
             KEY_TRANSCRIPT_JSON,
             if (compactForDrain) {
@@ -617,6 +621,7 @@ internal object AgentRuntimeWire {
             ok = bundle.getBoolean(KEY_OK),
             content = bundle.getString(KEY_CONTENT).orEmpty(),
             error = bundle.getString(KEY_ERROR),
+            errorCode = bundle.getString(KEY_ERROR_CODE),
             reasoningContent = bundle.getString(KEY_REASONING_CONTENT).orEmpty(),
             transcript = AgentConversationCodec.decodeTranscript(bundle.getString(KEY_TRANSCRIPT_JSON)),
         )
