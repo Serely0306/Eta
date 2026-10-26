@@ -37,6 +37,8 @@ class AgentSubagentManagerTest {
             agents.values.removeAll { it.conversationId == conversationId }
             mail.removeAll { it.conversationId == conversationId }
         }
+        @Synchronized override fun conversationsWithUndeliveredMail() =
+            mail.filter { it.deliveredRunId == null }.map { it.conversationId }.distinct()
     }
 
     /** 每个回合把自己交出来，等测试给出结果。 */
@@ -58,7 +60,9 @@ class AgentSubagentManagerTest {
         runId = "run-1",
         conversationId = "conv",
         parentSessionId = "session",
-        config = AgentModelClient.ModelConfig(baseUrl = "https://fixture.invalid/v1", apiKey = "fixture", model = "fixture"),
+        config = AgentModelClient.ModelConfig(
+            baseUrl = "https://fixture.invalid/v1", apiKey = "fixture", model = "fixture", systemPrompt = "fixture",
+        ),
         capabilitiesProvider = { error("脚本回合不读取能力") },
     )
 

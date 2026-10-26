@@ -18,6 +18,7 @@ class ConversationSearchTest {
             SystemNoticeCode.ModelFallback -> "Fallback"
             SystemNoticeCode.RuntimeFailed -> "Runtime failed"
             SystemNoticeCode.Interrupted -> "Interrupted"
+            SystemNoticeCode.SubagentNotified -> "Sub-agent result"
         }
     }
 
