@@ -2457,7 +2457,7 @@ internal class AgentAppState(
         if (!mayHaveSubagents) return emptyList()
         val window = state.messages.firstOrNull()?.id
         val cached = storedToolRows[conversationId]
-        if (cached?.first == window) return cached.second
+        if (cached != null && cached.first == window) return cached.second
         if (storedToolRowsLoading.add(conversationId)) {
             scope.launch {
                 val rows = try {
