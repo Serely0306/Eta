@@ -169,8 +169,13 @@ internal abstract class EtaDatabase : RoomDatabase() {
             if (!exists) database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
         }
 
-        /** AG-19：会话级子 Agent 与它们的完成通知。 */
+        /** AG-19：会话级子 Agent 与它们的完成通知；AG-16：模型的默认思考强度。 */
         internal val MIGRATION_27_28 = Migration(27, 28) { database ->
+            val hasDefaultEffort = database.query("PRAGMA table_info(provider_models)").use { cursor ->
+                val name = cursor.getColumnIndexOrThrow("name")
+                generateSequence { if (cursor.moveToNext()) cursor.getString(name) else null }.any { it == "default_reasoning_effort" }
+            }
+            if (!hasDefaultEffort) database.execSQL("ALTER TABLE provider_models ADD COLUMN default_reasoning_effort TEXT")
             database.execSQL(
                 "CREATE TABLE IF NOT EXISTS `conversation_subagents` (`id` TEXT NOT NULL, `conversation_id` TEXT NOT NULL, " +
                     "`agent_id` TEXT NOT NULL, `name` TEXT NOT NULL, `task` TEXT NOT NULL, `status` TEXT NOT NULL, " +

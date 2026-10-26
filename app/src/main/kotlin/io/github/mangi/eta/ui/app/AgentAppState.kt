@@ -120,8 +120,11 @@ internal class AgentAppState(
     private var persistencePaused = false
     private val runtimeRecoveryInProgress = AtomicBoolean(false)
     private val defaultThinkingEnabled = agentBooleanForUi(Prefs.Keys.AGENT_THINKING_ENABLED)
-    /** 设置里的“默认思考强度”，新会话从它开始，发送前再按当前模型就近取档。 */
-    private var defaultReasoningEffort = ReasoningEffort.DEFAULT
+    /**
+     * 未发送的新会话最近一次套用的（有效模型, 该模型的默认强度）。换了模型或改了模型的默认强度才重新套用，
+     * 用户在新会话里手动选的强度不会被其他刷新覆盖。
+     */
+    private var newChatEffortSource: Pair<String?, ReasoningEffort?>? = null
     @Volatile
     private var conversationPersistence = AgentConversationPersistence(initialConversations)
     private var currentReasoningCapabilities: ModelReasoningCapabilities? = null
@@ -185,7 +188,6 @@ internal class AgentAppState(
         loadStoredSubagentConversations()
         observeSubagentRegistry()
         observeRuntimeSelection()
-        observeDefaultReasoningEffort()
         runtimeRecoveryInProgress.set(true)
         scope.launch(Dispatchers.IO) {
             try {
@@ -197,26 +199,15 @@ internal class AgentAppState(
         }
     }
 
-    private fun newChatState(): AgentChatHomeUiState = emptyChatState(defaultThinkingEnabled).let { state ->
-        if (defaultThinkingEnabled) state.copy(reasoningEffort = defaultReasoningEffort) else state
-    }
-
-    private fun observeDefaultReasoningEffort() {
-        scope.launch(Dispatchers.IO) {
-            RuntimeConfigRepository.reasoningSettingsFlow()
-                .map { it.defaultEffort }
-                .distinctUntilChanged()
-                .collectLatest { effort ->
-                    withContext(Dispatchers.Main) {
-                        defaultReasoningEffort = effort
-                        // 还没发送过的新会话跟随默认值；已有会话保留各自的强度。
-                        if (selectedConversationId == null && homeState.messages.isEmpty() && defaultThinkingEnabled) {
-                            val next = homeState.copy(thinkingEnabled = effort.enablesReasoning, reasoningEffort = effort)
-                            // 模型能力尚未加载时先不取档，避免被当成不支持思考而改成 Off。
-                            homeState = if (currentReasoningCapabilities != null) next.withCurrentReasoningCapabilities() else next
-                        }
-                    }
-                }
+    /** 新会话从默认模型的默认强度开始（模型编辑里的“默认强度”），发送前再按模型能力就近取档。 */
+    private fun newChatState(): AgentChatHomeUiState {
+        val defaultModel = providers.enabledModel(
+            AgentModelPickerProjector.project(providers, defaultProviderId, defaultModelId).selectedModel?.id
+        )?.model
+        val source = defaultModel?.id to defaultModel?.defaultReasoningEffort
+        newChatEffortSource = source
+        return emptyChatState(defaultThinkingEnabled).let { state ->
+            if (defaultThinkingEnabled) state.copy(reasoningEffort = source.second ?: ReasoningEffort.DEFAULT) else state
         }
     }
 
@@ -257,6 +248,14 @@ internal class AgentAppState(
         val effective = bound ?: providers.enabledModel(pickerState.selectedModel?.id)
         currentReasoningCapabilities = effective?.let { (provider, model) ->
             RuntimeConfigRepository.reasoningCapabilities(provider, model)
+        }
+        // 还没发送过的新会话跟随有效模型的默认强度；已有会话保留各自的强度。
+        if (selectedConversationId == null && homeState.messages.isEmpty() && defaultThinkingEnabled) {
+            val source = effective?.model?.id to effective?.model?.defaultReasoningEffort
+            if (source != newChatEffortSource) {
+                newChatEffortSource = source
+                homeState = homeState.copy(reasoningEffort = source.second ?: ReasoningEffort.DEFAULT)
+            }
         }
         if (!homeState.isConversationLoaded) return
         val resolved = homeState.withCurrentReasoningCapabilities()

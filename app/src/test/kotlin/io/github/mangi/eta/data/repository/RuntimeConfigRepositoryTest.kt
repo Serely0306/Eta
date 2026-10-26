@@ -114,5 +114,14 @@ class RuntimeConfigRepositoryTest {
         assertEquals(config.copy(autoCompactionEnabled = false), Json.decodeFromString<AgentModelClient.ModelConfig>(raw))
         assertEquals(config.autoCompactionEnabled,
             Json.decodeFromString<AgentModelClient.ModelConfig>(RuntimeConfigRepository.runtimeConfigJson(config)).autoCompactionEnabled)
+
+        // 模型的默认强度决定跟随入口与电脑端不指定时的强度，按能力就近取档；入口单独指定的仍优先。
+        val withDefault = RuntimeConfigRepository.buildRuntimeConfig(
+            provider,
+            model.copy(defaultReasoningEffort = ReasoningEffort.HIGH),
+        )
+        assertEquals(ReasoningEffort.MINIMAL, withDefault.reasoningEffort)
+        assertEquals(ReasoningEffort.MINIMAL, RuntimeConfigRepository.withReasoningEffort(withDefault, null).reasoningEffort)
+        assertEquals(ReasoningEffort.OFF, RuntimeConfigRepository.withReasoningEffort(withDefault, ReasoningEffort.OFF).reasoningEffort)
     }
 }

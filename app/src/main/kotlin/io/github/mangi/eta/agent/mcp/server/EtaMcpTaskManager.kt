@@ -471,7 +471,7 @@ internal class EtaMcpTaskManager(
                 .put("enum", JSONArray(models.flatMap { it.efforts }.distinct()))
                 .put(
                     "description",
-                    "可选；思考强度，default 表示不发送强度参数、由服务商决定。省略时用手机上为该模型设的强度。各模型可选：" +
+                    "可选；思考强度，default 表示不发送强度参数、由服务商决定。省略时用手机上该模型的默认强度。各模型可选：" +
                         models.joinToString("；") { option ->
                             val name = if (choices.restricted) option.id else option.label
                             "$name = ${option.efforts.joinToString("/")}（省略时 ${option.defaultEffort}）"

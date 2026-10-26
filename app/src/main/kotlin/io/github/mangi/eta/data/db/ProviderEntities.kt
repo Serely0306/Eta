@@ -20,6 +20,7 @@ import io.github.mangi.eta.data.model.OpenAiEndpointMode
 import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.ProviderTypes
+import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.ReasoningSummaryMode
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import io.github.mangi.eta.data.provider.ProviderConnectionProfile
@@ -98,6 +99,7 @@ internal data class ProviderModelEntity(
     @ColumnInfo(name = "custom_body_json") val customBodyJson: String,
     val source: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "default_reasoning_effort") val defaultReasoningEffort: String? = null,
 )
 
 internal data class ProviderWithModels(
@@ -269,6 +271,7 @@ private fun Model.toEntity(providerId: String): ProviderModelEntity =
         customBodyJson = ProviderJson.encodeBody(customBody),
         source = source.name.lowercase(),
         createdAt = createdAt,
+        defaultReasoningEffort = defaultReasoningEffort?.wireValue,
     )
 
 private fun ProviderModelEntity.toDomain(): Model =
@@ -304,6 +307,7 @@ private fun ProviderModelEntity.toDomain(): Model =
             if (isBuiltIn) ModelSource.CATALOG else ModelSource.MANUAL
         ),
         createdAt = createdAt,
+        defaultReasoningEffort = ReasoningEffort.fromWireValue(defaultReasoningEffort),
     )
 
 private object ProviderJson {

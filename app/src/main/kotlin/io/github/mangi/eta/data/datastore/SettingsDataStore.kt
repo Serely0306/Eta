@@ -307,8 +307,6 @@ internal object SettingsDataStore {
             }
             .map { prefs ->
                 ReasoningSettings(
-                    defaultEffort = ReasoningEffort.fromWireValue(prefs[DEFAULT_REASONING_EFFORT])
-                        ?: ReasoningEffort.DEFAULT,
                     voiceModelId = prefs[VOICE_MODEL_ID],
                     voiceEffort = ReasoningEffort.fromWireValue(prefs[VOICE_REASONING_EFFORT]),
                     vendorEffort = ReasoningEffort.fromWireValue(prefs[VENDOR_ASSISTANT_REASONING_EFFORT]),
@@ -321,7 +319,8 @@ internal object SettingsDataStore {
     suspend fun setReasoningSettings(settings: ReasoningSettings) {
         ensureInitialized()
         dataStore.edit { prefs ->
-            prefs[DEFAULT_REASONING_EFFORT] = settings.defaultEffort.wireValue
+            // 全局默认强度已取消（AG-16 返工），旧键不再读取，顺手清掉。
+            prefs.remove(DEFAULT_REASONING_EFFORT)
             prefs.putOrRemove(VOICE_MODEL_ID, settings.voiceModelId)
             prefs.putOrRemove(VOICE_REASONING_EFFORT, settings.voiceEffort?.wireValue)
             prefs.putOrRemove(VENDOR_ASSISTANT_REASONING_EFFORT, settings.vendorEffort?.wireValue)

@@ -50,6 +50,7 @@ internal fun reconcileRemoteModels(
                         contextWindowOverride = configuredWindow ?: remote.contextWindow,
                         reasoningOverride = stored.reasoningOverride,
                         reasoningCapabilitiesOverride = stored.reasoningCapabilitiesOverride,
+                        defaultReasoningEffort = stored.defaultReasoningEffort,
                         source = if (stored.source == ModelSource.MANUAL) ModelSource.MANUAL else ModelSource.REMOTE,
                         createdAt = stored.createdAt,
                     ))

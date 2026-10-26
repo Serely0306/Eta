@@ -19,6 +19,7 @@ class RemoteModelReconciliationTest {
             isEnabled = false, contextWindowOverride = 64_000,
             customHeaders = listOf(CustomHeader("x-fixture", "fixture")),
             reasoningCapabilitiesOverride = ModelReasoningCapabilities(supportedEfforts = listOf(ReasoningEffort.LOW)),
+            defaultReasoningEffort = ReasoningEffort.LOW,
         )
         val existing = listOf(
             kept,
@@ -45,6 +46,7 @@ class RemoteModelReconciliationTest {
         assertEquals(128_000, preserved.contextWindow)
         assertEquals(kept.customHeaders, preserved.customHeaders)
         assertEquals(kept.reasoningCapabilitiesOverride, preserved.reasoningCapabilitiesOverride)
+        assertEquals(ReasoningEffort.LOW, preserved.defaultReasoningEffort)
     }
 
     @Test

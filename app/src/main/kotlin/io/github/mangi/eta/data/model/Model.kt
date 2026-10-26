@@ -26,7 +26,12 @@ data class Model(
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBody: List<CustomBody> = emptyList(),
     val source: ModelSource = ModelSource.MANUAL,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    /**
+     * Eta 默认对这个模型发送的思考强度（AG-16 返工）：新会话、电脑端不指定强度、各入口选“跟随”时都用它。
+     * 为空表示服务商默认（不发送强度参数）。与能力里的 defaultEffort（服务商不传参时大约的档位）不同。
+     */
+    val defaultReasoningEffort: ReasoningEffort? = null,
 ) {
     val effectiveContextWindow: Int?
         get() = contextWindowOverride

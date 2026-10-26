@@ -23,9 +23,6 @@ internal fun reasoningEffortLabel(effort: ReasoningEffort, providerDefault: Reas
         else -> effort.displayName
     }
 
-/** 全局默认强度可选的全部档位；各入口发送前再按模型能力就近取档。 */
-internal val AllReasoningEfforts: List<ReasoningEffort> = ReasoningEffort.entries.sortedBy { it.rank }
-
 /** 模型的思考能力；模型不存在或不支持思考时为 null。 */
 internal fun reasoningCapabilitiesFor(providers: List<ProviderSetting>, modelId: String?): ModelReasoningCapabilities? =
     modelId?.let { id ->

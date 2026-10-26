@@ -91,7 +91,6 @@ import io.github.mangi.eta.ui.components.EtaSwitchPreference
 import io.github.mangi.eta.ui.components.EtaWindowDialog
 import io.github.mangi.eta.ui.components.LanguagePreference
 import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.AllReasoningEfforts
 import io.github.mangi.eta.ui.components.MiuixScaffoldPage
 import io.github.mangi.eta.ui.components.ModelEffortSelection
 import io.github.mangi.eta.ui.components.effortDropdownItems
@@ -309,22 +308,7 @@ private fun SettingsPageContent(
                         iconTint = EtaPreferenceColors.Blue,
                     )
 
-                    EtaPreferenceDivider()
-                    EtaDropdownPreference(
-                        title = stringResource(R.string.settings_default_reasoning_effort),
-                        summary = stringResource(R.string.settings_default_reasoning_effort_summary),
-                        items = AllReasoningEfforts.map { DropdownItem(text = reasoningEffortLabel(it)) },
-                        selectedIndex = AllReasoningEfforts.indexOf(reasoningSettings.defaultEffort).coerceAtLeast(0),
-                        onSelectedIndexChange = { index ->
-                            AllReasoningEfforts.getOrNull(index)?.let { effort ->
-                                saveReasoningSettings(reasoningSettings.copy(defaultEffort = effort))
-                            }
-                        },
-                        startAction = {
-                            EtaPreferenceIcon(icon = Icons.Rounded.Tune, tint = EtaPreferenceColors.Blue)
-                        },
-                    )
-
+                    // 默认强度按模型设置（模型编辑里的“默认强度”），不再有全局默认（AG-16 返工）。
                     EtaPreferenceDivider()
                     EtaModelSelectPreference(
                         title = stringResource(R.string.settings_voice_model),

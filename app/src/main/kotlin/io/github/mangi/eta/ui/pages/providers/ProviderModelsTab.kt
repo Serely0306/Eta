@@ -93,6 +93,7 @@ import io.github.mangi.eta.ui.components.EtaSwitch
 import io.github.mangi.eta.ui.components.MiuixDialogActions
 import io.github.mangi.eta.ui.components.StatusError
 import io.github.mangi.eta.ui.components.StatusSuccess
+import io.github.mangi.eta.ui.components.reasoningEffortLabel
 import io.github.mangi.eta.ui.model.ModelSearchQuery
 import io.github.mangi.eta.ui.model.formatCompactTokenCount
 import kotlinx.coroutines.CancellationException
@@ -906,8 +907,18 @@ private fun ModelEditDialog(
                 .orEmpty() + ReasoningEffort.DEFAULT
         )
     }
+    // null 为服务商默认（不发送强度参数）。
+    var defaultEffort by remember(model.id, isNew) { mutableStateOf(model.defaultReasoningEffort) }
     val contextError = contextWindowInputError(contextWindowOverrideText)
     val geminiCapabilities = if (nativeGemini) GeminiModelCapabilities.requestReasoningCapabilities(modelId) else null
+    val reasoningShown = geminiCapabilities != null || reasoningEnabled
+    val defaultEffortOptions = if (!reasoningShown) emptyList() else {
+        listOf(ReasoningEffort.DEFAULT) + (geminiCapabilities?.selectableEfforts
+            ?: editableReasoningEfforts.filter { it in selectedReasoningEfforts })
+            .filter { it != ReasoningEffort.DEFAULT }
+    }
+    // 取消勾选了默认强度所在的档位时回到服务商默认。
+    val shownDefaultEffort = defaultEffort?.takeIf { it in defaultEffortOptions } ?: ReasoningEffort.DEFAULT
 
     fun resetAutomaticReasoning() {
         reasoningOverrideActive = false
@@ -941,6 +952,7 @@ private fun ModelEditDialog(
         } else {
             null
         },
+        defaultReasoningEffort = shownDefaultEffort.takeIf { it != ReasoningEffort.DEFAULT },
     )
 
     EtaOverlayDialog(
@@ -1103,6 +1115,35 @@ private fun ModelEditDialog(
                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     modifier = Modifier.padding(start = 4.dp, top = 8.dp),
                 )
+                if (reasoningShown) {
+                    Text(
+                        text = stringResource(R.string.provider_model_default_effort),
+                        style = MiuixTheme.textStyles.body1,
+                        color = MiuixTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(start = 4.dp, top = 16.dp),
+                    )
+                    val providerDefault = (geminiCapabilities ?: model.effectiveReasoningCapabilities)?.defaultEffort
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 10.dp),
+                    ) {
+                        defaultEffortOptions.forEach { effort ->
+                            EtaChoiceChip(
+                                text = reasoningEffortLabel(effort, providerDefault),
+                                selected = effort == shownDefaultEffort,
+                                onClick = { defaultEffort = effort.takeIf { it != ReasoningEffort.DEFAULT } },
+                                enabled = !isSaving,
+                            )
+                        }
+                    }
+                    Text(
+                        text = stringResource(R.string.provider_model_default_effort_summary),
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+                    )
+                }
                 error?.let { message ->
                     Text(
                         text = message,

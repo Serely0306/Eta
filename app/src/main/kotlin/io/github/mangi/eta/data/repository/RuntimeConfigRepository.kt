@@ -109,7 +109,7 @@ internal object RuntimeConfigRepository {
 
     suspend fun reasoningSettings(): ReasoningSettings = SettingsDataStore.reasoningSettings()
 
-    /** 厂商助手的强度可能跟随全局默认，两者变化都要刷新 RemotePreferences 中的快照。 */
+    /** 厂商助手的强度变化要刷新 RemotePreferences 中的快照。 */
     suspend fun setReasoningSettings(settings: ReasoningSettings, service: XposedService?): Boolean {
         SettingsDataStore.setReasoningSettings(settings)
         return syncToRemotePreferences(service)
@@ -129,22 +129,22 @@ internal object RuntimeConfigRepository {
     }
 
     /**
-     * 入口单独选择的模型与强度：模型为空或不可用时用默认模型，强度为空时用全局默认强度。
+     * 入口单独选择的模型与强度：模型为空或不可用时用默认模型，强度为空时用该模型的默认强度。
      * 自动任务与厂商助手共用这一规则。
      */
     suspend fun entryRuntimeConfig(modelId: String?, effort: ReasoningEffort?): AgentModelClient.ModelConfig? {
         val config = runtimeConfigFor(modelId) ?: return null
-        return withReasoningEffort(config, effort, SettingsDataStore.reasoningSettings().defaultEffort)
+        return withReasoningEffort(config, effort)
     }
 
     /**
-     * 入口单独设置的强度优先，其次 [defaultEffort]；按模型能力就近取档。模型不支持思考时保持原配置。
-     * 思考权限关闭时仍由 AgentRuntimePolicy 统一改为 Off。
+     * 入口单独设置的强度优先，其次 [defaultEffort]（默认是模型自己的默认强度，见 [buildRuntimeConfig]）；
+     * 按模型能力就近取档。模型不支持思考时保持原配置。思考权限关闭时仍由 AgentRuntimePolicy 统一改为 Off。
      */
     fun withReasoningEffort(
         config: AgentModelClient.ModelConfig,
         requested: ReasoningEffort?,
-        defaultEffort: ReasoningEffort,
+        defaultEffort: ReasoningEffort = config.effectiveReasoningEffort,
     ): AgentModelClient.ModelConfig {
         val capabilities = config.reasoningCapabilities ?: return config
         val effort = capabilities.normalize(requested ?: defaultEffort)
@@ -245,7 +245,8 @@ internal object RuntimeConfigRepository {
             promptCacheKeyEnabled = provider.promptCacheKeyEnabled,
             reasoningSummary = provider.reasoningSummary,
             thinkingEnabled = reasoningCapabilities != null,
-            reasoningEffort = reasoningCapabilities?.let { ReasoningEffort.DEFAULT }
+            // 模型编辑里设的默认强度；没设时为服务商默认（不发送强度参数）。
+            reasoningEffort = reasoningCapabilities?.normalize(model.defaultReasoningEffort ?: ReasoningEffort.DEFAULT)
                 ?: ReasoningEffort.OFF,
             reasoningCapabilities = reasoningCapabilities,
             customHeaders = provider.customHeaders + model.customHeaders,

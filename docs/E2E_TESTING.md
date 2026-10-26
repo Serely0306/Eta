@@ -61,6 +61,8 @@
 | 多会话并行改用上游的运行登记与手机操作权（ENG-6 D1）：追加要求、ask_user 胶囊、胶囊拖动与最小化、流光、结果卡片回退浮窗、接管时暂停横幅、子 Agent 排除工具、电脑端直调共用操作权 | `80373cd` | A2–A7、A10–A12、B2、B5、C5、H3、I6、I14、J7、L8 | 未执行 |
 | 回复中输入：直接发送为追加要求，长按与带附件排队，队列里闪电立即追加（ENG-6 D2） | `ba8dbee` | Q1–Q3、C4 | 未执行 |
 | 运行中与会话显示修正（AG-20）：计时不重计、思考时长不累计、不显示推理 token、运行中看已完成工具全文、侧栏子 Agent 全部批次、分组图标、所有分组可收起与入口分组日期、熄屏停浮层动画、电脑端任务失败带错误码 | `fda49c0` | O5、O7、O10、O11、J16、G8、G9、B8、I14 | 未执行 |
+| 中断后的连续性（AG-21）：调用先于工具执行写入、恢复时告诉模型中断时间与原因、电脑端会话历史持久化、输入框上方“继续”；手动停止后也可继续 | `0d6bd8a`、`25ad5e1` | R1–R6 | 未执行 |
+| 会话级子 Agent（AG-19）：六个协调工具、后台执行与跨轮复用、完成通知与自动唤醒、侧栏与过程查看、进备份、派出策略三档 | `1644f08`、`0fd9a2c`、`f4316d2` | J3、J5、J6、J8、J17–J27 | 未执行 |
 
 后续阶段的用例在实现时补充；虚拟屏执行实现时在 M 组追加。
 
@@ -223,7 +225,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | F2 `M` | 会话 A 中模型调用 `memory_write`；之后在会话 B 写入记忆，再回到 A 继续 | A 自己写入后的下一轮 system 哈希不变；B 写入后 A 的下一轮 system 反映 B 的修改；设置页编辑记忆后所有会话下一轮都反映修改 |
 | F3 `M` | Mock 服务（非 api.openai.com）分别以 Chat Completions 与 Responses 两种端点模式各跑两轮；再在 Responses 服务商设置中关闭“发送缓存路由键”重复一次 | Chat Completions 请求不带 `prompt_cache_key`；Responses 请求带，且同一会话两轮的值相同、不同会话不同；关闭开关后 Responses 请求也不带 |
 | F4 `M` | Responses 服务商的自定义请求体中显式设置 `prompt_cache_key` | 请求中的值保持用户设置，不被会话路由键覆盖 |
-| F5 `M` | Mock 模型在内置目录中有 Low–Max 档位；“默认思考强度”保持“服务商默认”发一轮；改为 High 后新建会话再发一轮；改为 XHigh，模型不支持 XHigh 时再发一轮 | 第一轮请求与改动前完全一致（Responses 只有 `reasoning.summary`）；第二轮新会话初始强度为 High，请求带 `reasoning.effort=high`；第三轮按最接近的较低档发送；已有会话的强度不受影响 |
+| F5 `M` | Mock 模型在内置目录中有 Low–Max 档位；模型编辑里“默认强度”保持“服务商默认”发一轮；改为 High 后新建会话再发一轮；在模型编辑里取消勾选 High 再新建会话发一轮；Eta 语音强度选“跟随模型默认强度”提交一次；拉取该服务商的模型列表后重新打开模型编辑 | 设置页不再有“默认思考强度”；第一轮请求与改动前完全一致（Responses 只有 `reasoning.summary`）；第二轮新会话初始强度为 High，请求带 `reasoning.effort=high`，在新会话里换到另一个模型时强度改为该模型的默认；取消 High 后“默认强度”回到“服务商默认”；语音请求按模型默认强度发送；已有会话的强度不受影响；拉取模型列表后默认强度保留 |
 | F6 `M` | 设置 Eta 语音模型为 `e2e-mock-b`、强度 Low；厂商助手强度 High；分别以 Eta 语音和小爱入口提交 | 语音入口请求发往 `e2e-mock-b` 且 `effort=low`；小爱入口 `effort=high`；关闭“允许思考”后两者都不带强度且为 Off |
 
 ### G. 系统入口与会话归组
@@ -283,7 +285,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | I27 `M` | 剧本两轮（一次工具调用后回复），Mock 每轮返回固定 usage；再用一个不返回 usage 的剧本跑一次 | 任务状态的 `usage.requests` 为 2，`input_tokens`、`cached_tokens`、`output_tokens` 等于两轮之和；Anthropic 格式 Mock 先报输入、再报累计输出时不重复计数；不返回 usage 时 `requests_without_usage` 等于请求数 |
 | I28 `R` | 经 MCP 用同一 `conversation_id` 在 API A 上跑 AG-14 的 S1 五轮 | 第 2 轮起每轮 `cached_tokens / input_tokens` 约 99%（AG-14 验收） |
 | I29 `R` | MCP 页“电脑端可调用的模型”：展开、收起各服务商并勾选；停用一个已勾选的模型 | 每个服务商一行标题，显示“已选 n / 共 m”，有勾选的默认展开；`eta_task_start` 的 `model.enum` 顺序与列表一致；停用的模型列在最后并标“已停用”，取消勾选后从 `taskModelIds` 移除 |
-| I30 `M` | 勾选 `e2e-mock-a`（Low–Max）并在手机上设强度 Medium；分别不带、带 `reasoning_effort=high`、带 `reasoning_effort=turbo` 启动任务；再关闭“允许思考”启动一次 | `tools/list` 中 `reasoning_effort` 的说明列出档位与“省略时 medium”；前两次请求体分别为 `effort=medium`、`effort=high`，任务状态 `reasoning_effort` 一致；第三次 `INVALID_ARGUMENT` 且没有发出请求；最后一次 `reasoning_effort=off`，请求不带强度 |
+| I30 `M` | 勾选 `e2e-mock-a`（Low–Max），在它的模型编辑里把“默认强度”设为 Medium（MCP 页不再按模型设强度）；分别不带、带 `reasoning_effort=high`、带 `reasoning_effort=turbo` 启动任务；再关闭“允许思考”启动一次 | `tools/list` 中 `reasoning_effort` 的说明列出档位与“省略时 medium”；前两次请求体分别为 `effort=medium`、`effort=high`，任务状态 `reasoning_effort` 一致；第三次 `INVALID_ARGUMENT` 且没有发出请求；最后一次 `reasoning_effort=off`，请求不带强度 |
 | I31 `R` | 经 MCP 用 `reasoning_effort=high` 在 API A 上跑 AG-14 的 S1 第 1 轮 | 记录代理或任务状态显示强度为 high（AG-16 验收） |
 
 ### J. 计划与子 Agent

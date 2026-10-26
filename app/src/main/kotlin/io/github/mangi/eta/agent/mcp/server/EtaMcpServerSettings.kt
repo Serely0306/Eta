@@ -3,10 +3,8 @@ package io.github.mangi.eta.agent.mcp.server
 import android.content.SharedPreferences
 import android.util.Base64
 import io.github.mangi.eta.config.Prefs
-import io.github.mangi.eta.data.model.ReasoningEffort
 import java.security.SecureRandom
 import org.json.JSONArray
-import org.json.JSONObject
 
 /**
  * 设备端 MCP 服务的配置，保存在 App 私有的本地 Agent 配置中，不同步到 Hook 进程。
@@ -82,13 +80,12 @@ internal data class EtaMcpPrivacySettings(
      * 非空时只能使用其中的模型，回退链也只在其中切换。
      */
     val taskModelIds: List<String> = emptyList(),
-    /** 勾选模型单独设置的思考强度；没有条目时跟随全局默认强度。电脑端每次调用仍可覆盖。 */
-    val taskModelEfforts: Map<String, ReasoningEffort> = emptyMap(),
 ) {
     companion object {
         private const val KEY_REDACT_OUTPUT = "mcp_server_redact_output"
         private const val KEY_ALLOW_IMAGES = "mcp_server_allow_images"
         private const val KEY_TASK_MODEL_IDS = "mcp_server_task_model_ids"
+        /** 旧版按模型保存的强度，已改由模型自身的默认强度决定；保存时清掉。 */
         private const val KEY_TASK_MODEL_EFFORTS = "mcp_server_task_model_efforts"
 
         fun load(preferences: SharedPreferences? = Prefs.localAgentPreferences()): EtaMcpPrivacySettings {
@@ -99,7 +96,6 @@ internal data class EtaMcpPrivacySettings(
                     redactOutput = prefs.getBoolean(KEY_REDACT_OUTPUT, true),
                     allowImages = prefs.getBoolean(KEY_ALLOW_IMAGES, false),
                     taskModelIds = decodeIds(prefs.getString(KEY_TASK_MODEL_IDS, null)),
-                    taskModelEfforts = decodeEfforts(prefs.getString(KEY_TASK_MODEL_EFFORTS, null)),
                 )
             }.getOrDefault(EtaMcpPrivacySettings())
         }
@@ -114,21 +110,9 @@ internal data class EtaMcpPrivacySettings(
                     .putBoolean(KEY_REDACT_OUTPUT, settings.redactOutput)
                     .putBoolean(KEY_ALLOW_IMAGES, settings.allowImages)
                     .putString(KEY_TASK_MODEL_IDS, JSONArray(settings.taskModelIds.distinct()).toString())
-                    .putString(
-                        KEY_TASK_MODEL_EFFORTS,
-                        JSONObject().apply {
-                            settings.taskModelEfforts.forEach { (id, effort) -> put(id, effort.wireValue) }
-                        }.toString(),
-                    )
+                    .remove(KEY_TASK_MODEL_EFFORTS)
                     .commit()
             }.getOrDefault(false)
-        }
-
-        private fun decodeEfforts(raw: String?): Map<String, ReasoningEffort> {
-            val json = raw?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return emptyMap()
-            return json.keys().asSequence().mapNotNull { id ->
-                ReasoningEffort.fromWireValue(json.optString(id))?.let { id to it }
-            }.toMap()
         }
 
         /** 读不出的列表视为空（使用默认模型），不因格式问题阻断服务。 */

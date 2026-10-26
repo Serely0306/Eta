@@ -283,7 +283,6 @@ private fun EffortChips(
 /**
  * 多选列表，内嵌在设置分组里：每个服务商一个可折叠标题，显示已选数量；
  * 有勾选的服务商默认展开。[unavailable] 是已勾选但当前不可用的模型，单列在最后，可以取消。
- * [checkedExtra] 在已勾选的模型下方追加内容（MCP 页用来设每个模型的强度）。
  */
 @Composable
 internal fun ColumnScope.GroupedModelChecklist(
@@ -291,7 +290,6 @@ internal fun ColumnScope.GroupedModelChecklist(
     checkedIds: List<String>,
     unavailable: List<Pair<String, String>>,
     onCheckedChange: (id: String, checked: Boolean) -> Unit,
-    checkedExtra: (@Composable (modelId: String) -> Unit)? = null,
 ) {
     var expanded by remember {
         mutableStateOf(
@@ -310,15 +308,13 @@ internal fun ColumnScope.GroupedModelChecklist(
         )
         if (open) {
             group.models.forEach { model ->
-                val checked = model.id in checkedIds
                 EtaCheckboxPreference(
                     title = model.displayName,
-                    checked = checked,
+                    checked = model.id in checkedIds,
                     onCheckedChange = { onCheckedChange(model.id, it) },
                     checkboxLocation = CheckboxLocation.Start,
                     modifier = Modifier.padding(start = ModelRowIndent),
                 )
-                if (checked) checkedExtra?.invoke(model.id)
             }
         }
     }

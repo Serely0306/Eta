@@ -14,7 +14,7 @@ import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 /**
  * 电脑端委托任务可用的模型。MCP 页勾选了模型时，任务只能使用这些模型，回退链也只在其中切换，
  * 勾选的模型不可用时直接失败，不会落到默认模型；未勾选任何模型时沿用 Eta 的默认模型。
- * 强度：电脑端传入的优先，其次手机上为该模型设的强度，再次全局默认强度，按模型能力就近取档。
+ * 强度：电脑端传入的优先，其次该模型的默认强度（模型编辑里设置，没设时为服务商默认），按模型能力就近取档。
  */
 internal object EtaMcpModelAccess {
     const val PAYLOAD_MODEL_ID = AgentRuntimeRequestConfigResolver.PAYLOAD_MODEL_ID
@@ -25,7 +25,6 @@ internal object EtaMcpModelAccess {
 
     suspend fun choices(): EtaMcpTaskManager.ModelChoices {
         val privacy = EtaMcpPrivacySettings.load()
-        val defaultEffort = RuntimeConfigRepository.reasoningSettings().defaultEffort
         val thinkingAllowed = AgentRuntimePolicy.permissions(Prefs.localAgentPreferences()).thinking
         if (privacy.taskModelIds.isEmpty()) {
             val config = RuntimeConfigRepository.currentRuntimeConfig()
@@ -33,7 +32,7 @@ internal object EtaMcpModelAccess {
                 restricted = false,
                 options = emptyList(),
                 defaultModel = config?.let {
-                    option(it.providerId, "${it.providerName} / ${it.modelDisplayName.ifBlank { it.model }}", it, null, defaultEffort)
+                    option(it.providerId, "${it.providerName} / ${it.modelDisplayName.ifBlank { it.model }}", it)
                 },
                 thinkingAllowed = thinkingAllowed,
             )
@@ -42,7 +41,7 @@ internal object EtaMcpModelAccess {
         val options = privacy.taskModelIds.mapNotNull { id ->
             providers.enabledModel(id)?.let { (provider, model) ->
                 val config = RuntimeConfigRepository.buildRuntimeConfig(provider, model)
-                option(id, "${provider.name} / ${model.displayName}", config, privacy.taskModelEfforts[id], defaultEffort)
+                option(id, "${provider.name} / ${model.displayName}", config)
             }
         }
         return EtaMcpTaskManager.ModelChoices(restricted = true, options = options, thinkingAllowed = thinkingAllowed)
@@ -52,17 +51,13 @@ internal object EtaMcpModelAccess {
         id: String,
         label: String,
         config: AgentModelClient.ModelConfig,
-        configured: ReasoningEffort?,
-        defaultEffort: ReasoningEffort,
     ): EtaMcpTaskManager.ModelOption {
         val capabilities = config.reasoningCapabilities
         return EtaMcpTaskManager.ModelOption(
             id = id,
             label = label,
             efforts = capabilities?.selectableEfforts?.map { it.wireValue }.orEmpty(),
-            defaultEffort = capabilities?.let {
-                RuntimeConfigRepository.withReasoningEffort(config, configured, defaultEffort).effectiveReasoningEffort.wireValue
-            },
+            defaultEffort = capabilities?.let { config.effectiveReasoningEffort.wireValue },
         )
     }
 
@@ -83,15 +78,14 @@ internal object EtaMcpModelAccess {
      */
     suspend fun runtimeConfig(request: AgentRuntimeWire.RunRequest): AgentModelClient.ModelConfig? {
         val privacy = EtaMcpPrivacySettings.load()
-        val defaultEffort = RuntimeConfigRepository.reasoningSettings().defaultEffort
         val requested = requestedEffort(request)
         if (privacy.taskModelIds.isEmpty()) {
             return RuntimeConfigRepository.currentRuntimeConfig()
-                ?.let { RuntimeConfigRepository.withReasoningEffort(it, requested, defaultEffort) }
+                ?.let { RuntimeConfigRepository.withReasoningEffort(it, requested) }
         }
         val modelId = requestedModelId(request)?.takeIf { it in privacy.taskModelIds } ?: return null
         val config = RuntimeConfigRepository.enabledRuntimeConfig(modelId) ?: return null
-        return RuntimeConfigRepository.withReasoningEffort(config, requested ?: privacy.taskModelEfforts[modelId], defaultEffort)
+        return RuntimeConfigRepository.withReasoningEffort(config, requested)
     }
 
     /** 回退链的限制范围：电脑端任务在勾选了模型时只能回退到勾选的模型；其他入口不限制。 */

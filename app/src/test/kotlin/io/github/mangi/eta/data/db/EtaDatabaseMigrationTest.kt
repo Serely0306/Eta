@@ -153,6 +153,7 @@ class EtaDatabaseMigrationTest {
             assertEquals(null, provider.models.first().contextWindowOverride)
             assertEquals(null, provider.models.first().reasoningOverride)
             assertEquals(null, provider.models.first().reasoningCapabilitiesOverride)
+            assertEquals(null, provider.models.first().defaultReasoningEffort)
             assertEquals(
                 listOf(ModelSource.CATALOG, ModelSource.MANUAL),
                 provider.models.map { it.source },
