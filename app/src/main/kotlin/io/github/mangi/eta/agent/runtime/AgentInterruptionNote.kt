@@ -26,13 +26,18 @@ internal object AgentInterruptionNote {
 
     fun messageId(runId: String): String = "interrupted-note-$runId"
 
+    /**
+     * [events] 是检查点里的事件（进程结束后恢复时用）；手动停止时没有检查点，由调用方用
+     * [partialReplyFromReplies] 从界面上的回复取半截回复，经 [partialReply] 传入。
+     */
     fun build(
         runId: String,
         interruptedAt: Long,
         cause: String,
         transcript: List<AgentModelClient.ConversationMessage>,
-        events: List<AgentEvent>,
+        events: List<AgentEvent> = emptyList(),
         zone: ZoneId = ZoneId.systemDefault(),
+        partialReply: String? = partialReplyFromEvents(runId, transcript, events),
     ): AgentModelClient.ConversationMessage {
         val time = timeFormat.withZone(zone).format(Instant.ofEpochMilli(interruptedAt))
         val lines = mutableListOf("[Eta 系统说明] 上一轮回复在 $time 被中断：$cause。")
@@ -40,9 +45,9 @@ internal object AgentInterruptionNote {
             lines += "中断时正在执行：${calls.joinToString("；")}，结果未知。"
         }
         inProgressPlanStep(transcript)?.let { lines += "计划中进行中的步骤：$it。" }
-        partialReply(runId, transcript, events)?.let { lines += "中断前已输出的回复：\n$it" }
-        lines += "如果中断时正在执行的工具会结束 Eta 自身或重启设备，中断很可能就是它生效造成的；" +
-            "继续之前先核实结果，不要直接重做。这条说明由 Eta 在恢复会话时补充。"
+        partialReply?.let { lines += "中断前已输出的回复：\n$it" }
+        lines += "继续之前先核实中断时正在执行的工具是否已经生效，不要直接重做；" +
+            "如果它会结束 Eta 自身或重启设备，中断很可能就是它生效造成的。这条说明由 Eta 补充。"
         return AgentModelClient.ConversationMessage(
             role = "assistant",
             content = lines.joinToString("\n"),
@@ -101,7 +106,7 @@ internal object AgentInterruptionNote {
     }
 
     /** 最后一轮的回复还没进记录（流式输出到一半）时，从检查点事件里取已经输出的文字。 */
-    private fun partialReply(
+    private fun partialReplyFromEvents(
         runId: String,
         transcript: List<AgentModelClient.ConversationMessage>,
         events: List<AgentEvent>,
@@ -114,9 +119,30 @@ internal object AgentInterruptionNote {
             .filterIsInstance<AgentEvent.AssistantBlockDelta>()
             .filter { it.round == round && it.kind == AgentEvent.AssistantBlockKind.TEXT }
             .joinToString("") { it.delta }
-            .trim()
-        if (text.isEmpty()) return null
-        return if (text.length > MAX_PARTIAL_REPLY_CHARS) text.take(MAX_PARTIAL_REPLY_CHARS) + "…" else text
+        return bounded(text)
+    }
+
+    /**
+     * 界面上这个 run 的回复（id 为 `assistant-<run>-<轮>-<块>`）里，所在轮还没进记录（记录 id 为
+     * `assistant-<run>-<轮>`）的那部分，就是停止前说了一半的话。
+     */
+    fun partialReplyFromReplies(
+        runId: String,
+        transcript: List<AgentModelClient.ConversationMessage>,
+        replies: List<Pair<String, String>>,
+    ): String? {
+        val prefix = "assistant-$runId-"
+        val recorded = transcript.filter { it.role == "assistant" }.mapTo(hashSetOf()) { it.messageId }
+        val text = replies
+            .filter { (id, _) -> id.startsWith(prefix) && prefix + id.removePrefix(prefix).substringBefore('-') !in recorded }
+            .joinToString("\n") { (_, content) -> content.trim() }
+        return bounded(text)
+    }
+
+    private fun bounded(text: String): String? {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return null
+        return if (trimmed.length > MAX_PARTIAL_REPLY_CHARS) trimmed.take(MAX_PARTIAL_REPLY_CHARS) + "…" else trimmed
     }
 
     private fun toolCalls(transcript: List<AgentModelClient.ConversationMessage>): List<AgentModelClient.ToolCall> =

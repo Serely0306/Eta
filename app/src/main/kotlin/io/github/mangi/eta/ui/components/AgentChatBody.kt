@@ -391,9 +391,11 @@ private fun AgentChatScaffold(
             bottom = 0.dp,
         ),
         bottomBar = {
-            // 最后一轮被中断（进程结束、设备重启）时，输入框上方给出“继续”。
+            // 最后一轮被中断（进程结束、设备重启）或被手动停止时，输入框上方给出“继续”。
             val lastRunInterrupted = remember(visibleMessages) {
-                visibleMessages.lastOrNull().let { it is SystemNoticeMessageUi && it.code == SystemNoticeCode.Interrupted }
+                visibleMessages.lastOrNull().let {
+                    it is SystemNoticeMessageUi && it.code in setOf(SystemNoticeCode.Interrupted, SystemNoticeCode.Stopped)
+                }
             }
             AgentChatBottomBar(
                 lastRunInterrupted = lastRunInterrupted,

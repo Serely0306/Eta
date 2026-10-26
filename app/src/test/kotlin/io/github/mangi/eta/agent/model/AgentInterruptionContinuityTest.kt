@@ -91,6 +91,27 @@ class AgentInterruptionContinuityTest {
         assertEquals("系统内存不足，回收了 Eta", AgentInterruptionNote.describe(ApplicationExitInfo.REASON_LOW_MEMORY))
     }
 
+    @Test
+    fun manualStopTakesTheUnrecordedRoundFromTheVisibleReplies() {
+        val transcript = listOf(
+            ConversationMessage(role = "assistant", content = "第一轮已记录", messageId = "assistant-run-z-1"),
+        )
+        val replies = listOf(
+            "assistant-run-z-1-0" to "第一轮已记录",
+            "assistant-run-z-2-0" to "第二轮说到一半",
+            "assistant-other-2-0" to "别的 run",
+        )
+        assertEquals("第二轮说到一半", AgentInterruptionNote.partialReplyFromReplies("run-z", transcript, replies))
+
+        val note = AgentInterruptionNote.build(
+            runId = "run-z", interruptedAt = 0L, cause = "用户手动停止", transcript = transcript,
+            zone = ZoneId.of("UTC"),
+            partialReply = AgentInterruptionNote.partialReplyFromReplies("run-z", transcript, replies),
+        ).content
+        assertTrue(note.contains("被中断：用户手动停止"))
+        assertTrue(note.contains("中断前已输出的回复：\n第二轮说到一半"))
+    }
+
     private fun config() = AgentModelClient.ModelConfig(
         baseUrl = "https://fixture.invalid/v1", apiKey = "fixture", model = "fixture",
         contextWindow = 128_000, systemPrompt = "fixture", browserTools = false,

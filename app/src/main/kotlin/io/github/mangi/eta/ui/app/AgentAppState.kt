@@ -2204,6 +2204,10 @@ internal class AgentAppState(
                         SystemNoticeCode.Stopped
                     else -> SystemNoticeCode.RuntimeFailed
                 }
+                // 手动停止后也能点“继续”：告诉模型停在哪个工具、哪一步，以及停止前说了一半的话。
+                if (notice == SystemNoticeCode.Stopped && result.operation == AgentRuntimeWire.OP_CHAT) {
+                    appendStopNote(runId, result.transcript)
+                }
                 updateMessages(runId) { messages ->
                     AgentRunMessageProjector.applyResult(
                         runId, messages, result.content, notice,
@@ -2219,6 +2223,22 @@ internal class AgentAppState(
         refreshConversationSummaries()
         persistRunResult(runId, completedConversationId, result, acknowledgeRuntimeResult,
             explicitlyStoppedByUser, resumeQueue = true)
+    }
+
+    private fun appendStopNote(runId: String, transcript: List<AgentModelClient.ConversationMessage>) {
+        val conversationId = conversationIdForRun(runId) ?: return
+        val state = conversationsById[conversationId] ?: return
+        val noteId = AgentInterruptionNote.messageId(runId)
+        if (state.history.any { it.messageId == noteId }) return
+        val replies = state.messages.filterIsInstance<AgentMessageUi>().map { it.id to it.content }
+        val note = AgentInterruptionNote.build(
+            runId = runId,
+            interruptedAt = System.currentTimeMillis(),
+            cause = "用户手动停止",
+            transcript = transcript,
+            partialReply = AgentInterruptionNote.partialReplyFromReplies(runId, transcript, replies),
+        )
+        updateConversation(conversationId, state.copy(history = state.history + note))
     }
 
     private fun persistRunResult(
