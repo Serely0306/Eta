@@ -58,6 +58,7 @@ internal class AgentLoop(
         roleplay = roleplayContext != null,
     )
     private var supplementIndex = initialSupplementIndex
+    private var noticeIndex = 0
     /** 当前对话请求使用的模型；回退后本次 run 的剩余回合保持在新模型上。上下文压缩仍用主模型。 */
     private var activeConfig = config
     private var activeProvider = provider
@@ -330,16 +331,31 @@ internal class AgentLoop(
     }
 
     private fun appendPendingSteeringMessage(): Boolean {
-        val supplement = runController.pollSteeringMessage() ?: return false
+        val notified = appendPendingNotices()
+        val supplement = runController.pollSteeringMessage() ?: return notified
         appendMessage(steeringMessage(supplement))
         context.userAppended()
         return true
     }
 
     private fun appendPendingSteeringOrSeal(): Boolean {
-        val supplement = runController.pollSteeringOrSeal() ?: return false
+        if (appendPendingNotices()) return true
+        // 有通知时 pollSteeringOrSeal 不封口并返回 null，再取一次通知后继续。
+        val supplement = runController.pollSteeringOrSeal() ?: return appendPendingNotices()
         appendMessage(steeringMessage(supplement))
         context.userAppended()
+        return true
+    }
+
+    /** 子 Agent 的完成通知合并成一条消息交给模型，并通知界面显示系统提示。 */
+    private fun appendPendingNotices(): Boolean {
+        val notices = runController.pollNotices().takeIf { it.isNotEmpty() } ?: return false
+        appendMessage(
+            AgentConversationCodec.userTextMessage(notices.joinToString("\n\n") { it.modelText })
+                .put("_eta_message_id", "notice-$operationId-subagent-${++noticeIndex}")
+        )
+        context.userAppended()
+        notices.forEach { onEvent(AgentEvent.SubagentNotified(it.display)) }
         return true
     }
 

@@ -224,6 +224,11 @@ internal sealed interface AgentEvent {
         }
     }
 
+    /** 子 Agent 一个回合结束的通知交给了主 Agent；[display] 是给界面的一句话（谁、完成或失败、结论开头）。 */
+    data class SubagentNotified(val display: String) : AgentEvent {
+        override fun toLogLine(): String = "subagent_notified chars=${display.length}"
+    }
+
     data class ToolStarted(
         val round: Int,
         val toolCallId: String,

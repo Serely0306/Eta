@@ -101,6 +101,8 @@ private fun AgentOverlayState.projectEvent(event: AgentEvent): AgentOverlayState
         })
     } ?: this
 
+    is AgentEvent.SubagentNotified -> this
+
     // 子 Agent 只在执行工具时切换文字，开始与结束由 run_subagents 的工具状态覆盖。
     is AgentEvent.SubagentUpdate -> if (event.phase == AgentEvent.SubagentUpdate.PHASE_TOOL) {
         running(AgentOverlayStatus.SubagentTool(event.index + 1, event.toolName), round)

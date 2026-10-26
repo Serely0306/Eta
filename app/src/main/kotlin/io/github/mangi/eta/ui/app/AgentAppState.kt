@@ -38,6 +38,7 @@ import io.github.mangi.eta.agent.runtime.AgentExecutionService
 import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
 import io.github.mangi.eta.agent.runtime.SubagentTranscriptStore
 import io.github.mangi.eta.agent.runtime.AgentSubagentTool
+import io.github.mangi.eta.agent.runtime.AgentSubagentManager
 import io.github.mangi.eta.agent.runtime.AgentInterruptionNote
 import io.github.mangi.eta.agent.mcp.server.EtaMcpConversationHistories
 import io.github.mangi.eta.agent.runtime.AgentRunArchiveStore
@@ -1130,6 +1131,10 @@ internal class AgentAppState(
         if (conversationId.startsWith(ExternalArchiveIds.EXTERNAL_PREFIX)) {
             scope.launch(Dispatchers.IO) { EtaMcpConversationHistories.deleteForConversation(appContext, conversationId) }
         }
+        // 会话里的子 Agent（AG-19）与它们的通知随会话删除，运行中的先停。
+        scope.launch(Dispatchers.IO) {
+            runCatching { AgentSubagentManager.get(appContext).deleteConversation(conversationId) }
+        }
         conversationsById = conversationsById - conversationId
         conversationTitles = conversationTitles - conversationId
         conversationUpdatedAt = conversationUpdatedAt - conversationId
@@ -1198,6 +1203,7 @@ internal class AgentAppState(
                 noticeContextCompaction = noticeText(SystemNoticeCode.ContextCompaction),
                 noticeRuntimeFailed = noticeText(SystemNoticeCode.RuntimeFailed),
                 noticeInterrupted = noticeText(SystemNoticeCode.Interrupted),
+                noticeSubagentNotified = noticeText(SystemNoticeCode.SubagentNotified),
             ),
         ) }
     }
@@ -1211,6 +1217,7 @@ internal class AgentAppState(
             SystemNoticeCode.ModelFallback -> R.string.system_notice_model_fallback
             SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
             SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
+            SystemNoticeCode.SubagentNotified -> R.string.system_notice_subagent_notified
         },
     )
 

@@ -124,7 +124,12 @@ internal fun toolDisplayNameResource(name: String): Int? = when (name) {
     "app_state_control" -> R.string.tool_app_state_control
     "get_logcat" -> R.string.tool_get_logcat
     "update_plan" -> R.string.tool_update_plan
-    "run_subagents" -> R.string.tool_run_subagents
+    "run_subagents", "spawn_agent" -> R.string.tool_run_subagents
+    "send_agent" -> R.string.tool_send_agent
+    "wait_agents" -> R.string.tool_wait_agents
+    "list_agents" -> R.string.tool_list_agents
+    "stop_agent" -> R.string.tool_stop_agent
+    "close_agent" -> R.string.tool_close_agent
     "manage_automations" -> R.string.tool_manage_automations
     else -> null
 }

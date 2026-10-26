@@ -61,6 +61,8 @@ internal class AgentTraceFormatter {
             "manage_automations" -> "管理自动任务"
             "run_subagents" -> runCatching { JSONObject(toolCall.argumentsJson).optJSONArray("tasks")?.length() }
                 .getOrNull()?.let { "派出 $it 个子 Agent" } ?: "派出子 Agent"
+            "spawn_agent", "send_agent", "wait_agents", "list_agents", "stop_agent", "close_agent" ->
+                summarizeSubagentArguments(toolCall.name, toolCall.argumentsJson)
             "memory_get", "character_memory_get" -> summarizeMemoryGetArguments(toolCall.argumentsJson)
             "memory_write", "character_memory_write" -> summarizeMemoryWriteArguments(toolCall.argumentsJson)
             "skills_list" -> "查看技能列表"
@@ -246,6 +248,42 @@ internal class AgentTraceFormatter {
             }.joinToString(" · ")
         }.getOrDefault("观察屏幕")
 
+    /** 子 Agent 工具行：派给谁、做什么（AG-19）。 */
+    private fun summarizeSubagentArguments(toolName: String, argumentsJson: String): String {
+        val json = runCatching { JSONObject(argumentsJson.ifBlank { "{}" }) }.getOrNull() ?: JSONObject()
+        val target = json.optString("agent_id").trim()
+        fun brief(text: String) = text.trim().replace(Regex("\\s+"), " ").take(SUBAGENT_PREVIEW_CHARS)
+        val ids = json.optJSONArray("agent_ids")?.let { array -> (0 until array.length()).map { array.optString(it) } }.orEmpty()
+        return when (toolName) {
+            "spawn_agent" -> "派出子 Agent：" + brief(json.optString("reason").ifBlank { json.optString("task") })
+            "send_agent" -> "交给 $target：" + brief(json.optString("message"))
+            "wait_agents" -> if (ids.isEmpty()) "等待子 Agent" else "等待 ${ids.joinToString("、")}"
+            "list_agents" -> "查看子 Agent"
+            "stop_agent" -> "停止 $target"
+            else -> "关闭 $target"
+        }
+    }
+
+    private fun summarizeSubagentResult(toolName: String, json: JSONObject): String = when (toolName) {
+        "spawn_agent" -> "已派出 ${json.optString("agent_id")}"
+        "send_agent" -> if (json.optString("delivery") == "queued") "已排进 ${json.optString("agent_id")} 的下一轮"
+            else "${json.optString("agent_id")} 开始新回合"
+        "wait_agents", "list_agents" -> {
+            val agents = json.optJSONArray("agents")
+            val finished = agents?.let { array ->
+                (0 until array.length()).count { array.optJSONObject(it)?.let { agent -> agent.has("result") || agent.has("error") } == true }
+            } ?: 0
+            when {
+                json.optBoolean("interrupted_by_user") -> "你有新的输入，先停止等待"
+                json.optBoolean("timed_out") -> "等待超时，仍在运行"
+                toolName == "wait_agents" -> "$finished 个子 Agent 已有结果"
+                else -> "${agents?.length() ?: 0} 个子 Agent"
+            }
+        }
+        "stop_agent" -> "已停止 ${json.optString("agent_id")}"
+        else -> "已关闭 ${json.optString("agent_id")}"
+    }
+
     private fun summarizeMemoryGetArguments(argumentsJson: String): String =
         runCatching {
             val arguments = JSONObject(argumentsJson)
@@ -296,6 +334,8 @@ internal class AgentTraceFormatter {
                 val succeeded = (0 until results.length()).count { results.optJSONObject(it)?.optBoolean("ok") == true }
                 "子 Agent 完成 $succeeded/${results.length()}"
             } ?: "完成"
+            "spawn_agent", "send_agent", "wait_agents", "list_agents", "stop_agent", "close_agent" ->
+                json?.let { summarizeSubagentResult(toolName, it) } ?: "完成"
             "memory_get", "memory_write", "character_memory_get", "character_memory_write" ->
                 json?.let { summarizeMemoryResult(toolName, it) } ?: "完成"
             "search_apps" -> json?.let(::summarizeSearchAppsResult) ?: "完成"
@@ -642,6 +682,7 @@ internal class AgentTraceFormatter {
         const val BROWSER_TOOL_NAME = "browser_use"
         const val USER_QUESTION_PREVIEW_CHARS = 60
         const val PLAN_STEP_PREVIEW_CHARS = 60
+        const val SUBAGENT_PREVIEW_CHARS = 60
         const val MAX_DISPLAY_COMMAND_CHARS = 4_000
         const val MAX_QUERY_SUMMARY_CHARS = 30
         const val MAX_LISTED_APP_NAMES = 3

@@ -9,8 +9,8 @@ import org.json.JSONObject
 
 /** 组装每次 run 的系统约束、历史与当前用户输入。 */
 internal object AgentPromptBuilder {
-    /** 与 Runtime 的 run_subagents 同名；模型层不依赖 Runtime 包。 */
-    private const val SUBAGENT_TOOL_NAME = "run_subagents"
+    /** 与 Runtime 的 spawn_agent 同名（子 Agent 卡片的主工具）；模型层不依赖 Runtime 包。 */
+    private const val SUBAGENT_TOOL_NAME = "spawn_agent"
 
     fun buildInitialMessages(
         config: AgentModelClient.ModelConfig,
@@ -117,8 +117,10 @@ internal object AgentPromptBuilder {
                     } else "") +
                     (if (SUBAGENT_TOOL_NAME !in disabledTools) {
                         "需要大量读取、检索或分析且中间结果不必留在当前上下文的子问题（如在多个目录、日志或网页中查找归纳、分别调研几个方向），" +
-                            "可以用 run_subagents 交给子 Agent 并行处理，它们只返回结论；子 Agent 不能操作界面、不能提问、看不到当前对话，" +
-                            "界面操作与需要用户决定的步骤由你自己完成。"
+                            "可以用 spawn_agent 交给子 Agent 在后台处理，派出后你可以继续做别的；它完成后结论会作为通知交给你，" +
+                            "需要结果才能继续时用 wait_agents，查看状态用 list_agents。子 Agent 属于当前会话，之后的轮次可以用 send_agent 继续交给同一个，" +
+                            "它记得之前的内容；不再需要时用 close_agent 关闭。子 Agent 不能操作界面、不能提问、看不到当前对话，" +
+                            "界面操作与需要用户决定的步骤由你自己完成；不要与子 Agent 同时修改同一批文件。"
                     } else "")
             )
         )

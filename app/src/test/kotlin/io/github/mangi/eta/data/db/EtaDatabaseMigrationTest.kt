@@ -61,6 +61,7 @@ class EtaDatabaseMigrationTest {
                 EtaDatabase.MIGRATION_24_25,
                 EtaDatabase.MIGRATION_25_26,
                 EtaDatabase.MIGRATION_26_27,
+                EtaDatabase.MIGRATION_27_28,
             )
             .build()
         try {
@@ -134,6 +135,20 @@ class EtaDatabaseMigrationTest {
             assertEquals(false, migratedMessage.isEdited)
             assertEquals(emptyList<RuntimeInFlightRunWithEvents>(), inFlightRuns)
             assertEquals(listOf("mcp-1"), mcpServers.map { it.id })
+            // 28：子 Agent 与通知两张表可读写（Room 打开时已按实体校验表结构）。
+            runBlocking(Dispatchers.IO) {
+                val dao = database.subagentDao()
+                dao.upsertAgent(ConversationSubagentEntity(
+                    id = ConversationSubagentEntity.rowId("conv-1", "sub_1"), conversationId = "conv-1", agentId = "sub_1",
+                    name = "sub_1", task = "查日志", status = "completed", turn = 1, rounds = 2, lastResult = "无异常",
+                    lastError = "", transcriptJson = "[]", modelSessionId = "conv-1:sub:sub_1", ownerInstanceId = "old",
+                    createdRunId = "run-1", lastRunId = "run-1", createdAt = 1, updatedAt = 1,
+                ))
+                dao.insertMail(ConversationSubagentMailEntity(conversationId = "conv-1", agentId = "sub_1", turn = 1,
+                    status = "completed", payload = "{}", createdAt = 1, deliveredRunId = null))
+                assertEquals(listOf("sub_1"), dao.agents("conv-1").map { it.agentId })
+                assertEquals(1, dao.undeliveredMail("conv-1").size)
+            }
             assertEquals(null, mcpServers.single().toolsExpireAt)
             assertEquals(null, provider.models.first().contextWindowOverride)
             assertEquals(null, provider.models.first().reasoningOverride)

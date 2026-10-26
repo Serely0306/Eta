@@ -246,6 +246,7 @@ internal fun ChatMessageItem(
                                     SystemNoticeCode.ModelFallback -> R.string.system_notice_model_fallback
                                     SystemNoticeCode.RuntimeFailed -> R.string.system_notice_runtime_failed
                                     SystemNoticeCode.Interrupted -> R.string.system_notice_interrupted
+                                    SystemNoticeCode.SubagentNotified -> R.string.system_notice_subagent_notified
                                 },
                             ),
                         )

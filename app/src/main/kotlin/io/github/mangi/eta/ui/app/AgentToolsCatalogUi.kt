@@ -140,7 +140,7 @@ internal fun buildToolsState(context: Context): AgentToolsUiState =
                 tools = listOf(
                     ToolItemUi("ask_user", context.getString(R.string.tool_ui_ask_user), context.getString(R.string.tool_ui_ask_user_summary)),
                     ToolItemUi("update_plan", context.getString(R.string.tool_update_plan), context.getString(R.string.tool_ui_update_plan_summary)),
-                    ToolItemUi("run_subagents", context.getString(R.string.tool_run_subagents), context.getString(R.string.tool_ui_run_subagents_summary)),
+                    ToolItemUi("spawn_agent", context.getString(R.string.tool_run_subagents), context.getString(R.string.tool_ui_run_subagents_summary)),
                     ToolItemUi("manage_automations", context.getString(R.string.tool_manage_automations), context.getString(R.string.tool_ui_manage_automations_summary)),
                 ),
             ),

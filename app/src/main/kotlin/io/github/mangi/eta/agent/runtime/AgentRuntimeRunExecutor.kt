@@ -88,6 +88,10 @@ internal class AgentRuntimeRunExecutor(
         var cancelled = false
         var checkpointRecorder: AgentRunCheckpointRecorder? = null
         val timing = AgentRunTiming(AndroidAgentLogger)
+        // 子 Agent 属于会话：只有普通对话的 run 接收它们的完成通知；压缩与改写不派也不接收。
+        val subagentManager = AgentSubagentManager.get(appContext)
+        val subagentConversation = AgentConversationIdentity.fromHandoff(request.handoff, request.runId)
+        val receivesSubagentNotices = request.operation == AgentRuntimeWire.OP_CHAT
 
         val result = try {
             val contextWindow = request.config.knownContextWindow
@@ -276,7 +280,7 @@ internal class AgentRuntimeRunExecutor(
                 if (characterMemoryTools != null && memoryEnabled) CharacterMemoryTools.appendSchemas(tools)
                 tools.put(AgentUserQuestion.schema())
                 tools.put(AgentTaskPlan.schema())
-                tools.put(AgentSubagentTool.schema())
+                AgentSubagentTools.schemas().forEach(tools::put)
             }
             fun emitRunEvent(event: AgentEvent) =
                 acceptEvent(session, event, archivedEvents, entrySurfaceGuard, checkpointRecorder)
@@ -314,22 +318,32 @@ internal class AgentRuntimeRunExecutor(
                     .put("total", plan.steps.size)
                     .toString())
             }
-            val subagents = AgentSubagentTool(
-                parentController = runController,
-                config = request.config,
-                parentSessionId = request.effectiveModelSessionId,
+            // 用量账本按入口与 run 归类；同一线程上的压缩请求一并归入，子 Agent 在自己的线程上继承。
+            val usageContext = ModelUsageContext(
+                source = request.handoff?.source ?: AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
                 runId = request.runId,
-                additionalTools = mcpTools,
-                disabledTools = disabledTools,
-                capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
-                newExecutor = { ownerId ->
-                    RoutingToolExecutor(local = newLocalTools(ownerId), mcp = McpToolExecutor(mcpSnapshot))
-                },
-                emit = ::emitRunEvent,
-                fallback = fallbackPolicy,
-                saveTranscript = { record -> SubagentTranscriptStore.save(appContext, record) },
-                executionContext = mainLocalTools.terminalExecutionContext,
+                sessionId = request.effectiveModelSessionId,
             )
+            val subagents = AgentSubagentTools(
+                manager = subagentManager,
+                environment = SubagentEnvironment(
+                    runId = request.runId,
+                    conversationId = subagentConversation,
+                    parentSessionId = request.effectiveModelSessionId,
+                    config = request.config,
+                    capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
+                    additionalTools = mcpTools,
+                    disabledTools = disabledTools,
+                    newExecutor = { ownerId ->
+                        RoutingToolExecutor(local = newLocalTools(ownerId), mcp = McpToolExecutor(mcpSnapshot))
+                    },
+                    fallback = fallbackPolicy,
+                    executionContext = mainLocalTools.terminalExecutionContext,
+                    usageContext = usageContext,
+                ),
+                parentController = runController,
+            )
+            if (receivesSubagentNotices) subagentManager.attachParent(subagentConversation, request.runId, runController)
             // 提问在工具内阻塞等待；问题与结论作为独立事件推给 App、胶囊和恢复日志。
             fun askUser(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
                 val question = AgentUserQuestion.parse(call.argumentsJson)
@@ -368,7 +382,7 @@ internal class AgentRuntimeRunExecutor(
                     askUser(call)
                 } else if (call.name == AgentTaskPlan.TOOL_NAME) {
                     updatePlan(call)
-                } else if (call.name == AgentSubagentTool.TOOL_NAME) {
+                } else if (call.name in AgentSubagentTools.TOOL_NAMES) {
                     subagents.execute(call)
                 } else if (call.name == AgentConversationToolCatalog.READ_HISTORY && historyTool != null) {
                     historyTool.execute(call)
@@ -387,12 +401,6 @@ internal class AgentRuntimeRunExecutor(
                     }
                 }
             }
-            // 用量账本按入口与 run 归类；同一线程上的压缩请求一并归入，子 Agent 在自己的线程上继承。
-            val usageContext = ModelUsageContext(
-                source = request.handoff?.source ?: AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE,
-                runId = request.runId,
-                sessionId = request.effectiveModelSessionId,
-            )
             val completedResponse = ModelUsageScope.run(usageContext) {
                 AgentModelClient.complete(
                     config = request.config,
@@ -451,6 +459,8 @@ internal class AgentRuntimeRunExecutor(
             // 失败时历史是否完整落盘不确定，放弃固定的记忆快照；记忆未变时重新注入的内容逐字节相同。
             AgentMemorySessionSnapshots.forget(request.effectiveModelSessionId)
             cancelled = runController.isCancelled || throwable is AgentRunCancelledException
+            // 主对话被停止时，它派出的、正在运行的子 Agent 一起停（已中断，之后可继续）。
+            if (cancelled && receivesSubagentNotices) runCatching { subagentManager.stopRunning(subagentConversation) }
             val modelFailure = throwable as? AgentModelExecutionException
             val message = if (cancelled) {
                 "已停止"
@@ -495,6 +505,7 @@ internal class AgentRuntimeRunExecutor(
                 rewriteTargetMessageId = request.rewriteTargetMessageId,
             )
         } finally {
+            if (receivesSubagentNotices) runCatching { subagentManager.detachParent(subagentConversation, request.runId) }
             runCatching { toolsBinding?.close() }
             runCatching { toolExecutor?.close() }
             runCatching { guiRun?.close() }
@@ -571,6 +582,6 @@ internal class AgentRuntimeRunExecutor(
     }
 
     private companion object {
-        val EXECUTOR_TOOLS = setOf(AgentUserQuestion.TOOL_NAME, AgentTaskPlan.TOOL_NAME, AgentSubagentTool.TOOL_NAME)
+        val EXECUTOR_TOOLS = setOf(AgentUserQuestion.TOOL_NAME, AgentTaskPlan.TOOL_NAME) + AgentSubagentTools.TOOL_NAMES
     }
 }

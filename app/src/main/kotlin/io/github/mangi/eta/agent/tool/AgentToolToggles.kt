@@ -12,6 +12,8 @@ internal object AgentToolToggles {
         "scroll" to setOf("scroll", "scroll_element"),
         "type_text" to setOf("type_text", "input_text", "replace_text", "clear_text", "paste_text"),
         "wait_for_text" to setOf("wait_for_text", "wait_for_package"),
+        // 子 Agent 的六个工具共用一张“子 Agent”卡片（AG-19）。
+        "spawn_agent" to setOf("spawn_agent", "send_agent", "wait_agents", "list_agents", "stop_agent", "close_agent"),
     )
 
     private val screenDependentTools = setOf(

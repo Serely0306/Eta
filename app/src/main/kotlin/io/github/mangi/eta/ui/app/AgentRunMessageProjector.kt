@@ -69,6 +69,15 @@ internal class AgentRunMessageProjector(
         }
         is AgentEvent.RunFinished -> finalizeText(runId, finalizeThinking(runId, messages))
         is AgentEvent.SubagentUpdate -> updateSubagent(runId, event, messages)
+        // 子 Agent 的完成通知交给主 Agent 时，在对话里留一条系统提示（不是用户消息）。
+        is AgentEvent.SubagentNotified -> {
+            val prefix = "notice-$runId-subagent-"
+            messages + SystemNoticeMessageUi(
+                id = prefix + (messages.count { it.id.startsWith(prefix) } + 1),
+                code = SystemNoticeCode.SubagentNotified,
+                detail = event.display,
+            )
+        }
         // 待回答问题由会话状态承载，问答结论随 ask_user 的工具结果进入消息流。
         is AgentEvent.UserQuestionAsked,
         is AgentEvent.UserQuestionResolved,

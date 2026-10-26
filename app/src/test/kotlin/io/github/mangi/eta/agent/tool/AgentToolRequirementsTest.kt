@@ -4,7 +4,7 @@ import io.github.mangi.eta.agent.model.AgentTaskPlan
 import io.github.mangi.eta.agent.model.AgentToolCatalog
 import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.roleplay.CharacterMemoryTools
-import io.github.mangi.eta.agent.runtime.AgentSubagentTool
+import io.github.mangi.eta.agent.runtime.AgentSubagentTools
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -21,7 +21,7 @@ class AgentToolRequirementsTest {
             // 执行器级协作工具由 Runtime 附加，同样必须登记要求。
             it.put(AgentUserQuestion.schema())
             it.put(AgentTaskPlan.schema())
-            it.put(AgentSubagentTool.schema())
+            AgentSubagentTools.schemas().forEach(it::put)
         }
         val executionOnly = setOf("input_text", "replace_text", "clear_text", "paste_text")
         assertEquals(AgentToolRequirements.toolNames - executionOnly, tools.names())

@@ -26,8 +26,10 @@ import androidx.room.migration.Migration
         CharacterEntity::class,
         UserPersonaEntity::class,
         ModelUsageRecordEntity::class,
+        ConversationSubagentEntity::class,
+        ConversationSubagentMailEntity::class,
     ],
-    version = 27,
+    version = 28,
     exportSchema = false,
 )
 internal abstract class EtaDatabase : RoomDatabase() {
@@ -38,6 +40,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
     abstract fun mcpServerDao(): McpServerDao
     abstract fun characterDao(): CharacterDao
     abstract fun modelUsageDao(): ModelUsageDao
+    abstract fun subagentDao(): SubagentDao
 
     companion object {
         @Volatile
@@ -72,6 +75,7 @@ internal abstract class EtaDatabase : RoomDatabase() {
                         MIGRATION_24_25,
                         MIGRATION_25_26,
                         MIGRATION_26_27,
+                        MIGRATION_27_28,
                     )
                     .addCallback(object : Callback() {
                         override fun onCreate(db: androidx.sqlite.db.SupportSQLiteDatabase) { createTextChunkCleanup(db) }
@@ -165,10 +169,34 @@ internal abstract class EtaDatabase : RoomDatabase() {
             if (!exists) database.execSQL("ALTER TABLE model_providers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'api_key'")
         }
 
+        /** AG-19：会话级子 Agent 与它们的完成通知。 */
+        internal val MIGRATION_27_28 = Migration(27, 28) { database ->
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `conversation_subagents` (`id` TEXT NOT NULL, `conversation_id` TEXT NOT NULL, " +
+                    "`agent_id` TEXT NOT NULL, `name` TEXT NOT NULL, `task` TEXT NOT NULL, `status` TEXT NOT NULL, " +
+                    "`turn` INTEGER NOT NULL, `rounds` INTEGER NOT NULL, `last_result` TEXT NOT NULL, `last_error` TEXT NOT NULL, " +
+                    "`transcript_json` TEXT NOT NULL, `model_session_id` TEXT NOT NULL, `owner_instance_id` TEXT NOT NULL, " +
+                    "`created_run_id` TEXT NOT NULL, `last_run_id` TEXT NOT NULL, `created_at` INTEGER NOT NULL, " +
+                    "`updated_at` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_conversation_subagents_conversation_id` ON `conversation_subagents` (`conversation_id`)"
+            )
+            database.execSQL(
+                "CREATE TABLE IF NOT EXISTS `conversation_subagent_mail` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`conversation_id` TEXT NOT NULL, `agent_id` TEXT NOT NULL, `turn` INTEGER NOT NULL, `status` TEXT NOT NULL, " +
+                    "`payload` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `delivered_run_id` TEXT)"
+            )
+            database.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_conversation_subagent_mail_conversation_id` ON `conversation_subagent_mail` (`conversation_id`)"
+            )
+        }
+
         private fun createTextChunkCleanup(database: androidx.sqlite.db.SupportSQLiteDatabase) {
             mapOf("runtime_results" to "run_id", "runtime_archive_runs" to "archive_run_id",
                 "runtime_inflight_runs" to "run_id", "conversation_context_checkpoints" to "conversation_id",
                 "conversation_messages" to "id", "conversations" to "id")
+                .plus(if (database.version >= 28) mapOf("conversation_subagents" to "id") else emptyMap())
                 .plus(if (database.version >= 21 || database.query(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'roleplay_characters'"
                 ).use { it.moveToFirst() }) mapOf("roleplay_characters" to "id", "roleplay_user_persona" to "id") else emptyMap())

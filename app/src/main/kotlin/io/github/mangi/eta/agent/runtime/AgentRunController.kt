@@ -22,6 +22,8 @@ internal class AgentRunController {
     private val pauseCondition = lock.newCondition()
     private val questionCondition = lock.newCondition()
     private val steeringMessages = ArrayDeque<String>()
+    /** 子 Agent 的完成通知；与用户补充分开，进入模型时标明是系统通知，界面显示为系统提示。 */
+    private val notices = ArrayDeque<Notice>()
     private var acceptingSteering = true
     @Volatile
     private var paused = false
@@ -36,6 +38,7 @@ internal class AgentRunController {
             cancelled = true
             acceptingSteering = false
             steeringMessages.clear()
+            // 通知不清：主 run 结束时由子 Agent 管理器取回，恢复为未投递。
             paused = false
             pauseCondition.signalAll()
             questionCondition.signalAll()
@@ -104,6 +107,27 @@ internal class AgentRunController {
     val pendingQuestion: String?
         get() = lock.withLock { pendingQuestionId?.takeIf { pendingAnswer == null } }
 
+    /**
+     * 把子 Agent 的完成通知排进下一个 turn。run 已封口（最终回答之后）或已取消时返回 false，
+     * 由调用方留到下一个 run 或自动唤醒。
+     */
+    fun deliverNotice(notice: Notice): Boolean = lock.withLock {
+        if (cancelled || !acceptingSteering) return@withLock false
+        notices.addLast(notice)
+        true
+    }
+
+    /** 一次取走全部待处理的通知，合并成一条交给模型。 */
+    fun pollNotices(): List<Notice> = lock.withLock {
+        notices.toList().also { notices.clear() }
+    }
+
+    val hasPendingNotices: Boolean
+        get() = lock.withLock { notices.isNotEmpty() }
+
+    /** [modelText] 进入模型上下文；[display] 只给界面的系统提示；[mailIds] 是对应的待投递通知。 */
+    data class Notice(val modelText: String, val display: String, val mailIds: List<Long> = emptyList())
+
     /** 默认逐条消费，避免后来的补充指令越过前一条的模型回合。 */
     fun pollSteeringMessage(): String? =
         lock.withLock { steeringMessages.pollFirst() }
@@ -115,6 +139,8 @@ internal class AgentRunController {
     fun pollSteeringOrSeal(): String? =
         lock.withLock {
             steeringMessages.pollFirst()?.let { return it }
+            // 封口前刚到的子 Agent 通知：不封口，由主循环取走后继续下一轮（见 AgentLoop）。
+            if (notices.isNotEmpty()) return null
             acceptingSteering = false
             null
         }

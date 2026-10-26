@@ -270,6 +270,7 @@
   <string name="system_notice_runtime_failed">Runtime 运行失败</string>
   <string name="conversation_persistence_failed">无法保存对话，请重试</string>
   <string name="system_notice_interrupted">任务已中断。已保留部分输出，未自动重试尚未完成的操作。</string>
+  <string name="system_notice_subagent_notified">子 Agent 的结果已交给主 Agent</string>
   <string name="tool_status_unknown">结果未知</string>
   <string name="voice_listening">聆听中...</string>
   <string name="voice_processing">正在处理…</string>
@@ -531,11 +532,16 @@
   <string name="tool_get_logcat">读取系统日志</string>
   <string name="tool_update_plan">更新计划</string>
   <string name="tool_run_subagents">派出子 Agent</string>
+  <string name="tool_send_agent">交给子 Agent</string>
+  <string name="tool_wait_agents">等待子 Agent</string>
+  <string name="tool_list_agents">查看子 Agent</string>
+  <string name="tool_stop_agent">停止子 Agent</string>
+  <string name="tool_close_agent">关闭子 Agent</string>
   <string name="state_agent_collaboration">协作与规划</string>
   <string name="tool_ui_ask_user">向用户提问</string>
   <string name="tool_ui_ask_user_summary">运行中提问并等待回答</string>
   <string name="tool_ui_update_plan_summary">跟踪多步任务，当前步骤显示在胶囊上</string>
-  <string name="tool_ui_run_subagents_summary">把独立的检索与分析交给并行的子 Agent，只返回结论</string>
+  <string name="tool_ui_run_subagents_summary">把独立的检索与分析交给后台的子 Agent，同一会话里之后还能继续使用</string>
   <string name="tool_status_running">执行中</string>
   <string name="tool_status_success">已完成</string>
   <string name="tool_status_failed">失败</string>

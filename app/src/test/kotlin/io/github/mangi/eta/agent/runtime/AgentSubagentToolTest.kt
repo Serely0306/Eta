@@ -18,13 +18,22 @@ class AgentSubagentToolTest {
             excluded,
         )
         assertTrue(listOf("terminal", "web_search", "read_file").none { it in excluded })
+        // 子 Agent 不能再派子 Agent、不能提问或建计划。
+        assertTrue(AgentSubagentTools.TOOL_NAMES.all { it in AgentSubagentTool.COORDINATOR_TOOLS })
+        assertTrue("ask_user" in AgentSubagentTool.COORDINATOR_TOOLS)
     }
 
     @Test
-    fun schemaLimitsParallelTasks() {
-        val tasks = AgentSubagentTool.schema().getJSONObject("function").getJSONObject("parameters")
-            .getJSONObject("properties").getJSONObject("tasks")
-        assertEquals(AgentSubagentTool.MAX_TASKS, tasks.getInt("maxItems"))
-        assertEquals("task", tasks.getJSONObject("items").getJSONArray("required").getString(0))
+    fun sixToolsAreExposedWithTheirRequiredArguments() {
+        val schemas = AgentSubagentTools.schemas().associate { schema ->
+            val function = schema.getJSONObject("function")
+            function.getString("name") to function.getJSONObject("parameters").getJSONArray("required")
+                .let { array -> (0 until array.length()).map(array::getString) }
+        }
+        assertEquals(AgentSubagentTools.TOOL_NAMES, schemas.keys)
+        assertEquals(listOf("task", "reason"), schemas.getValue("spawn_agent"))
+        assertEquals(listOf("agent_id", "message"), schemas.getValue("send_agent"))
+        assertEquals(emptyList<String>(), schemas.getValue("wait_agents"))
+        assertEquals(listOf("agent_id"), schemas.getValue("close_agent"))
     }
 }

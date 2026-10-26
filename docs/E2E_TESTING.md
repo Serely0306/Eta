@@ -288,16 +288,18 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 
 ### J. 计划与子 Agent
 
-子 Agent 的模型请求同样发往 Mock 服务：剧本在主 Agent 的 `run_subagents` 参数里给每个子任务写入标记（如 `[E2E:sub-1]`），Mock 据此为子 Agent 选剧本。
+子 Agent 的模型请求同样发往 Mock 服务：剧本在主 Agent 的 `spawn_agent` 的 `task` 里写入标记（如 `[E2E:sub-1]`），Mock 据此为子 Agent 选剧本。
+
+AG-19 起子 Agent 是会话级的（`spawn_agent`、`send_agent`、`wait_agents`、`list_agents`、`stop_agent`、`close_agent`）。J10–J16 针对旧版 `run_subagents` 留下的记录，新版的子 Agent 列表与过程查看在 AG-19 阶段 B 落地后改写。
 
 | ID | 场景 | 断言 |
 |---|---|---|
 | J1 `M` | 剧本先 `update_plan`（第 1 步进行中）再执行工具，随后把第 1 步标为完成 | 胶囊显示第 1 步标题与“步骤 1/3”，更新后切到第 2 步；`events` 中有两条 `PlanUpdated` |
 | J2 `M` | `update_plan` 提交两个 in_progress 或非法状态 | 工具结果 `INVALID_PLAN`，run 继续，不发 `PlanUpdated` |
-| J3 `M` | 剧本 `run_subagents` 派出 3 个子任务，各自调用 `terminal` 后回复 | 三个子 Agent 的请求并行到达 Mock；主 Agent 收到的结果含 3 条 `ok=true` 的结论；胶囊依次显示“子 Agent n：终端” |
+| J3 `M` | 剧本用 `spawn_agent` 派出 3 个子 Agent，各自调用 `terminal` 后回复；主 Agent 随后调用 `wait_agents` | 三次 `spawn_agent` 都立即返回 `agent_id`（`sub_1`–`sub_3`）与 `running`；三个子 Agent 的请求并行到达 Mock；`wait_agents` 返回已结束的子 Agent 及其结论；被等待取走的结论不再另发通知 |
 | J4 `M` | 子 Agent 剧本调用 `observe_screen`、`browser_use`、`ask_user` | Mock 收到的子 Agent 工具列表不含这些工具；强行调用返回 `SUBAGENT_TOOL_UNAVAILABLE` |
-| J5 `M` | 子 Agent 剧本持续调用工具不结束 | 第 40 轮后该子任务停止并报告轮数上限，其余子任务正常返回 |
-| J6 `M` | 子 Agent 执行中停止主 run | 所有子 Agent 的请求中断，主 run 以停止结束 |
+| J5 `M` | 子 Agent 剧本持续调用工具不结束 | 本回合第 40 轮后停止，状态为失败并说明轮数上限；其余子 Agent 正常结束；之后仍可用 `send_agent` 给它发新任务 |
+| J6 `M` | 子 Agent 运行中停止主 run；再在新的一轮里 `send_agent` 给它 | 主 run 以停止结束；本会话运行中的子 Agent 一起停，`list_agents` 显示为已中断，不产生完成通知；`send_agent` 后它带着之前的上下文继续 |
 | J7 `M` | 主 Agent 先 `observe_screen` 取得手机操作权，再派子 Agent，子 Agent 结束后主 Agent 继续操作界面 | 子 Agent 结束不释放主 run 的操作权（`gui.owner` 仍为主 run）；子 Agent 的工具列表不含界面工具、`release_gui` 与浏览器 |
 | J8 `M` | 工具页关闭 `update_plan` 与 `run_subagents` | Mock 收到的工具列表与系统提示都不再包含它们；从历史强行调用返回 `TOOL_DISABLED` |
 | J9 `M` | 电脑端委托的任务调用 `update_plan` | `eta_task_status` 返回的快照带 `plan` |
@@ -307,6 +309,12 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | J14 `R` | J10 运行中与结束后各打开一次侧栏；展开该会话的子 Agent；点完成的那个；点运行中的那个 | 有子 Agent 的会话行右侧显示子 Agent 图标与个数，点它只展开不切换会话；展开后按派出顺序列出每个子 Agent 的序号、状态与任务；每个都能点开“子 Agent 过程”弹窗（运行中的看实时进度，见 J15）；结束后状态随之更新，重启 App 后仍能展开查看 |
 | J15 `M` | J10 运行中点开运行较久的子 Agent 的过程，停在末尾；再往上翻看；等它结束 | 弹窗显示“执行中”与当前步骤，每 2 秒刷新，模型每回复一次、工具每出一次结果就多一轮；未出结果的工具显示执行中；停在末尾时跟随到最新一轮，往上翻看时不跳走；结束后状态变为完成并显示结论，不再刷新 |
 | J16 `R` | 一个会话分 3 批派子 Agent（每批 2 个），批次之间多聊几轮，让消息超过一页（128 条）；冷启动后在侧栏展开它的子 Agent；再点开会话后展开 | 两次都按派出顺序列出 6 个子 Agent，每个的任务与结论对应自己那一批（服务商每轮都用 `call_0` 时也不串）；点开会话后子 Agent 标记不消失 |
+| J17 `M` | 第 1 轮 `spawn_agent` 派出 `log_scan` 查一个目录并等它结束；第 2 轮用户追问，主 Agent `send_agent` 让 `log_scan` 再查另一个目录 | 第 2 轮子 Agent 的请求带着第 1 轮的上下文，模型会话 id 相同（缓存可命中）；`list_agents` 显示 `log_scan` 回合数为 2 |
+| J18 `M` | 主 Agent 派出子 Agent 后不等待，继续调用其他工具；子 Agent 在主 Agent 的下一轮开始前完成 | 下一轮请求里多一条 `<subagent_notification>` 用户消息（不是“用户补充指令”）；对话里出现“子 Agent 的结果已交给主 Agent”的系统提示；同一结论只出现一次 |
+| J19 `M` | 主 Agent 写最终回答时子 Agent 恰好完成；另测一次主 run 已结束后子 Agent 才完成 | 前者主 run 不结束，多一轮处理通知后再回答；后者通知留在库里，下一个 run 开始时交给主 Agent（自动唤醒在阶段 B） |
+| J20 `M` | `wait_agents` 等待中用户在输入框追加一条要求；另测一次等待超时 | 前者立即返回 `interrupted_by_user=true`，主 Agent 处理追加要求；后者 `timed_out=true`，子 Agent 继续运行 |
+| J21 `M` | 一个会话同时运行 4 个子 Agent 后再派第 5 个；`close_agent` 一个后再 `send_agent` 给它 | 第 5 个返回 `SUBAGENT_LIMIT`；关闭后发消息返回 `SUBAGENT_CLOSED` |
+| J22 `R` | 子 Agent 运行中强停 Eta，重新打开后让主 Agent `list_agents`，再 `send_agent` 给它 | 状态为已中断；继续后带着之前的上下文完成 |
 | J13 `R` | 删除 J10 所在会话；另把一个过程文件的修改时间改到 31 天前后再派一次子 Agent | 会话删除后对应 run 的过程目录被删除；过期目录在下一次保存时被清理 |
 
 ### K. 模型回退链

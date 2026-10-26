@@ -40,6 +40,7 @@ internal object ConversationMarkdownExporter {
         val noticeInterrupted: String,
         val noticeContextCompaction: String = "上下文压缩",
         val noticeModelFallback: String = "已切换备用模型",
+    val noticeSubagentNotified: String = "子 Agent 通知",
     ) {
         fun toolStatus(status: ToolActivityStatusUi): String = when (status) {
             ToolActivityStatusUi.Running -> toolStatusRunning
@@ -56,6 +57,7 @@ internal object ConversationMarkdownExporter {
             SystemNoticeCode.ModelFallback -> noticeModelFallback
             SystemNoticeCode.RuntimeFailed -> noticeRuntimeFailed
             SystemNoticeCode.Interrupted -> noticeInterrupted
+            SystemNoticeCode.SubagentNotified -> noticeSubagentNotified
         }
     }
 

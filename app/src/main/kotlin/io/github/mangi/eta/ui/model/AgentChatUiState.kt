@@ -84,7 +84,9 @@ enum class SystemNoticeCode(val wireValue: String) {
     ModelRetry("model_retry"),
     ModelFallback("model_fallback"),
     ContextCompaction("context_compaction"),
-    Interrupted("interrupted");
+    Interrupted("interrupted"),
+    /** 子 Agent 的完成通知交给了主 Agent；detail 是“谁、完成或失败、结论开头”。 */
+    SubagentNotified("subagent_notified");
 
     companion object {
         fun fromWireValue(value: String): SystemNoticeCode? = entries.firstOrNull {

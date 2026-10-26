@@ -352,6 +352,7 @@
   <string name="system_notice_model_fallback">Switched to a fallback model</string>
   <string name="conversation_persistence_failed">Couldn’t save the conversation. Please try again.</string>
   <string name="system_notice_interrupted">The run was interrupted. Partial output is preserved; unfinished actions were not retried.</string>
+  <string name="system_notice_subagent_notified">Sub-agent result handed to the main agent</string>
   <string name="tool_status_unknown">Result unknown</string>
   <string name="voice_listening">Listening...</string>
   <string name="voice_processing">Processing…</string>
@@ -539,11 +540,16 @@
   <string name="tool_get_logcat">Read system logs</string>
   <string name="tool_update_plan">Update plan</string>
   <string name="tool_run_subagents">Subagents</string>
+  <string name="tool_send_agent">Hand to sub-agent</string>
+  <string name="tool_wait_agents">Wait for sub-agents</string>
+  <string name="tool_list_agents">View sub-agents</string>
+  <string name="tool_stop_agent">Stop sub-agent</string>
+  <string name="tool_close_agent">Close sub-agent</string>
   <string name="state_agent_collaboration">Collaboration</string>
   <string name="tool_ui_ask_user">Ask the user</string>
   <string name="tool_ui_ask_user_summary">Ask a question mid-task and wait for the answer</string>
   <string name="tool_ui_update_plan_summary">Track multi-step tasks; the current step shows on the capsule</string>
-  <string name="tool_ui_run_subagents_summary">Hand independent research to parallel subagents that return only conclusions</string>
+  <string name="tool_ui_run_subagents_summary">Hand independent searching and analysis to background sub-agents; reuse them later in the same conversation</string>
   <string name="tool_status_running">Running</string>
   <string name="tool_status_success">Completed</string>
   <string name="tool_status_failed">Failed</string>
