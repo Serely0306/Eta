@@ -38,6 +38,8 @@ import io.github.mangi.eta.agent.runtime.AgentExecutionService
 import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
 import io.github.mangi.eta.agent.runtime.SubagentTranscriptStore
 import io.github.mangi.eta.agent.runtime.AgentSubagentTool
+import io.github.mangi.eta.agent.runtime.AgentInterruptionNote
+import io.github.mangi.eta.agent.mcp.server.EtaMcpConversationHistories
 import io.github.mangi.eta.agent.runtime.AgentRunArchiveStore
 import io.github.mangi.eta.agent.runtime.AgentRunCheckpointStore
 import io.github.mangi.eta.agent.runtime.AgentRuntimeClient
@@ -456,6 +458,10 @@ internal class AgentAppState(
 
             val acknowledgeAfterSave = mutableListOf<String>()
             val removeAfterSave = mutableListOf<String>()
+            // 查系统的进程退出记录要走 binder，放在主线程之外。
+            val interruptionCauses = plan.interrupted.associate { checkpoint ->
+                checkpoint.runId to AgentInterruptionNote.cause(appContext, checkpoint.updatedAt)
+            }
             val changed = withContext(Dispatchers.Main) {
                 var stateChanged = false
                 plan.completed.forEach { recoveryPlan ->
@@ -497,6 +503,7 @@ internal class AgentAppState(
                     stateChanged = restoreCheckpointTrace(
                         checkpoint = checkpoint,
                         interrupted = true,
+                        interruptionCause = interruptionCauses[checkpoint.runId],
                     ) || stateChanged
                 }
                 orphanRewrites.forEach { (conversationId, runId) ->
@@ -554,6 +561,7 @@ internal class AgentAppState(
     private fun restoreCheckpointTrace(
         checkpoint: AgentRunCheckpointStore.Checkpoint,
         interrupted: Boolean,
+        interruptionCause: String? = null,
     ): Boolean {
         val runId = checkpoint.runId
         if (runId.isBlank()) return false
@@ -598,6 +606,21 @@ internal class AgentAppState(
         }
         if (interrupted && (checkpoint.contextSnapshot != null || checkpoint.transcript.isNotEmpty())) {
             applyConversationHistoryResult(runId, checkpoint.transcript, checkpoint.contextSnapshot, true)
+        }
+        if (interrupted && checkpoint.operation == AgentRuntimeWire.OP_CHAT) {
+            conversationsById[conversationId]?.let { state ->
+                val noteId = AgentInterruptionNote.messageId(runId)
+                if (state.history.none { it.messageId == noteId }) {
+                    val note = AgentInterruptionNote.build(
+                        runId = runId,
+                        interruptedAt = checkpoint.updatedAt,
+                        cause = interruptionCause ?: "Eta 进程结束",
+                        transcript = checkpoint.transcript,
+                        events = checkpoint.events,
+                    )
+                    updateConversation(conversationId, state.copy(history = state.history + note))
+                }
+            }
         }
         conversationsById[conversationId]?.let { state ->
             updateConversation(conversationId, RoleplayConversationReducer.linkRun(state, runId))
@@ -1102,6 +1125,10 @@ internal class AgentAppState(
         // 子 Agent 的过程文件按 run 保存，随会话一并删除。
         conversationsById[conversationId]?.appliedRuntimeRunIds?.takeIf { it.isNotEmpty() }?.let { runIds ->
             scope.launch(Dispatchers.IO) { SubagentTranscriptStore.deleteRuns(appContext, runIds) }
+        }
+        // 电脑端会话的模型历史另存一份，随会话删除。
+        if (conversationId.startsWith(ExternalArchiveIds.EXTERNAL_PREFIX)) {
+            scope.launch(Dispatchers.IO) { EtaMcpConversationHistories.deleteForConversation(appContext, conversationId) }
         }
         conversationsById = conversationsById - conversationId
         conversationTitles = conversationTitles - conversationId

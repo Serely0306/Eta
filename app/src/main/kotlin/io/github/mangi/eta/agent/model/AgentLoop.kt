@@ -192,6 +192,10 @@ internal class AgentLoop(
             )
 
             if (toolCalls.isNotEmpty()) {
+                // 先把这条带调用的回复写进检查点再执行：第一个工具就结束进程（强停自身、重启设备）时，
+                // 恢复后仍能看到回复文字与这次调用，并补成“已中断”，而不是整条消失、被模型当作没做过。
+                toolCalls.filter { AgentSensitiveToolPolicy.isSensitive(it.name) }.forEach { sensitiveToolCallIds += it.id }
+                publishTranscript()
                 val outcomes = toolCalls.map { call ->
                     val outcome = when (providerResponse.stopReason) {
                         AssistantStopReason.TOOL_USE -> executeTool(round, call)
