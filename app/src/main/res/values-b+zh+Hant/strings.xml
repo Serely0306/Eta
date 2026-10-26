@@ -531,6 +531,9 @@
   <string name="tool_ui_ask_user_summary">執行中提問並等待回答</string>
   <string name="tool_ui_update_plan_summary">追蹤多步任務，目前步驟顯示在膠囊上</string>
   <string name="tool_ui_run_subagents_summary">把獨立的檢索與分析交給背景的子 Agent，同一對話裡之後還能繼續使用</string>
+  <string name="subagent_strategy_label">派出</string>
+  <string name="subagent_strategy_auto">自動</string>
+  <string name="subagent_strategy_on_request">僅在我要求時</string>
   <string name="tool_status_running">執行中</string>
   <string name="tool_status_success">已完成</string>
   <string name="tool_status_failed">失敗</string>

@@ -56,6 +56,7 @@ internal object AgentModelClient {
                     thinkingEnabled = effort.enablesReasoning,
                     reasoningEffort = effort,
                     autoCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+                    subagentOnRequest = Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST),
                 )
             }
         }
@@ -74,6 +75,7 @@ internal object AgentModelClient {
             modelDisplayName = "GPT-5.5",
             systemPrompt = BuiltinProviders.DEFAULT_SYSTEM_PROMPT,
             autoCompactionEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
+            subagentOnRequest = Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST),
             terminalTools = Prefs.isEnabled(Prefs.Keys.AGENT_TERMINAL_TOOLS),
             browserTools = Prefs.isEnabled(Prefs.Keys.AGENT_BROWSER_TOOLS),
             deviceDirectTools = Prefs.isEnabled(Prefs.Keys.AGENT_DEVICE_DIRECT_TOOLS),
@@ -358,6 +360,8 @@ internal object AgentModelClient {
         val customBody: List<CustomBody> = emptyList(),
         val autoCompactionEnabled: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
         val authMode: String = ProviderAuthModes.API_KEY,
+        /** 子 Agent 派出策略为“仅在我要求时”（AG-19）；关闭由工具开关决定，默认自动。 */
+        val subagentOnRequest: Boolean = false,
     ) {
         val usesHostedWebSearch: Boolean
             get() = hostedWebSearchEnabled && when (providerType) {

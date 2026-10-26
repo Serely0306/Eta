@@ -237,6 +237,26 @@ class AgentPromptBuilderTest {
         assertEquals("现在改用英文回答", messages.getJSONObject(messages.length() - 1).getString("content"))
     }
 
+    @Test
+    fun subagentGuidanceFollowsTheSpawnStrategy() {
+        fun prompt(onRequest: Boolean, disabled: Set<String> = emptySet()) = AgentPromptBuilder.buildSystemMessages(
+            config = modelConfig("", terminalTools = true, browserTools = false).copy(subagentOnRequest = onRequest),
+            skillContext = SkillContext.EMPTY,
+            memoryContext = AgentMemoryContext.DISABLED,
+            rootAvailable = false,
+            disabledTools = disabled,
+        ).toString()
+
+        val automatic = prompt(onRequest = false)
+        assertTrue(automatic.contains("至少有两个互不依赖"))
+        assertTrue(automatic.contains("send_agent"))
+        val onRequest = prompt(onRequest = true)
+        assertTrue(onRequest.contains("只有用户在本轮消息里明确要求"))
+        assertFalse(onRequest.contains("至少有两个互不依赖"))
+        // 关闭档：工具卡片关掉后整段说明都不出现。
+        assertFalse(prompt(onRequest = false, disabled = setOf("spawn_agent")).contains("spawn_agent"))
+    }
+
     private fun modelConfig(
         systemPrompt: String,
         terminalTools: Boolean,

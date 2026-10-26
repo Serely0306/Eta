@@ -1,7 +1,17 @@
 package io.github.mangi.eta.ui.screens.tools
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import io.github.mangi.eta.config.Prefs
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -113,6 +123,11 @@ internal fun ToolCard(
                 color = MiuixTheme.colorScheme.onSurfaceVariantActions,
             )
         }
+        // 子 Agent 派出策略三档（AG-19）：开关关闭为“关闭”，开启后选“自动”或“仅在我要求时”。
+        if (tool.id == SUBAGENT_CARD && toggleText == null) {
+            Spacer(modifier = Modifier.height(10.dp))
+            SubagentStrategySelector()
+        }
         Spacer(modifier = Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -149,6 +164,37 @@ internal fun ToolCard(
             description = listOfNotNull(description, requirementText).joinToString("\n\n"),
             onDismiss = { showDescription = false },
         )
+    }
+}
+
+private const val SUBAGENT_CARD = "spawn_agent"
+
+@Composable
+private fun SubagentStrategySelector() {
+    var onRequest by remember { mutableStateOf(Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST)) }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = stringResource(R.string.subagent_strategy_label),
+            style = MiuixTheme.textStyles.footnote1,
+            color = MiuixTheme.colorScheme.onSurfaceVariantActions,
+        )
+        listOf(false to R.string.subagent_strategy_auto, true to R.string.subagent_strategy_on_request).forEach { (value, label) ->
+            val selected = onRequest == value
+            Text(
+                text = stringResource(label),
+                style = MiuixTheme.textStyles.footnote1,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (selected) MiuixTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)
+                    .selectable(selected = selected, role = Role.RadioButton) {
+                        Prefs.setLocalAgentEnabled(Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST, value)
+                        onRequest = value
+                    }
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
     }
 }
 

@@ -46,6 +46,8 @@ internal object Prefs {
         const val AGENT_AUTO_COMPACTION_ENABLED = "agent_auto_compaction_enabled"
         /** Eta 操作屏幕期间暂停横幅通知，结束后恢复。 */
         const val AGENT_SUPPRESS_HEADS_UP = "agent_suppress_heads_up"
+        /** 子 Agent 派出策略“仅在我要求时”；关闭则为“自动”（AG-19）。 */
+        const val AGENT_SUBAGENT_ON_REQUEST = "agent_subagent_on_request"
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
         /** 用户单独关闭的工具名集合，仅 Runtime 消费，不同步到 RemotePreferences。 */
         const val AGENT_DISABLED_TOOLS = "agent_disabled_tools"
@@ -69,6 +71,7 @@ internal object Prefs {
             AGENT_THINKING_ENABLED to true,
             AGENT_AUTO_COMPACTION_ENABLED to true,
             AGENT_SUPPRESS_HEADS_UP to true,
+            AGENT_SUBAGENT_ON_REQUEST to false,
         )
 
         /** 由 Eta Runtime 最终裁决、不要求 Xposed 框架在线的开关。 */
@@ -81,6 +84,7 @@ internal object Prefs {
             AGENT_THINKING_ENABLED,
             AGENT_AUTO_COMPACTION_ENABLED,
             AGENT_SUPPRESS_HEADS_UP,
+            AGENT_SUBAGENT_ON_REQUEST,
         )
     }
 
@@ -160,6 +164,11 @@ internal object Prefs {
         runCatching { preferences?.getStringSet(Keys.AGENT_DISABLED_TOOLS, null)?.toSet() }
             .getOrNull()
             .orEmpty()
+
+    /** 本地 Agent 开关（如子 Agent 派出策略）；同进程的 Runtime 下一轮即读到新值。 */
+    fun setLocalAgentEnabled(key: String, enabled: Boolean) {
+        localAgent?.edit()?.putBoolean(key, enabled)?.apply()
+    }
 
     /** 同进程的 Runtime 读取内存中的最新值，下一轮模型请求即生效；落盘异步进行。 */
     fun setToolsEnabled(tools: Set<String>, enabled: Boolean) {
