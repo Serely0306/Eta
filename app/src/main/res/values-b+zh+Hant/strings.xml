@@ -259,6 +259,7 @@
   <string name="conversation_persistence_failed">無法儲存對話，請重試</string>
   <string name="system_notice_interrupted">任務已中斷。已保留部分輸出，未自動重試尚未完成的操作。</string>
   <string name="system_notice_subagent_notified">子 Agent 的結果已交給主 Agent</string>
+  <string name="subagent_wake_prompt">[Eta 系統] 背景的子 Agent 有了新結果（見下一條通知）。請據此繼續之前的任務；已經可以給出結論時，直接向使用者匯報。</string>
   <string name="tool_status_unknown">結果未知</string>
   <string name="voice_listening">聆聽中...</string>
   <string name="voice_processing">處理中…</string>

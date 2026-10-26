@@ -20,6 +20,9 @@ import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.thread
 import kotlin.concurrent.withLock
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -33,6 +36,7 @@ internal interface SubagentStore {
     fun undeliveredMail(conversationId: String): List<ConversationSubagentMailEntity>
     fun markDelivered(ids: List<Long>, runId: String?)
     fun deleteConversation(conversationId: String)
+    fun conversationsWithUndeliveredMail(): List<String>
 }
 
 internal class RoomSubagentStore(context: Context) : SubagentStore {
@@ -47,6 +51,7 @@ internal class RoomSubagentStore(context: Context) : SubagentStore {
         if (ids.isNotEmpty()) io { dao.markMailDelivered(ids, runId) }
     }
     override fun deleteConversation(conversationId: String) = io { dao.deleteConversation(conversationId) }
+    override fun conversationsWithUndeliveredMail() = io { dao.conversationsWithUndeliveredMail() }
 
     private fun <T> io(block: suspend () -> T): T = runBlocking(Dispatchers.IO) { block() }
 }
@@ -146,9 +151,25 @@ internal class AgentSubagentManager(
     private val conversations = HashMap<String, ConversationState>()
     private var staleInterrupted = false
 
-    /** 主 run 已结束、通知无处投递时调用（阶段 B 由 App 与电脑端接入自动唤醒）。 */
+    /** 主 run 已结束、通知无处投递时调用；App 据此开一个 run 让主 Agent 处理结果（自动唤醒）。 */
     @Volatile
     var wakeListener: ((conversationId: String) -> Unit)? = null
+
+    private val revisionState = MutableStateFlow(0L)
+
+    /** 子 Agent 有变化（派出、进度、结束、关闭、删除）时递增；侧栏据此刷新列表。 */
+    val revision: StateFlow<Long> = revisionState
+
+    fun conversationsWithUndeliveredMail(): List<String> = store.conversationsWithUndeliveredMail()
+
+    /** 备份恢复后库已整体替换：停掉运行中的子 Agent，丢弃缓存，之后按新库重新加载。 */
+    fun forgetAll() {
+        lock.withLock {
+            conversations.values.forEach { state -> state.agents.values.forEach { it.controller?.cancel() } }
+            conversations.clear()
+        }
+        revisionState.update { it + 1 }
+    }
 
     fun attachParent(conversationId: String, runId: String, controller: AgentRunController) {
         lock.withLock {
@@ -184,6 +205,7 @@ internal class AgentSubagentManager(
             }
         }
         store.deleteConversation(conversationId)
+        revisionState.update { it + 1 }
     }
 
     fun spawn(environment: SubagentEnvironment, task: String, context: String, name: String?, reason: String): JSONObject =
@@ -454,6 +476,7 @@ internal class AgentSubagentManager(
         runCatching {
             store.save(agent.row.copy(transcriptJson = AgentConversationCodec.encodeConversationCheckpoint(agent.history)))
         }
+        revisionState.update { it + 1 }
     }
 
     private fun describe(agent: LiveAgent, includeResult: Boolean): JSONObject = JSONObject()

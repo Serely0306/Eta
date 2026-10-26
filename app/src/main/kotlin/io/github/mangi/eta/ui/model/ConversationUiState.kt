@@ -30,12 +30,17 @@ data class ConversationSummaryUi(
     val hasUnloadedSubagents: Boolean = false,
 )
 
-/** 侧栏里的一个子 Agent：所属 run 与 run_subagents 调用，以及它的任务与状态。 */
+/**
+ * 侧栏里的一个子 Agent。旧版 `run_subagents` 的按所属 run 与调用定位；AG-19 起的会话级子 Agent
+ * 带 [conversationId] 与 [agentId]（[toolCallId] 同为 agentId），过程从库里的上下文读取。
+ */
 @Immutable
 data class ConversationSubagentUi(
     val runId: String,
     val toolCallId: String,
     val progress: SubagentProgressUi,
+    val conversationId: String = "",
+    val agentId: String = "",
 )
 
 @Immutable

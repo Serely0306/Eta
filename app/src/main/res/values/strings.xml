@@ -353,6 +353,7 @@
   <string name="conversation_persistence_failed">Couldn’t save the conversation. Please try again.</string>
   <string name="system_notice_interrupted">The run was interrupted. Partial output is preserved; unfinished actions were not retried.</string>
   <string name="system_notice_subagent_notified">Sub-agent result handed to the main agent</string>
+  <string name="subagent_wake_prompt">[Eta system] Background sub-agents have new results (see the next notice). Continue the earlier task with them; if you can already conclude, report to the user directly.</string>
   <string name="tool_status_unknown">Result unknown</string>
   <string name="voice_listening">Listening...</string>
   <string name="voice_processing">Processing…</string>

@@ -271,6 +271,7 @@
   <string name="conversation_persistence_failed">无法保存对话，请重试</string>
   <string name="system_notice_interrupted">任务已中断。已保留部分输出，未自动重试尚未完成的操作。</string>
   <string name="system_notice_subagent_notified">子 Agent 的结果已交给主 Agent</string>
+  <string name="subagent_wake_prompt">[Eta 系统] 后台的子 Agent 有了新结果（见下一条通知）。请据此继续之前的任务；已经可以给出结论时，直接向用户汇报。</string>
   <string name="tool_status_unknown">结果未知</string>
   <string name="voice_listening">聆听中...</string>
   <string name="voice_processing">正在处理…</string>

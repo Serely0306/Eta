@@ -3,7 +3,9 @@ package io.github.mangi.eta.ui.model
 import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentTraceFormatter
+import io.github.mangi.eta.agent.runtime.AgentSubagentManager
 import io.github.mangi.eta.agent.runtime.AgentSubagentTool
+import io.github.mangi.eta.data.db.ConversationSubagentSummary
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -58,6 +60,34 @@ internal object SubagentDetails {
                     .map { ConversationSubagentUi(ids.first, ids.second, it) }
             }
     }
+
+    /**
+     * AG-19 会话级子 Agent 的侧栏条目，按会话分组、按派出顺序。已中断与已关闭的显示为未知状态，
+     * 任务前带上名字（没起名时就是编号）。
+     */
+    fun fromRegistry(rows: List<ConversationSubagentSummary>): Map<String, List<ConversationSubagentUi>> =
+        rows.groupBy { it.conversationId }.mapValues { (conversationId, agents) ->
+            agents.mapIndexed { index, row ->
+                ConversationSubagentUi(
+                    runId = "",
+                    toolCallId = row.agentId,
+                    conversationId = conversationId,
+                    agentId = row.agentId,
+                    progress = SubagentProgressUi(
+                        index = index,
+                        total = agents.size,
+                        status = when (row.status) {
+                            AgentSubagentManager.STATUS_RUNNING -> ToolActivityStatusUi.Running
+                            AgentSubagentManager.STATUS_COMPLETED -> ToolActivityStatusUi.Success
+                            AgentSubagentManager.STATUS_FAILED -> ToolActivityStatusUi.Failed
+                            else -> ToolActivityStatusUi.Unknown
+                        },
+                        task = if (row.name == row.agentId) row.task else "${row.name} · ${row.task}",
+                        conclusion = row.lastError.ifBlank { row.lastResult },
+                    ),
+                )
+            }
+        }
 
     /**
      * 子 Agent 过程转成与主会话相同的思考、正文与工具行；首条用户消息是任务，不重复显示。

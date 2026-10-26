@@ -46,8 +46,11 @@ import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.OpenAiResponsesProvider
 import io.github.mangi.eta.agent.overlay.toolDisplayName
+import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.runtime.AgentRunCheckpointStore
+import io.github.mangi.eta.agent.runtime.AgentSubagentManager
 import io.github.mangi.eta.agent.runtime.SubagentTranscriptStore
+import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.ui.markdown.MarkdownTone
 import io.github.mangi.eta.ui.markdown.StaticMarkdown
 import io.github.mangi.eta.ui.model.AgentChatMessageUi
@@ -506,6 +509,27 @@ internal fun subagentCountsLine(subagents: List<SubagentProgressUi>): String = b
     if (failed > 0) add(stringResource(R.string.subagent_count_failed, failed))
 }.joinToString(" · ")
 
+/** 会话级子 Agent 的过程记录：任务、全部回合的上下文、最近一次结论。 */
+private suspend fun loadRegistryRecord(
+    context: android.content.Context,
+    rowId: String,
+    progress: SubagentProgressUi,
+): SubagentTranscriptStore.Record? {
+    val row = runCatching { EtaDatabase.get(context).subagentDao().agent(rowId) }.getOrNull() ?: return null
+    return SubagentTranscriptStore.Record(
+        runId = "",
+        toolCallId = row.agentId,
+        index = progress.index,
+        total = progress.total,
+        task = row.task,
+        ok = row.status == AgentSubagentManager.STATUS_COMPLETED,
+        result = row.lastError.ifBlank { row.lastResult },
+        createdAt = row.createdAt,
+        transcript = AgentConversationCodec.decodeTranscript(row.transcriptJson),
+        running = row.status == AgentSubagentManager.STATUS_RUNNING,
+    )
+}
+
 /**
  * 一个子 Agent 的过程：任务、思考、正文与工具行（工具同样可展开、看详情），最后是结论。
  * 运行中按轮读取快照，每隔一会儿刷新，并在看到末尾时跟随到最新一轮。
@@ -518,15 +542,18 @@ internal fun SubagentTranscriptDialog(
     show: Boolean,
     onDismissRequest: () -> Unit,
     onDismissFinished: () -> Unit,
+    /** AG-19 会话级子 Agent：过程（跨回合）从库里的上下文读取。 */
+    agentRowId: String? = null,
 ) {
     val context = LocalContext.current
     var record by remember { mutableStateOf<SubagentTranscriptStore.Record?>(null) }
     var loaded by remember { mutableStateOf(false) }
     val liveRun = progress.status == ToolActivityStatusUi.Running
-    LaunchedEffect(runId, toolCallId, progress.index, liveRun) {
+    LaunchedEffect(runId, toolCallId, progress.index, liveRun, agentRowId) {
         while (true) {
             val next = withContext(Dispatchers.IO) {
-                SubagentTranscriptStore.load(context, runId, toolCallId, progress.index)
+                if (agentRowId != null) loadRegistryRecord(context, agentRowId, progress)
+                else SubagentTranscriptStore.load(context, runId, toolCallId, progress.index)
             }
             record = next
             loaded = true

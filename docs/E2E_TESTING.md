@@ -290,7 +290,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 
 子 Agent 的模型请求同样发往 Mock 服务：剧本在主 Agent 的 `spawn_agent` 的 `task` 里写入标记（如 `[E2E:sub-1]`），Mock 据此为子 Agent 选剧本。
 
-AG-19 起子 Agent 是会话级的（`spawn_agent`、`send_agent`、`wait_agents`、`list_agents`、`stop_agent`、`close_agent`）。J10–J16 针对旧版 `run_subagents` 留下的记录，新版的子 Agent 列表与过程查看在 AG-19 阶段 B 落地后改写。
+AG-19 起子 Agent 是会话级的（`spawn_agent`、`send_agent`、`wait_agents`、`list_agents`、`stop_agent`、`close_agent`）。J10–J16 针对旧版 `run_subagents` 留下的记录（旧会话照旧显示）；新版的侧栏列表、过程查看、自动唤醒与备份见 J23–J26。
 
 | ID | 场景 | 断言 |
 |---|---|---|
@@ -311,10 +311,14 @@ AG-19 起子 Agent 是会话级的（`spawn_agent`、`send_agent`、`wait_agents
 | J16 `R` | 一个会话分 3 批派子 Agent（每批 2 个），批次之间多聊几轮，让消息超过一页（128 条）；冷启动后在侧栏展开它的子 Agent；再点开会话后展开 | 两次都按派出顺序列出 6 个子 Agent，每个的任务与结论对应自己那一批（服务商每轮都用 `call_0` 时也不串）；点开会话后子 Agent 标记不消失 |
 | J17 `M` | 第 1 轮 `spawn_agent` 派出 `log_scan` 查一个目录并等它结束；第 2 轮用户追问，主 Agent `send_agent` 让 `log_scan` 再查另一个目录 | 第 2 轮子 Agent 的请求带着第 1 轮的上下文，模型会话 id 相同（缓存可命中）；`list_agents` 显示 `log_scan` 回合数为 2 |
 | J18 `M` | 主 Agent 派出子 Agent 后不等待，继续调用其他工具；子 Agent 在主 Agent 的下一轮开始前完成 | 下一轮请求里多一条 `<subagent_notification>` 用户消息（不是“用户补充指令”）；对话里出现“子 Agent 的结果已交给主 Agent”的系统提示；同一结论只出现一次 |
-| J19 `M` | 主 Agent 写最终回答时子 Agent 恰好完成；另测一次主 run 已结束后子 Agent 才完成 | 前者主 run 不结束，多一轮处理通知后再回答；后者通知留在库里，下一个 run 开始时交给主 Agent（自动唤醒在阶段 B） |
+| J19 `M` | 主 Agent 写最终回答时子 Agent 恰好完成；另测一次主 run 已结束、App 不在前台时子 Agent 才完成 | 前者主 run 不结束，多一轮处理通知后再回答；后者由 J24 的自动唤醒处理，进程被杀则见 J25 |
 | J20 `M` | `wait_agents` 等待中用户在输入框追加一条要求；另测一次等待超时 | 前者立即返回 `interrupted_by_user=true`，主 Agent 处理追加要求；后者 `timed_out=true`，子 Agent 继续运行 |
 | J21 `M` | 一个会话同时运行 4 个子 Agent 后再派第 5 个；`close_agent` 一个后再 `send_agent` 给它 | 第 5 个返回 `SUBAGENT_LIMIT`；关闭后发消息返回 `SUBAGENT_CLOSED` |
 | J22 `R` | 子 Agent 运行中强停 Eta，重新打开后让主 Agent `list_agents`，再 `send_agent` 给它 | 状态为已中断；继续后带着之前的上下文完成 |
+| J23 `R` | App 会话里派出两个子 Agent（一个起名），运行中与结束后各打开一次侧栏，展开该会话的子 Agent 并点开过程；之后 `send_agent` 给其中一个再看一次 | 侧栏按派出顺序列出两个，名字、状态与任务正确，运行中约 1 秒内跟着更新；过程弹窗显示该子 Agent 全部回合（第二回合接在第一回合之后），结束后显示结论；不必先打开会话 |
+| J24 `M` | 主 Agent 派出子 Agent 后直接结束回答；子 Agent 随后完成 | 会话自动开始新一轮：对话里出现“子 Agent 的结果已交给主 Agent”的系统提示（没有用户气泡），主 Agent 基于结论继续回答；通知只交一次 |
+| J25 `R` | 子 Agent 完成时 Eta 已被划掉（通知未交出），之后重新打开 Eta | 启动后自动唤醒该会话处理结论；电脑端、小爱会话的通知在该会话下一次任务开始时交出 |
+| J26 `R` | 有子 Agent 的会话导出 Eta 备份，删除会话后导入该备份；再导入一份旧版本备份 | 导入后侧栏仍列出子 Agent，`send_agent` 可以接着用；导入旧备份后设备上的子 Agent 被清空，不残留指向已不存在会话的记录 |
 | J13 `R` | 删除 J10 所在会话；另把一个过程文件的修改时间改到 31 天前后再派一次子 Agent | 会话删除后对应 run 的过程目录被删除；过期目录在下一次保存时被清理 |
 
 ### K. 模型回退链

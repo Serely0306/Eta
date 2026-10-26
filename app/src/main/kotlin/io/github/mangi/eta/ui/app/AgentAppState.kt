@@ -55,6 +55,7 @@ import io.github.mangi.eta.data.model.ProviderSetting
 import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.repository.EtaBackupRepository
+import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.repository.EtaBackupSummary
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
@@ -155,6 +156,8 @@ internal class AgentAppState(
     private val subagentCache = mutableMapOf<String, Triple<List<AgentChatMessageUi>, List<AgentModelClient.ConversationMessage>, List<ConversationSubagentUi>>>()
     // 存储里派出过子 Agent 的会话：未加载的会话只有预览，靠它在侧栏显示入口，展开时再加载。
     private var storedSubagentConversationIds: Set<String> = emptySet()
+    // AG-19 起的会话级子 Agent（按会话），侧栏直接从注册表读，不依赖会话是否加载。
+    private var registrySubagents: Map<String, List<ConversationSubagentUi>> = emptyMap()
     // 只加载了最近几页的会话，库里全部工具行（按加载窗口的第一条消息记版本，窗口变了就重查），
     // 让侧栏也能列出更早批次的子 Agent。
     private val storedToolRows = mutableMapOf<String, Pair<String?, List<ToolActivityMessageUi>>>()
@@ -180,6 +183,7 @@ internal class AgentAppState(
     init {
         refreshConversationSummaries()
         loadStoredSubagentConversations()
+        observeSubagentRegistry()
         observeRuntimeSelection()
         observeDefaultReasoningEffort()
         runtimeRecoveryInProgress.set(true)
@@ -2489,7 +2493,11 @@ internal class AgentAppState(
         )
     }
 
-    private fun conversationSubagents(conversationId: String, state: AgentChatHomeUiState): List<ConversationSubagentUi> {
+    /** 旧版 `run_subagents` 留下的子 Agent（从会话记录还原）在前，AG-19 的会话级子 Agent（注册表）在后。 */
+    private fun conversationSubagents(conversationId: String, state: AgentChatHomeUiState): List<ConversationSubagentUi> =
+        legacySubagents(conversationId, state) + registrySubagents[conversationId].orEmpty()
+
+    private fun legacySubagents(conversationId: String, state: AgentChatHomeUiState): List<ConversationSubagentUi> {
         // 释放后的会话只剩最后一条消息，沿用它加载时算出的结果；从未加载过的由侧栏展开时加载。
         if (!state.isConversationLoaded) return subagentCache[conversationId]?.third.orEmpty()
         val journal = state.journal.ifEmpty { state.history }
@@ -2501,6 +2509,61 @@ internal class AgentAppState(
         subagentCache.keys.retainAll(conversationsById.keys)
         subagentCache[conversationId] = Triple(state.messages, journal, subagents)
         return subagents
+    }
+
+    /**
+     * 会话级子 Agent（AG-19）：变化时（去抖）重读注册表摘要刷新侧栏；主对话已结束时，
+     * 子 Agent 的结果由这里自动开一个 run 交给主 Agent。启动时补唤醒上次没来得及处理的会话。
+     */
+    private fun observeSubagentRegistry() {
+        val manager = AgentSubagentManager.get(appContext)
+        manager.wakeListener = { conversationId -> scope.launch(Dispatchers.Main) { wakeForSubagents(conversationId) } }
+        scope.launch {
+            manager.revision.collectLatest {
+                delay(SUBAGENT_REGISTRY_REFRESH_MS)
+                val summaries = withContext(Dispatchers.IO) {
+                    runCatching { EtaDatabase.get(appContext).subagentDao().summaries() }.getOrDefault(emptyList())
+                }
+                withContext(Dispatchers.Main) {
+                    registrySubagents = SubagentDetails.fromRegistry(summaries)
+                    refreshConversationSummaries()
+                }
+            }
+        }
+        scope.launch {
+            val pending = withContext(Dispatchers.IO) { runCatching { manager.conversationsWithUndeliveredMail() }.getOrDefault(emptyList()) }
+            pending.forEach { conversationId -> withContext(Dispatchers.Main) { wakeForSubagents(conversationId) } }
+        }
+    }
+
+    /** 只唤醒 App 里的普通会话；正在运行、正被删除或已没有待处理通知时不动。 */
+    private suspend fun wakeForSubagents(conversationId: String) {
+        if (conversationId !in conversationsById || conversationId in pendingConversationDeletes) return
+        if (runStore.activeRunId(conversationId) != null) return
+        val pending = withContext(Dispatchers.IO) {
+            runCatching { EtaDatabase.get(appContext).subagentDao().undeliveredMailCount(conversationId) }.getOrDefault(0)
+        }
+        if (pending == 0) return
+        withLoadedConversations(setOf(conversationId)) {
+            withContext(Dispatchers.Main) {
+                val state = conversationsById[conversationId] ?: return@withContext
+                if (runStore.activeRunId(conversationId) != null || state.isStreaming) return@withContext
+                val runId = "run-${UUID.randomUUID()}"
+                val prompt = appContext.getString(R.string.subagent_wake_prompt)
+                // 不加用户气泡：通知本身在 run 开始时交给主 Agent，界面显示为系统提示。
+                launchConversationRun(
+                    conversationId = conversationId,
+                    runId = runId,
+                    prompt = prompt,
+                    images = emptyList(),
+                    history = state.history,
+                    userHistoryMessage = AgentModelClient.buildUserHistoryMessage(prompt, emptyList()).copy(messageId = "user-$runId"),
+                    messages = state.messages,
+                    state = state,
+                    reasoningEffort = state.reasoningEffort,
+                )
+            }
+        }
     }
 
     /** 有更早的页没加载、且可能派过子 Agent 时，从库里补全部工具行；查完清掉缓存重算一次。 */
@@ -2615,6 +2678,8 @@ internal class AgentAppState(
         const val MAX_PREVIEW_CHARS = 48
         const val LEGACY_STOPPED_ERROR = "已停止"
         const val SYNTHETIC_STATUS_STOPPED = "eta_status:stopped"
+        /** 子 Agent 每轮都会落盘，侧栏只需去抖后刷新。 */
+        const val SUBAGENT_REGISTRY_REFRESH_MS = 800L
 
         fun emptyChatState(thinkingEnabled: Boolean): AgentChatHomeUiState =
             AgentChatHomeUiState(

@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.SportsBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import io.github.mangi.eta.data.db.ConversationSubagentEntity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -288,12 +289,15 @@ internal fun ConversationPanePanel(
     }
     openedSubagent?.let { opened ->
         val subagent = state.conversations.asSequence().flatMap { it.subagents.asSequence() }.firstOrNull {
-            it.runId == opened.runId && it.toolCallId == opened.toolCallId && it.progress.index == opened.progress.index
+            it.conversationId == opened.conversationId && it.runId == opened.runId &&
+                it.toolCallId == opened.toolCallId && it.progress.index == opened.progress.index
         } ?: opened
         SubagentTranscriptDialog(
             runId = subagent.runId,
             toolCallId = subagent.toolCallId,
             progress = subagent.progress,
+            agentRowId = subagent.agentId.takeIf(String::isNotBlank)
+                ?.let { ConversationSubagentEntity.rowId(subagent.conversationId, it) },
             show = showSubagent,
             onDismissRequest = { showSubagent = false },
             onDismissFinished = { openedSubagent = null },

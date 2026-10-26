@@ -55,8 +55,47 @@ internal data class ConversationSubagentMailEntity(
     @ColumnInfo(name = "delivered_run_id") val deliveredRunId: String?,
 )
 
+/** 侧栏列表用的摘要：不带上下文。 */
+internal data class ConversationSubagentSummary(
+    @ColumnInfo(name = "id") val id: String,
+    @ColumnInfo(name = "conversation_id") val conversationId: String,
+    @ColumnInfo(name = "agent_id") val agentId: String,
+    @ColumnInfo(name = "name") val name: String,
+    @ColumnInfo(name = "task") val task: String,
+    @ColumnInfo(name = "status") val status: String,
+    @ColumnInfo(name = "turn") val turn: Int,
+    @ColumnInfo(name = "last_result") val lastResult: String,
+    @ColumnInfo(name = "last_error") val lastError: String,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+)
+
 @Dao
 internal interface SubagentDao : ChunkedTextDao {
+    @Query("SELECT id, conversation_id, agent_id, name, task, status, turn, last_result, last_error, created_at " +
+        "FROM conversation_subagents ORDER BY conversation_id ASC, created_at ASC, agent_id ASC")
+    suspend fun summaries(): List<ConversationSubagentSummary>
+
+    @Query("SELECT * FROM conversation_subagents WHERE id = :id")
+    suspend fun agentRow(id: String): ConversationSubagentEntity?
+
+    @Transaction
+    suspend fun agent(id: String): ConversationSubagentEntity? = agentRow(id)?.let { restoreAgent(it) }
+
+    @Query("SELECT * FROM conversation_subagents ORDER BY id ASC LIMIT :limit OFFSET :offset")
+    suspend fun agentRowsPage(limit: Int, offset: Int): List<ConversationSubagentEntity>
+
+    @Query("SELECT * FROM conversation_subagent_mail ORDER BY id ASC LIMIT :limit OFFSET :offset")
+    suspend fun mailPage(limit: Int, offset: Int): List<ConversationSubagentMailEntity>
+
+    @Query("DELETE FROM conversation_subagents")
+    suspend fun deleteAllAgents()
+
+    @Query("DELETE FROM conversation_subagent_mail")
+    suspend fun deleteAllMail()
+
+    @Insert(onConflict = androidx.room.OnConflictStrategy.REPLACE)
+    suspend fun restoreMail(mail: ConversationSubagentMailEntity)
+
     @Query("SELECT * FROM conversation_subagents WHERE conversation_id = :conversationId ORDER BY created_at ASC, agent_id ASC")
     suspend fun agentRows(conversationId: String): List<ConversationSubagentEntity>
 
@@ -92,6 +131,9 @@ internal interface SubagentDao : ChunkedTextDao {
 
     @Query("SELECT DISTINCT conversation_id FROM conversation_subagent_mail WHERE delivered_run_id IS NULL")
     suspend fun conversationsWithUndeliveredMail(): List<String>
+
+    @Query("SELECT COUNT(*) FROM conversation_subagent_mail WHERE conversation_id = :conversationId AND delivered_run_id IS NULL")
+    suspend fun undeliveredMailCount(conversationId: String): Int
 
     @Query("DELETE FROM conversation_subagents WHERE conversation_id = :conversationId")
     suspend fun deleteAgents(conversationId: String)

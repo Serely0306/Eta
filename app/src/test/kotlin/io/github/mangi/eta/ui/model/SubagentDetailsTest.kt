@@ -69,6 +69,32 @@ class SubagentDetailsTest {
     }
 
     @Test
+    fun sessionSubagentsFromTheRegistryAreGroupedPerConversationInSpawnOrder() {
+        fun row(conversation: String, agent: String, name: String, status: String, result: String = "", error: String = "") =
+            io.github.mangi.eta.data.db.ConversationSubagentSummary(
+                id = "$conversation|$agent", conversationId = conversation, agentId = agent, name = name,
+                task = "任务 $agent", status = status, turn = 1, lastResult = result, lastError = error, createdAt = 1,
+            )
+        val grouped = SubagentDetails.fromRegistry(listOf(
+            row("conv-a", "sub_1", "log_scan", "completed", result = "无异常"),
+            row("conv-a", "sub_2", "sub_2", "running"),
+            row("conv-b", "sub_1", "sub_1", "interrupted", error = ""),
+            row("conv-a", "sub_3", "sub_3", "failed", error = "超时"),
+        ))
+
+        val a = grouped.getValue("conv-a")
+        assertEquals(listOf("sub_1", "sub_2", "sub_3"), a.map { it.agentId })
+        assertEquals(listOf("log_scan · 任务 sub_1", "任务 sub_2", "任务 sub_3"), a.map { it.progress.task })
+        assertEquals(
+            listOf(ToolActivityStatusUi.Success, ToolActivityStatusUi.Running, ToolActivityStatusUi.Failed),
+            a.map { it.progress.status },
+        )
+        assertEquals(listOf("无异常", "", "超时"), a.map { it.progress.conclusion })
+        assertEquals(ToolActivityStatusUi.Unknown, grouped.getValue("conv-b").single().progress.status)
+        assertEquals("conv-b", grouped.getValue("conv-b").single().conversationId)
+    }
+
+    @Test
     fun earlierBatchesOutsideTheLoadedPageComeFromStoredToolRows() {
         // 三批都用 call_0（有的服务商每轮从 call_0 编号）；只加载了最后一页，前两批只在库里。
         fun batch(task: String, result: String) = listOf(

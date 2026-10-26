@@ -6,6 +6,9 @@ import io.github.mangi.eta.data.db.ConversationContextCheckpointEntity
 import io.github.mangi.eta.data.db.ConversationEntity
 import io.github.mangi.eta.data.db.ConversationMessageEntity
 import io.github.mangi.eta.data.db.ConversationStateEntity
+import io.github.mangi.eta.data.db.ConversationSubagentEntity
+import io.github.mangi.eta.data.db.ConversationSubagentMailEntity
+import io.github.mangi.eta.agent.runtime.AgentSubagentManager
 import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.db.ModelUsageRecordEntity
 import io.github.mangi.eta.data.db.ProviderEntity
@@ -46,6 +49,9 @@ internal data class EtaBackupDocument(
     val memoryMd: String = "",
     val roleplay: CharacterBackupData? = null,
     val usageRecords: List<ModelUsageRecordEntity> = emptyList(),
+    /** AG-19：会话级子 Agent（含上下文）与它们的通知；旧备份没有时，导入后会话里没有子 Agent。 */
+    val subagents: List<ConversationSubagentEntity> = emptyList(),
+    val subagentMail: List<ConversationSubagentMailEntity> = emptyList(),
 ) {
     companion object {
         const val FORMAT = "eta-backup"
@@ -135,6 +141,18 @@ internal object EtaBackupRepository {
                         writer.record(ModelUsageRecordEntity.serializer(), row)
                     }
                     writer.endArray()
+                    phase = "export_subagents"
+                    val subagentDao = database.subagentDao()
+                    writer.beginArray(EtaBackupJsonStreams.SUBAGENTS)
+                    exportRows({ subagentDao.agentRowsPage(EXPORT_PAGE_SIZE, it) }) { raw ->
+                        writer.record(ConversationSubagentEntity.serializer(), subagentDao.restoreAgent(raw))
+                    }
+                    writer.endArray()
+                    writer.beginArray(EtaBackupJsonStreams.SUBAGENT_MAIL)
+                    exportRows({ subagentDao.mailPage(EXPORT_PAGE_SIZE, it) }) { row ->
+                        writer.record(ConversationSubagentMailEntity.serializer(), row)
+                    }
+                    writer.endArray()
                     phase = "export_roleplay"
                     val roleplay = CharacterBackupTransfer.snapshot(appContext, boundAvatars)
                     writer.value("roleplay", CharacterBackupData.serializer().nullable, roleplay)
@@ -215,6 +233,19 @@ internal object EtaBackupRepository {
                                     usageDao.insertAll(listOf(it))
                                 }
                             }
+                            // 会话已整体替换：设备上的子 Agent 随之清空，备份里有的再恢复。
+                            phase = "restore_subagents"
+                            val subagentDao = database.subagentDao()
+                            subagentDao.deleteAllAgents()
+                            subagentDao.deleteAllMail()
+                            staged.subagents {
+                                cancellation.ensureActive()
+                                subagentDao.upsertAgent(it)
+                            }
+                            staged.subagentMail {
+                                cancellation.ensureActive()
+                                subagentDao.restoreMail(it)
+                            }
                             phase = "restore_roleplay"
                             document.roleplay?.let { roleplay ->
                                 database.characterDao().replaceAll(
@@ -243,6 +274,7 @@ internal object EtaBackupRepository {
                         throw failure
                     }
                     onCommitted()
+                    runCatching { AgentSubagentManager.get(appContext).forgetAll() }
                     try {
                         phase = "clear_provider_credentials"
                         credentialIds.forEach(forgetCredentials)
