@@ -19,6 +19,32 @@ import org.junit.Test
 
 class AgentRunMessageProjectorTest {
     @Test
+    fun thinkingTotalSumsTheWaitBeforeEachRoundsFirstOutputWhenTheRunReasoned() {
+        var now = 0L
+        val projector = AgentRunMessageProjector { now }
+        fun apply(event: AgentEvent, messages: List<AgentChatMessageUi>) = projector.applyEvent("run", event, messages)
+        var messages: List<AgentChatMessageUi> = emptyList()
+        now = 1_000; messages = apply(AgentEvent.ProviderRequestStarted(1), messages)
+        // 第 1 轮服务商没有返回思考摘要，3 秒后直接调用工具；用量里有推理 token。
+        now = 4_000; messages = apply(AgentEvent.ToolStarted(1, "call-1", "terminal", "{}"), messages)
+        messages = apply(AgentEvent.UsageReceived(1, AgentTokenUsage(reasoningTokens = 120)), messages)
+        now = 5_000; messages = apply(AgentEvent.ProviderRequestStarted(2), messages)
+        now = 7_500; messages = apply(AgentEvent.AssistantBlockStart(2, AgentEvent.AssistantBlockKind.TEXT, 0), messages)
+        messages = apply(AgentEvent.AssistantBlockDelta(2, AgentEvent.AssistantBlockKind.TEXT, 0, 2, "答复"), messages)
+        messages = apply(AgentEvent.RunFinished(2, 2), messages)
+        assertEquals(5, messages.filterIsInstance<AgentMessageUi>().last().thinkingSeconds)
+
+        // 没有推理的 run 不显示思考用时。
+        val plain = AgentRunMessageProjector { now }
+        var other: List<AgentChatMessageUi> = emptyList()
+        now = 10_000; other = plain.applyEvent("plain", AgentEvent.ProviderRequestStarted(1), other)
+        now = 13_000; other = plain.applyEvent("plain", AgentEvent.AssistantBlockStart(1, AgentEvent.AssistantBlockKind.TEXT, 0), other)
+        other = plain.applyEvent("plain", AgentEvent.AssistantBlockDelta(1, AgentEvent.AssistantBlockKind.TEXT, 0, 1, "好"), other)
+        other = plain.applyEvent("plain", AgentEvent.RunFinished(1, 1), other)
+        assertEquals(null, other.filterIsInstance<AgentMessageUi>().last().thinkingSeconds)
+    }
+
+    @Test
     fun searchSuggestionsBindToExactTextBlockAndDoNotPersistIntoAnotherRun() {
         val projector = AgentRunMessageProjector { 1_000L }
         var messages = projector.appendTextDelta("run", 1, 0, "第一段", emptyList())

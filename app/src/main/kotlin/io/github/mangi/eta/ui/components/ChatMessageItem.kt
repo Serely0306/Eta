@@ -606,9 +606,12 @@ private fun AgentMessageBlock(
         }
         when {
             message.content.isBlank() && message.isStreaming -> {
-                AITypingIndicator(
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+                // 聊天页由列表底部的“思考中 · Xs”表示等待（AG-28）；浮层没有那一行，仍显示跳动的点。
+                if (assistantOverlay) {
+                    AITypingIndicator(
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
             }
             streamingState != null && !revealComplete -> {
                 StreamingMarkdown(
@@ -710,6 +713,15 @@ private fun AgentMessageBlock(
                             onSelect = onSelectCandidate,
                         )
                     }
+                }
+                // 本次回答的思考总用时（AG-28），小字放在操作行末尾；推理 token 只记在用量里。
+                message.thinkingSeconds?.let { seconds ->
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = stringResource(R.string.thinking_total_seconds, seconds),
+                        style = MiuixTheme.textStyles.footnote2,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
                 }
             }
         }

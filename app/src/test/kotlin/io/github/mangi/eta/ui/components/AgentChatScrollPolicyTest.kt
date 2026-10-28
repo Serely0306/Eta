@@ -7,6 +7,22 @@ import org.junit.Test
 
 class AgentChatScrollPolicyTest {
     @Test
+    fun waitingRowShowsOnlyWhileNoOutputIsArriving() {
+        val user = io.github.mangi.eta.ui.model.UserMessageUi(id = "u", content = "问")
+        val placeholder = io.github.mangi.eta.ui.model.AgentMessageUi(id = "a", content = "", isStreaming = true)
+        val streaming = placeholder.copy(content = "正在回答")
+        val runningTool = io.github.mangi.eta.ui.model.ToolActivityMessageUi(
+            "t", "terminal", io.github.mangi.eta.ui.model.ToolActivityStatusUi.Running, "",
+        )
+        assertFalse(isWaitingForModel(emptyList()))
+        assertTrue(isWaitingForModel(listOf(user)))
+        assertTrue(isWaitingForModel(listOf(user, placeholder)))
+        assertFalse(isWaitingForModel(listOf(user, streaming)))
+        assertFalse(isWaitingForModel(listOf(user, runningTool)))
+        assertTrue(isWaitingForModel(listOf(user, runningTool.copy(status = io.github.mangi.eta.ui.model.ToolActivityStatusUi.Success))))
+    }
+
+    @Test
     fun historyPagingRunsDuringAStreamOnlyAfterTheUserLeavesTheBottom() {
         assertTrue(historyPagingEnabled(isStreaming = false, keepBottomAnchored = true))
         assertTrue(historyPagingEnabled(isStreaming = false, keepBottomAnchored = false))

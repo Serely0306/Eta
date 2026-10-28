@@ -442,6 +442,8 @@ internal object AgentConversationStore {
                         outputTokens = usage?.outputTokens,
                         reasoningTokens = usage?.reasoningTokens,
                         cachedTokens = usage?.cachedTokens,
+                        // 回答行本来不用这一列；用来保存本次回答的思考总用时（AG-28）。
+                        elapsedSeconds = thinkingSeconds,
                     )
                 }
             }
@@ -513,6 +515,7 @@ internal object AgentConversationStore {
                     reasoningTokens = reasoningTokens,
                     cachedTokens = cachedTokens,
                 ).takeUnless { it.isEmpty },
+                thinkingSeconds = elapsedSeconds,
             )
 
             TYPE_SYSTEM_NOTICE -> SystemNoticeCode.fromWireValue(content)?.let { code ->

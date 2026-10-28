@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -50,6 +51,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -95,7 +97,9 @@ import io.github.mangi.eta.ui.model.MessageEditUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
 import io.github.mangi.eta.ui.model.PendingImageUi
 import io.github.mangi.eta.ui.model.QueuedMessageUi
+import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
+import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
@@ -104,7 +108,9 @@ import io.github.mangi.eta.ui.voice.SpeechAutoReadAloud
 import io.github.mangi.eta.ui.voice.SpeechPlaybackHost
 import kotlin.math.exp
 import kotlin.math.min
+import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -460,6 +466,7 @@ private fun AgentChatScaffold(
                 historyLoadState = historyLoadState,
                 onLoadEarlierMessages = onLoadEarlierMessages,
                 onHistoryViewportChanged = onHistoryViewportChanged,
+                thinkingEnabled = reasoningEffort.enablesReasoning,
                 modifier = Modifier
                     .fillMaxSize()
                     .then(if (frostEnabled) Modifier.layerBackdrop(messageBackdrop) else Modifier),
@@ -493,6 +500,8 @@ internal fun AgentConversationMessages(
     historyLoadState: ConversationHistoryLoadState = ConversationHistoryLoadState.Idle,
     onLoadEarlierMessages: () -> Unit = {},
     onHistoryViewportChanged: (Boolean) -> Unit = {},
+    /** 本会话是否开启了思考：等待行写“思考中”还是“等待模型”（AG-28）。 */
+    thinkingEnabled: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     // 上一版条目只作复用比对，不参与组合观察。
@@ -501,6 +510,9 @@ internal fun AgentConversationMessages(
         visibleMessages.toTimelineEntries(previous = previousTimelineEntries[0])
     }
     SideEffect { previousTimelineEntries[0] = timelineEntries }
+    // 请求已发出、还没有可见输出时，列表底部一行“思考中 · Xs”（AG-28）；不进消息流、不落库。
+    val showWaitingRow = isStreaming && !assistantOverlay && isWaitingForModel(visibleMessages)
+    val waitingKey = visibleMessages.lastOrNull()?.let { "${it.id}:${(it as? ToolActivityMessageUi)?.status}" }
     val activeWorkProcessKey = if (isStreaming) {
         (timelineEntries.lastOrNull() as? AgentTimelineEntry.WorkProcess)?.key
     } else {
@@ -531,7 +543,7 @@ internal fun AgentConversationMessages(
             }
     }
     val earlierMessagesItemCount = if (hasEarlierMessages) 1 else 0
-    val bottomItemIndex = timelineEntries.size + earlierMessagesItemCount
+    val bottomItemIndex = timelineEntries.size + earlierMessagesItemCount + (if (showWaitingRow) 1 else 0)
     val isUserDragging by scrollState.interactionSource.collectIsDraggedAsState()
     val isAtBottom by remember(scrollState) {
         derivedStateOf { !scrollState.canScrollForward }
@@ -826,6 +838,9 @@ internal fun AgentConversationMessages(
                         )
                     }
                 }
+            }
+            if (showWaitingRow) {
+                item(key = ChatModelWaitingKey) { ModelWaitingRow(thinkingEnabled = thinkingEnabled, sinceKey = waitingKey) }
             }
             item(key = ChatBottomSentinelKey) {
                 Spacer(
@@ -1184,6 +1199,47 @@ internal fun resolveKeepBottomAnchored(
     isUserDragging -> isAtBottom
     isAtBottom -> true
     else -> current
+}
+
+private const val ChatModelWaitingKey = "agent-chat-model-waiting"
+
+/**
+ * 是否正在等模型的下一段输出（AG-28）：请求发出后、还没有正文、思考摘要或工具开始时为真。
+ * 服务商多数轮次不返回思考摘要，所以用这一行表示“在想”，而不是给每轮补空的思考块。
+ */
+internal fun isWaitingForModel(messages: List<AgentChatMessageUi>): Boolean = when (val last = messages.lastOrNull()) {
+    null -> false
+    is AgentMessageUi -> last.isStreaming && last.content.isBlank()
+    is ThinkingMessageUi -> !last.isStreaming
+    is ToolActivityMessageUi -> last.status != ToolActivityStatusUi.Running
+    is SystemNoticeMessageUi -> !last.running
+    is UserMessageUi -> true
+    else -> false
+}
+
+/** “思考中 · 12 秒”：从这一段等待开始计时，每秒刷新；出现输出后整行消失。 */
+@Composable
+private fun ModelWaitingRow(thinkingEnabled: Boolean, sinceKey: Any?) {
+    val startedAt = remember(sinceKey) { SystemClock.elapsedRealtime() }
+    var seconds by remember(sinceKey) { mutableIntStateOf(0) }
+    LaunchedEffect(sinceKey) {
+        while (true) {
+            seconds = ((SystemClock.elapsedRealtime() - startedAt) / 1000).toInt()
+            delay(1_000)
+        }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AITypingIndicator()
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = stringResource(if (thinkingEnabled) R.string.model_waiting_thinking else R.string.model_waiting_response, seconds),
+            style = MiuixTheme.textStyles.footnote1,
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+        )
+    }
 }
 
 /** 历史分页是否可用（AG-29）：没有运行时总可用；运行中只在用户离开底部、不再跟随新内容时可用。 */

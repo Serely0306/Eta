@@ -75,6 +75,8 @@ data class AgentMessageUi(
     val selectedCandidate: Int = 0,
     /** 仅当前内存会话展示，不进入消息存储、归档与导出。 */
     val searchSuggestionsHtml: List<String> = emptyList(),
+    /** 本次回答里模型思考的总用时（AG-28）：只记在回答的最后一段，有推理时才有。 */
+    val thinkingSeconds: Int? = null,
 ) : AgentChatMessageUi
 
 enum class SystemNoticeCode(val wireValue: String) {
