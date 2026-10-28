@@ -226,7 +226,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | E4 `M` | `terminal` 的 `close` 不带 `session_id` | 返回 `INVALID_ARGUMENT`，说明关闭会话需要 `session_id` |
 | E5 `M` | `terminal_job` start 一个运行 90 秒的命令，随即结束回复；之后 list、read、stop | start 立即返回 job_id；回复结束后命令仍在运行；read 的 `output` 显示日志；stop 后状态为已停止；正常完成时发系统通知；工具说明与参数里不再有 wait（旧调用仍可执行） |
 | E6 `R` | 工具页先只关闭“后台命令”卡片，再关闭“终端命令”卡片 | 只关后台命令时 `terminal` 仍可用；关闭终端命令后 `terminal_job`、`terminal_daemon` 一并从工具列表消失，卡片显示依赖终端命令；电脑端 MCP 的 `tools/list` 同样不再列出 |
-| E8 `M` | 主 Agent `terminal_job` start 一个约 5 秒、输出几行的命令后直接结束回答 | 命令结束后会话自动开始新一轮（工具页“自动继续”为开时）：对话里出现“后台命令 <说明>（job_…） 完成（退出码 0）”的系统提示，模型收到 `<background_command_notification>`，带状态、退出码与日志末尾；系统通知照常 |
+| E8 `M` | 主 Agent `terminal_job` start 一个约 5 秒、输出几行的命令后直接结束回答 | 命令结束后会话自动开始新一轮（工具页“自动继续”为开时）：对话里出现“后台命令 <说明>（job_…） 完成（退出码 0）”的通知卡片，模型收到 `<background_command_notification>`，带状态、退出码与日志末尾；通知栏不再弹“后台命令已完成”（子 Agent 或电脑端直调启动的命令仍弹） |
 | E9 `M` | 主 run 运行中后台命令完成；另测命令被 `stop`、命令超时、退出码非 0；再让子 Agent 启动一个后台命令 | 运行中完成的在下一次模型请求前插入；被停止的显示“已停止”，不唤醒，下一次 run 再交；超时与非 0 退出码显示“超时”“失败（退出码 N）”并会唤醒；子 Agent 启动的命令只发系统通知，不交给主 Agent |
 | E7 `R` | 终端页打开控制台，运行 vim 与 htop，切横屏、弹出软键盘 | 全屏界面正常绘制，网格随尺寸变化；键条的 Ctrl、方向键可用 |
 

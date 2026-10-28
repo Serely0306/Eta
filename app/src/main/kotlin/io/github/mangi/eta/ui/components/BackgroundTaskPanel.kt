@@ -165,7 +165,7 @@ private fun SubagentPanelRow(
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            PanelLink(stringResource(R.string.background_tasks_process), onOpenProcess)
+            PanelLink(stringResource(R.string.background_tasks_process), onClick = onOpenProcess)
             if (!progress.closed) PanelLink(stringResource(R.string.background_tasks_message)) { composing = !composing }
             if (running) PanelLink(stringResource(R.string.background_tasks_stop)) { onAction(SubagentPanelAction.Stop(agent.agentId)) }
             if (!progress.closed) PanelLink(stringResource(R.string.background_tasks_close)) { onAction(SubagentPanelAction.Close(agent.agentId)) }

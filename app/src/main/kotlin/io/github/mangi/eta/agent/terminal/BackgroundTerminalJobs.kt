@@ -115,10 +115,13 @@ internal class BackgroundTerminalJobs(
             if (expired.isNotEmpty()) tasks = supervisor.list().filter { it.task.commandTask }
             tasks.filter { it.task.completedAt != null && !it.task.completionNotified }.forEach { status ->
                 try {
-                    onCompleted(status.task)
+                    // 主 Agent 启动的命令只通知 Agent，不再发系统通知（用户 2026-10-28：“通知 agent 就够了”）；
+                    // 没有归属会话的（子 Agent、电脑端直调启动的）没有 Agent 接收结果，仍发系统通知。
                     if (status.task.ownerConversationId != null) {
                         val tail = supervisor.readLogs(status.task.id, OWNED_TASK_TAIL_BYTES).takeIf { it.ok }?.text.orEmpty()
                         onOwnedTaskFinished(status.task, tail)
+                    } else {
+                        onCompleted(status.task)
                     }
                     supervisor.markCompletionNotified(status.task.id)
                 } catch (failure: Exception) {
