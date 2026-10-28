@@ -166,6 +166,70 @@ class AgentSubagentManagerTest {
     }
 
     @Test
+    fun aMessageArrivingWhileTheTurnWrapsUpJoinsTheNextTurnWithoutWaiting() {
+        manager.spawn(environment, "查日志", "", null, "")
+        nextTurn()
+        assertEquals("queued", manager.send(environment, "sub_1", "再查内核日志").getString("delivery"))
+        val lateResult = java.util.concurrent.atomic.AtomicReference<org.json.JSONObject>()
+        val lateMillis = java.util.concurrent.atomic.AtomicLong()
+        runner.replies.put { turn ->
+            assertNull(turn.controller.pollSteeringOrSeal())
+            // 已封口、回合还没交出结论时又来一条：要等这一回合换掉，不能等到“没有回合”。
+            Thread {
+                val started = System.currentTimeMillis()
+                val result = manager.send(environment, "sub_1", "顺便看 crash 缓冲区")
+                lateMillis.set(System.currentTimeMillis() - started)
+                lateResult.set(result)
+            }.start()
+            Thread.sleep(200)
+            answer("应用日志没有异常")(turn)
+        }
+        val second = nextTurn()
+        val deadline = System.currentTimeMillis() + 5_000
+        while (lateResult.get() == null && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        assertEquals("queued", lateResult.get().getString("delivery"))
+        assertTrue("等了 ${lateMillis.get()} 毫秒", lateMillis.get() < 3_000)
+        assertEquals("再查内核日志", second.prompt)
+        assertEquals("顺便看 crash 缓冲区", second.controller.pollSteeringMessage())
+        runner.replies.put(answer("都正常"))
+    }
+
+    @Test
+    fun stoppingATurnReportsTheMessagesItNeverProcessed() {
+        manager.spawn(environment, "查日志", "", null, "")
+        val turn = nextTurn()
+        assertEquals("queued", manager.send(environment, "sub_1", "顺便看内核日志").getString("delivery"))
+        manager.stop(environment, "sub_1")
+        runner.replies.put { SubagentTurnResult(false, "已停止", it.history, 0, cancelled = it.controller.isCancelled) }
+        awaitStatus("interrupted")
+        assertTrue(turn.controller.isCancelled)
+        val payload = store.mail.single().payload
+        assertTrue(payload.contains("没有送达"))
+        assertTrue(payload.contains("顺便看内核日志"))
+        // 停止后不会拿这条消息另开回合。
+        assertNull(runner.turns.poll(300, TimeUnit.MILLISECONDS))
+    }
+
+    @Test
+    fun listGivesThePendingNoticeInsteadOfThePreviousTurnsResult() {
+        manager.spawn(environment, "查日志", "", null, "")
+        nextTurn()
+        runner.replies.put(answer("第一回合结论"))
+        awaitStatus("completed")
+        assertEquals("第一回合结论", manager.list(environment, emptyList()).getJSONArray("agents").getJSONObject(0).getString("result"))
+
+        manager.send(environment, "sub_1", "再查一次")
+        nextTurn()
+        manager.stop(environment, "sub_1")
+        runner.replies.put { SubagentTurnResult(false, "已停止", it.history, 0, cancelled = it.controller.isCancelled) }
+        awaitStatus("interrupted")
+        val agent = manager.list(environment, emptyList()).getJSONArray("agents").getJSONObject(0)
+        assertFalse(agent.has("result"))
+        assertEquals("已停止", agent.getString("error"))
+        assertEquals(2, agent.getInt("result_turn"))
+    }
+
+    @Test
     fun userMessagesAreLabelledAsTheUsersAndUserCanStopAndClose() {
         manager.spawn(environment, "查日志", "", null, "")
         val turn = nextTurn()

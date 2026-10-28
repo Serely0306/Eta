@@ -270,7 +270,7 @@ internal class AgentSubagentManager(
             agent.controller?.let { running ->
                 if (running.steer(message)) return queued(agent)
                 // 已封口：等这一回合交出结论；若它带着先前排队的消息开了下一回合，就插进那一回合。
-                awaitIdleLocked(agent)
+                awaitTurnEndLocked(agent, running)
                 agent.controller?.let { next ->
                     return if (next.steer(message)) queued(agent)
                     else failure("SUBAGENT_BUSY", "子 Agent ${agent.row.agentId} 正在收尾，稍后再试")
@@ -290,8 +290,8 @@ internal class AgentSubagentManager(
         val agents = if (targets.isEmpty()) state.agents.values.toList() else targets.map { findLocked(state, it) ?: return notFound(it) }
         val pending = store.undeliveredMail(environment.conversationId).filter { mail -> agents.any { it.row.agentId == mail.agentId } }
         store.markDelivered(pending.map { it.id }, environment.runId)
-        val withResult = pending.mapTo(HashSet()) { it.agentId }
-        JSONObject().put("ok", true).put("agents", JSONArray(agents.map { describe(it, includeResult = it.row.agentId in withResult) }))
+        val pendingByAgent = pending.groupBy { it.agentId }
+        JSONObject().put("ok", true).put("agents", JSONArray(agents.map { describe(it, pendingByAgent[it.row.agentId].orEmpty()) }))
     }
 
     fun stop(environment: SubagentEnvironment, target: String): JSONObject = lock.withLock {
@@ -330,7 +330,7 @@ internal class AgentSubagentManager(
         val label = AgentRunController.DEFAULT_STEERING_LABEL
         agent.controller?.let { running ->
             if (running.steer(message, label)) return queued(agent)
-            awaitIdleLocked(agent)
+            awaitTurnEndLocked(agent, running)
             agent.controller?.let { next ->
                 return if (next.steer(message, label)) queued(agent)
                 else failure("SUBAGENT_BUSY", "子 Agent ${agent.row.agentId} 正在收尾，稍后再试")
@@ -428,7 +428,12 @@ internal class AgentSubagentManager(
         )
         saveLocked(agent)
         if (status != STATUS_CLOSED) {
-            addMailLocked(environment.conversationId, agentId, agent.row.name, agent.row.turn, status, result.text)
+            // 被停止时还没处理的消息不再开新回合，写进中断通知，让主 Agent 知道它们没送到（复核 2026-10-28）。
+            val text = if (status == STATUS_INTERRUPTED && leftovers.isNotEmpty()) {
+                result.text.ifBlank { "这一回合被停止" } + "\n停止时还没处理的消息（没有送达，需要时重新 send_agent）：\n" +
+                    leftovers.joinToString("\n") { "- ${it.label}：${it.text.take(UNDELIVERED_ECHO_CHARS)}" }
+            } else result.text
+            addMailLocked(environment.conversationId, agentId, agent.row.name, agent.row.turn, status, text)
             deliverLocked(environment.conversationId, state)
         }
         if (leftovers.isNotEmpty() && (status == STATUS_COMPLETED || status == STATUS_FAILED)) {
@@ -511,9 +516,13 @@ internal class AgentSubagentManager(
         }
     }
 
-    private fun awaitIdleLocked(agent: LiveAgent) {
+    /**
+     * 等已封口的这一回合结束。不能等到“没有回合”：它带着排队的消息会立刻开下一回合，
+     * 那样要白等满 [STOP_WAIT_MS]；回合一换掉就返回，由调用方插进新回合或开新回合。
+     */
+    private fun awaitTurnEndLocked(agent: LiveAgent, sealed: AgentRunController) {
         var remaining = TimeUnit.MILLISECONDS.toNanos(STOP_WAIT_MS)
-        while (agent.controller != null && remaining > 0) remaining = changed.awaitNanos(remaining)
+        while (agent.controller === sealed && remaining > 0) remaining = changed.awaitNanos(remaining)
     }
 
     private fun state(conversationId: String): ConversationState {
@@ -556,7 +565,11 @@ internal class AgentSubagentManager(
         revisionState.update { it + 1 }
     }
 
-    private fun describe(agent: LiveAgent, includeResult: Boolean): JSONObject = JSONObject()
+    /**
+     * [pending] 是还没交给主 Agent 的通知，在这里按通知原样给出全文，之后不再另发。
+     * 不能用 lastResult：被停止的回合不更新它，会把上一回合的结论当成这次的结果（复核 2026-10-28）。
+     */
+    private fun describe(agent: LiveAgent, pending: List<ConversationSubagentMailEntity>): JSONObject = JSONObject()
         .put("agent_id", agent.row.agentId)
         .put("name", agent.row.name)
         .put("status", if (agent.controller != null) STATUS_RUNNING else agent.row.status)
@@ -566,8 +579,13 @@ internal class AgentSubagentManager(
         .apply {
             agent.controller?.let { put("progress", progress(agent, it)) }
             val text = agent.row.lastError.ifBlank { agent.row.lastResult }
-            if (includeResult) {
-                if (agent.row.lastError.isNotBlank()) put("error", agent.row.lastError) else put("result", agent.row.lastResult)
+            val notices = pending.mapNotNull { runCatching { JSONObject(it.payload) }.getOrNull() }
+            if (notices.isNotEmpty()) {
+                val latest = notices.last()
+                latest.optString("result").takeIf(String::isNotBlank)?.let { put("result", it) }
+                latest.optString("error").takeIf(String::isNotBlank)?.let { put("error", it) }
+                put("result_turn", latest.optInt("turn"))
+                if (notices.size > 1) put("earlier_notifications", JSONArray(notices.dropLast(1)))
             } else if (text.isNotBlank()) {
                 // 运行中时这是上一回合的结论，标明以免当成本回合的结果。
                 put(if (agent.controller != null) "previous_result_preview" else "result_preview", text.take(PREVIEW_CHARS))
@@ -647,6 +665,7 @@ internal class AgentSubagentManager(
         private const val TASK_ECHO_CHARS = 200
         private const val PREVIEW_CHARS = 300
         private const val STOP_WAIT_MS = 10_000L
+        private const val UNDELIVERED_ECHO_CHARS = 200
         private const val PROGRESS_SAVE_INTERVAL_MS = 2_000L
         private const val KIND_COMMAND = "command"
         private const val COMMAND_TAIL_CHARS = 2_000
