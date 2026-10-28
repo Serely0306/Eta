@@ -1,12 +1,15 @@
 package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.agent.runtime.AgentRunController
+import java.io.InterruptedIOException
+import java.net.SocketTimeoutException
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
  * 摘要只有完整成功后才能替换历史；失败时保留原文。请求本身的临时失败（断流、限流、5xx）按全局重试设置
- * 整次重发（AG-26）；摘要内容不合格（调用工具、截断、为空）不重试。
+ * 整次重发（AG-26），每次重试经 [onRetry] 显示出来；摘要内容不合格（调用工具、截断、为空）不重试，
+ * 整次压缩超过总时长上限也不重试（再发一次通常同样超时）。
  */
 internal class AgentContextSummarizer(
     private val config: AgentModelClient.ModelConfig,
@@ -14,6 +17,7 @@ internal class AgentContextSummarizer(
     private val controller: AgentRunController,
     private val roleplay: Boolean,
     private val retry: AgentModelRetry = AgentModelRetry(),
+    private val onRetry: (attempt: Int, limit: Int, delayMs: Long, failure: AgentModelFailure) -> Unit = { _, _, _, _ -> },
 ) {
     fun summarize(history: List<AgentModelClient.ConversationMessage>): String {
         controller.throwIfCancelled()
@@ -29,12 +33,22 @@ internal class AgentContextSummarizer(
                 history.forEach { append(AgentConversationCodec.toJsonObject(it)).append('\n') }
             }))
         val request = ProviderRequest(config, messages, JSONArray(), purpose = ProviderRequestPurpose.COMPACTION)
-        val response = retry.retrying(controller) {
-            provider.complete(request, controller) { event ->
-                if (event is ProviderEvent.HostedToolStarted ||
-                    event is ProviderEvent.BlockStart && event.kind == AssistantBlockKind.TOOL_CALL) {
-                    throw invalidSummary("模型尝试调用工具")
+        val response = retry.retrying(controller, onRetry) {
+            try {
+                provider.complete(request, controller) { event ->
+                    if (event is ProviderEvent.HostedToolStarted ||
+                        event is ProviderEvent.BlockStart && event.kind == AssistantBlockKind.TOOL_CALL) {
+                        throw invalidSummary("模型尝试调用工具")
+                    }
                 }
+            } catch (timeout: InterruptedIOException) {
+                // 读取超时（SocketTimeoutException）按断线重试；其余是 OkHttp 的整次调用超时。
+                if (timeout is SocketTimeoutException) throw timeout
+                throw AgentModelFailure(
+                    "CONTEXT_SUMMARY_TIMEOUT", false,
+                    "上下文压缩超过 ${AgentHttpClient.COMPACTION_CALL_TIMEOUT_MS / 60_000} 分钟仍未完成，原始上下文已保留。",
+                    timeout,
+                )
             }
         }
         controller.throwIfCancelled()

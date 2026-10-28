@@ -11,6 +11,7 @@ internal class AgentContextCompactor(
     private val controller: AgentRunController,
     private val roleplay: Boolean = false,
     private val modelRetry: AgentModelRetry = AgentModelRetry(),
+    private val onRetry: (attempt: Int, limit: Int, delayMs: Long, failure: AgentModelFailure) -> Unit = { _, _, _, _ -> },
 ) {
     fun compact(
         messages: JSONArray,
@@ -43,7 +44,7 @@ internal class AgentContextCompactor(
             } else message.content
             message.copy(content = text, contentJson = "", reasoningContent = "")
         }
-        val summary = AgentContextSummarizer(config, provider, controller, roleplay, modelRetry)
+        val summary = AgentContextSummarizer(config, provider, controller, roleplay, modelRetry, onRetry)
             .summarize(safe)
         val covered = safe.sumOf { it.compactedUserTurns + if (it.role == "user") 1 else 0 }
         val result = JSONArray()

@@ -71,7 +71,8 @@ internal class AgentRunMessageProjector(
             messages.filterNot { it.id == id } + SystemNoticeMessageUi(
                 id = id, code = SystemNoticeCode.ContextCompaction, detail = event.displayMessage,
                 contextTokens = event.tokensAfter,
-                running = event.phase == AgentEvent.ContextCompaction.PHASE_STARTED,
+                running = event.phase == AgentEvent.ContextCompaction.PHASE_STARTED ||
+                    event.phase == AgentEvent.ContextCompaction.PHASE_RETRYING,
             )
         }
         is AgentEvent.ModelRetryScheduled -> scheduleModelRetry(runId, event, messages)

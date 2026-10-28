@@ -122,6 +122,45 @@ class AgentContextCompactionTest {
     }
 
     @Test
+    fun compactionRetriesAreShownOnTheCompactionRow() {
+        val events = mutableListOf<AgentEvent>()
+        var calls = 0
+        val session = AgentContextSession(config, jsonHistory(), 1, "operation", provider { _, _ ->
+            calls++
+            if (calls <= 2) throw java.io.IOException("connection reset")
+            response("有界摘要")
+        }, AgentRunController(), { emptySet() }, events::add, {}, modelRetry = instantRetry())
+        session.compact(force = true)
+
+        val phases = events.filterIsInstance<AgentEvent.ContextCompaction>()
+        assertEquals(listOf("started", "retrying", "retrying", "completed"), phases.map { it.phase })
+        assertTrue(phases[1].displayMessage.startsWith("压缩请求失败，正在重试（1/5）："))
+        assertTrue(phases[2].displayMessage.endsWith("· 2 秒后"))
+        assertEquals(3, calls)
+    }
+
+    @Test
+    fun aWholeCallTimeoutIsNotRetriedButAReadTimeoutIs() {
+        var calls = 0
+        val timedOut = AgentContextSession(config, jsonHistory(), 1, "operation", provider { _, _ ->
+            calls++
+            throw java.io.InterruptedIOException("timeout")
+        }, AgentRunController(), { emptySet() }, {}, {}, modelRetry = instantRetry())
+        val failure = assertThrows(AgentModelFailure::class.java) { timedOut.compact(force = true) }
+        assertEquals("CONTEXT_SUMMARY_TIMEOUT", failure.code)
+        assertEquals(1, calls)
+
+        calls = 0
+        val stalled = AgentContextSession(config, jsonHistory(), 1, "operation", provider { _, _ ->
+            calls++
+            if (calls == 1) throw java.net.SocketTimeoutException("timeout")
+            response("有界摘要")
+        }, AgentRunController(), { emptySet() }, {}, {}, modelRetry = instantRetry())
+        stalled.compact(force = true)
+        assertEquals(2, calls)
+    }
+
+    @Test
     fun cancellationAndPersistenceFailureKeepOriginalContext() {
         for (cancel in listOf(true, false)) {
             val original = jsonHistory()
@@ -317,6 +356,8 @@ class AgentContextCompactionTest {
         assertEquals(finalText, result.contextSnapshot!!.messages.last().content)
         assertEquals(finalText, result.transcript.last().content)
     }
+
+    private fun instantRetry() = AgentModelRetry(maxRetries = { 5 }, jitter = { 0.0 }, waitBeforeRetry = { _, _ -> })
 
     private fun history() = (1..6).flatMap { turn -> listOf(
         AgentModelClient.ConversationMessage("user", "问题 $turn"),

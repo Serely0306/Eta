@@ -85,9 +85,18 @@ internal class AgentContextSession(
         val operation = java.util.UUID.randomUUID().toString()
         onEvent(AgentEvent.ContextCompaction(operation, AgentEvent.ContextCompaction.PHASE_STARTED, before))
         try {
-            val candidate = AgentContextCompactor(config, provider, runController, roleplay = roleplay, modelRetry = modelRetry).compact(
-                messages, systemCount, sensitiveIds(),
-            )
+            val candidate = AgentContextCompactor(
+                config, provider, runController, roleplay = roleplay, modelRetry = modelRetry,
+                // 压缩请求的重试显示在压缩那一行上（AG-26），和普通请求的重试提示一致；事件日志里有 phase 与 code。
+                onRetry = { attempt, limit, delayMs, failure ->
+                    onEvent(AgentEvent.ContextCompaction(
+                        operation, AgentEvent.ContextCompaction.PHASE_RETRYING, before, reasonCode = failure.code,
+                        reasonMessage = AgentEvent.ContextCompaction.retryingMessage(
+                            attempt, limit, delayMs, AgentModelRetry.reasonText(failure),
+                        ),
+                    ))
+                },
+            ).compact(messages, systemCount, sensitiveIds())
             runController.throwIfCancelled()
             val wasCompacted = compacted
             compacted = true

@@ -26,6 +26,7 @@ internal sealed interface AgentEvent {
     ) : AgentEvent {
         val displayMessage: String get() = when (phase) {
             PHASE_STARTED -> RUNNING_DETAIL
+            PHASE_RETRYING -> reasonMessage.ifBlank { RUNNING_DETAIL }
             PHASE_COMPLETED -> "上下文已压缩，用量将在下一次模型响应后更新。"
             else -> reasonMessage.trim().trimEnd('。', '.').takeIf(String::isNotEmpty)?.let { reason ->
                 if ("原始上下文已保留" in reason) "上下文压缩失败：$reason。"
@@ -37,9 +38,14 @@ internal sealed interface AgentEvent {
 
         companion object {
             const val PHASE_STARTED = "started"
+            /** 压缩请求失败、等待重试（AG-26）；仍是进行中，说明写在 reasonMessage 里。 */
+            const val PHASE_RETRYING = "retrying"
             const val PHASE_COMPLETED = "completed"
             /** 进行中的展示文案同时是 UI 判定运行态的依据，改动必须与 UI 侧同步。 */
             const val RUNNING_DETAIL = "正在压缩上下文…"
+
+            fun retryingMessage(attempt: Int, limit: Int, delayMs: Long, reason: String): String =
+                "压缩请求失败，正在重试（$attempt/$limit）：$reason · ${(delayMs + 999) / 1000} 秒后"
         }
     }
 
