@@ -39,6 +39,7 @@ import io.github.mangi.eta.agent.runtime.AgentExternalArchivePayload
 import io.github.mangi.eta.agent.runtime.SubagentTranscriptStore
 import io.github.mangi.eta.agent.runtime.AgentSubagentTool
 import io.github.mangi.eta.agent.runtime.AgentSubagentManager
+import io.github.mangi.eta.ui.components.SubagentPanelAction
 import io.github.mangi.eta.agent.runtime.AgentInterruptionNote
 import io.github.mangi.eta.agent.mcp.server.EtaMcpConversationHistories
 import io.github.mangi.eta.agent.runtime.AgentRunArchiveStore
@@ -2533,6 +2534,29 @@ internal class AgentAppState(
         scope.launch {
             val pending = withContext(Dispatchers.IO) { runCatching { manager.conversationsWithUndeliveredMail() }.getOrDefault(emptyList()) }
             pending.forEach { conversationId -> withContext(Dispatchers.Main) { wakeForSubagents(conversationId) } }
+        }
+    }
+
+    /**
+     * 后台任务面板里用户对子 Agent 的操作（AG-27）：直接发消息（标注为用户）、停止、关闭。
+     * 管理器会短暂等待正在收尾的回合，放到 IO 线程；失败时提示原因。
+     */
+    fun handleSubagentPanelAction(conversationId: String, action: SubagentPanelAction) {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val manager = AgentSubagentManager.get(appContext)
+                runCatching {
+                    when (action) {
+                        is SubagentPanelAction.Send -> manager.sendFromUser(conversationId, action.agentId, action.text)
+                        is SubagentPanelAction.Stop -> manager.stop(conversationId, action.agentId)
+                        is SubagentPanelAction.Close -> manager.close(conversationId, action.agentId)
+                    }
+                }.getOrNull()
+            }
+            if (result?.optBoolean("ok") != true) {
+                val message = result?.optString("message").orEmpty().ifBlank { appContext.getString(R.string.background_tasks_action_failed) }
+                Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
+            }
         }
     }
 

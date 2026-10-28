@@ -166,6 +166,29 @@ class AgentSubagentManagerTest {
     }
 
     @Test
+    fun userMessagesAreLabelledAsTheUsersAndUserCanStopAndClose() {
+        manager.spawn(environment, "查日志", "", null, "")
+        val turn = nextTurn()
+        assertEquals("queued", manager.sendFromUser("conv", "sub_1", "只看今天的").getString("delivery"))
+        val steering = turn.controller.pollSteering()!!
+        assertEquals("只看今天的", steering.text)
+        assertEquals(AgentRunController.DEFAULT_STEERING_LABEL, steering.label)
+        // 封口后才到的用户消息开下一回合时同样标明是用户说的。
+        assertEquals("queued", manager.sendFromUser("conv", "sub_1", "再看昨天的").getString("delivery"))
+        runner.replies.put(sealThenAnswer("今天没有异常"))
+        val second = nextTurn()
+        assertEquals("用户补充指令：再看昨天的", second.prompt)
+
+        manager.stop("conv", "sub_1")
+        assertTrue(second.controller.isCancelled)
+        runner.replies.put { SubagentTurnResult(false, "已停止", it.history, 0, cancelled = it.controller.isCancelled) }
+        awaitStatus("interrupted")
+        manager.close("conv", "sub_1")
+        assertEquals("closed", manager.snapshot("conv").single().status)
+        assertEquals("SUBAGENT_CLOSED", manager.sendFromUser("conv", "sub_1", "还在吗").getString("code"))
+    }
+
+    @Test
     fun runningAgentsReportProgressWithoutTheirTranscript() {
         manager.spawn(environment, "查日志", "", null, "")
         val turn = nextTurn()

@@ -301,12 +301,46 @@ internal class AgentSubagentManager(
         JSONObject().put("ok", true).put("agent_id", agent.row.agentId).put("previous_status", previous)
     }
 
-    fun close(environment: SubagentEnvironment, target: String): JSONObject = lock.withLock {
-        val agent = findLocked(state(environment.conversationId), target) ?: return notFound(target)
+    fun close(environment: SubagentEnvironment, target: String): JSONObject = close(environment.conversationId, target)
+
+    /** 关闭只留给用户（AG-27）：运行中先停下；过程保留供查看，之后不能再给它发消息。 */
+    fun close(conversationId: String, target: String): JSONObject = lock.withLock {
+        val agent = findLocked(state(conversationId), target) ?: return notFound(target)
         agent.row = agent.row.copy(status = STATUS_CLOSED, updatedAt = now())
         agent.controller?.cancel()
         saveLocked(agent)
         JSONObject().put("ok", true).put("agent_id", agent.row.agentId).put("status", STATUS_CLOSED)
+    }
+
+    /** 用户在后台任务面板里停止子 Agent 当前的回合（AG-27）；它变为已中断，主 Agent 收到中断通知。 */
+    fun stop(conversationId: String, target: String): JSONObject = lock.withLock {
+        val agent = findLocked(state(conversationId), target) ?: return notFound(target)
+        agent.controller?.cancel()
+        JSONObject().put("ok", true).put("agent_id", agent.row.agentId)
+    }
+
+    /**
+     * 用户在后台任务面板里直接给子 Agent 发消息（AG-27），标注为用户；投递规则与 [send] 相同。
+     * 空闲时要沿用它上次的执行环境开新回合；Eta 重启后还没在这个会话里运行过时没有环境，提示先在主对话发一句。
+     */
+    fun sendFromUser(conversationId: String, target: String, message: String): JSONObject = lock.withLock {
+        val state = state(conversationId)
+        val agent = findLocked(state, target) ?: return notFound(target)
+        if (agent.row.status == STATUS_CLOSED) return failure("SUBAGENT_CLOSED", "子 Agent ${agent.row.agentId} 已关闭，不能再发消息")
+        val label = AgentRunController.DEFAULT_STEERING_LABEL
+        agent.controller?.let { running ->
+            if (running.steer(message, label)) return queued(agent)
+            awaitIdleLocked(agent)
+            agent.controller?.let { next ->
+                return if (next.steer(message, label)) queued(agent)
+                else failure("SUBAGENT_BUSY", "子 Agent ${agent.row.agentId} 正在收尾，稍后再试")
+            }
+        }
+        val environment = agent.environment
+            ?: return failure("SUBAGENT_ENVIRONMENT_UNAVAILABLE", "Eta 重启后这个会话还没运行过，先在主对话里发一句再试")
+        limitError(state)?.let { return it }
+        startTurnLocked(environment, agent, "$label：$message")
+        JSONObject().put("ok", true).put("agent_id", agent.row.agentId).put("delivery", "started")
     }
 
     fun snapshot(conversationId: String): List<ConversationSubagentEntity> = lock.withLock {
@@ -398,7 +432,9 @@ internal class AgentSubagentManager(
             deliverLocked(environment.conversationId, state)
         }
         if (leftovers.isNotEmpty() && (status == STATUS_COMPLETED || status == STATUS_FAILED)) {
-            startTurnLocked(agent.environment ?: environment, agent, leftovers.joinToString("\n\n"))
+            startTurnLocked(agent.environment ?: environment, agent, leftovers.joinToString("\n\n") {
+                if (it.label == AgentRunController.COORDINATOR_STEERING_LABEL) it.text else "${it.label}：${it.text}"
+            })
         }
         changed.signalAll()
     }

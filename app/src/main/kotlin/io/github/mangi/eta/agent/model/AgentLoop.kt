@@ -333,7 +333,7 @@ internal class AgentLoop(
 
     private fun appendPendingSteeringMessage(): Boolean {
         val notified = appendPendingNotices()
-        val supplement = runController.pollSteeringMessage() ?: return notified
+        val supplement = runController.pollSteering() ?: return notified
         appendMessage(steeringMessage(supplement))
         context.userAppended()
         return true
@@ -342,7 +342,7 @@ internal class AgentLoop(
     private fun appendPendingSteeringOrSeal(): Boolean {
         if (appendPendingNotices()) return true
         // 有通知时 pollSteeringOrSeal 不封口并返回 null，再取一次通知后继续。
-        val supplement = runController.pollSteeringOrSeal() ?: return appendPendingNotices()
+        val supplement = runController.pollSteeringEntryOrSeal() ?: return appendPendingNotices()
         appendMessage(steeringMessage(supplement))
         context.userAppended()
         return true
@@ -360,10 +360,10 @@ internal class AgentLoop(
         return true
     }
 
-    private fun steeringPrompt(supplement: String): String =
-        "${runController.steeringLabel}：$supplement\n\n请基于当前任务上下文继续执行，不要从头重复已经完成或已经验证过的操作。"
+    private fun steeringPrompt(supplement: AgentRunController.Steering): String =
+        "${supplement.label}：${supplement.text}\n\n请基于当前任务上下文继续执行，不要从头重复已经完成或已经验证过的操作。"
 
-    private fun steeringMessage(supplement: String): JSONObject =
+    private fun steeringMessage(supplement: AgentRunController.Steering): JSONObject =
         AgentConversationCodec.userTextMessage(steeringPrompt(supplement))
             .put("_eta_message_id", "user-$operationId-supplement-${++supplementIndex}")
 

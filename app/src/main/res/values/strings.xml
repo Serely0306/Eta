@@ -554,6 +554,16 @@
   <string name="subagent_strategy_label">Spawn</string>
   <string name="subagent_strategy_auto">Automatic</string>
   <string name="subagent_strategy_on_request">Only when I ask</string>
+  <string name="background_tasks_running">%1$d sub-agents running</string>
+  <string name="background_tasks_view">View</string>
+  <string name="background_tasks_title">Background tasks</string>
+  <string name="background_tasks_process">Process</string>
+  <string name="background_tasks_message">Message</string>
+  <string name="background_tasks_stop">Stop</string>
+  <string name="background_tasks_close">Close</string>
+  <string name="background_tasks_send">Send</string>
+  <string name="background_tasks_message_hint">Tell it directly…</string>
+  <string name="background_tasks_action_failed">The sub-agent could not be updated. Try again.</string>
   <string name="subagent_tag_interrupted">Interrupted</string>
   <string name="subagent_tag_closed">Closed</string>
   <string name="subagent_tag_turn">Turn %1$d · %2$d rounds</string>

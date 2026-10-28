@@ -534,6 +534,16 @@
   <string name="subagent_strategy_label">派出</string>
   <string name="subagent_strategy_auto">自動</string>
   <string name="subagent_strategy_on_request">僅在我要求時</string>
+  <string name="background_tasks_running">%1$d 個子 Agent 執行中</string>
+  <string name="background_tasks_view">查看</string>
+  <string name="background_tasks_title">背景任務</string>
+  <string name="background_tasks_process">過程</string>
+  <string name="background_tasks_message">發訊息</string>
+  <string name="background_tasks_stop">停止</string>
+  <string name="background_tasks_close">關閉</string>
+  <string name="background_tasks_send">傳送</string>
+  <string name="background_tasks_message_hint">直接告訴它…</string>
+  <string name="background_tasks_action_failed">操作子 Agent 失敗，請重試</string>
   <string name="subagent_tag_interrupted">已中斷</string>
   <string name="subagent_tag_closed">已關閉</string>
   <string name="subagent_tag_turn">第 %1$d 回合 · %2$d 輪</string>

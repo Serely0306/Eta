@@ -29,7 +29,7 @@ internal class AgentRunController(
     private val lock = ReentrantLock()
     private val pauseCondition = lock.newCondition()
     private val questionCondition = lock.newCondition()
-    private val steeringMessages = ArrayDeque<String>()
+    private val steeringMessages = ArrayDeque<Steering>()
     /** 子 Agent 的完成通知；与用户补充分开，进入模型时标明是系统通知，界面显示为系统提示。 */
     private val notices = ArrayDeque<Notice>()
     private var acceptingSteering = true
@@ -56,10 +56,14 @@ internal class AgentRunController(
         }
     }
 
+    /** 一条运行中插入的消息与它在模型上下文里的标注（谁说的）。 */
+    data class Steering(val text: String, val label: String)
+
     /**
-     * 将补充指令排入下一个 turn。steering 不取消当前模型请求或工具批次。
+     * 将补充指令排入下一个 turn。steering 不取消当前模型请求或工具批次。[label] 默认是本 run 的标注；
+     * 用户在界面上直接发给子 Agent 的消息另标“用户补充指令”（AG-27）。
      */
-    fun steer(text: String): Boolean {
+    fun steer(text: String, label: String = steeringLabel): Boolean {
         val prompt = text.trim()
         if (prompt.isBlank()) return false
         lock.withLock {
@@ -70,7 +74,7 @@ internal class AgentRunController(
                 questionCondition.signalAll()
                 return true
             }
-            steeringMessages.addLast(prompt)
+            steeringMessages.addLast(Steering(prompt, label))
         }
         return true
     }
@@ -137,14 +141,16 @@ internal class AgentRunController(
     data class Notice(val modelText: String, val display: String, val mailIds: List<Long> = emptyList())
 
     /** 默认逐条消费，避免后来的补充指令越过前一条的模型回合。 */
-    fun pollSteeringMessage(): String? =
+    fun pollSteering(): Steering? =
         lock.withLock { steeringMessages.pollFirst() }
+
+    fun pollSteeringMessage(): String? = pollSteering()?.text
 
     /**
      * 自然结束前原子地消费最后一条 steering；若队列为空则永久关闭本 run 的接收入口。
      * 这样 Service 不会在 loop 已返回后仍把补充指令误报为已接收。
      */
-    fun pollSteeringOrSeal(): String? =
+    fun pollSteeringEntryOrSeal(): Steering? =
         lock.withLock {
             if (!endTurnBeforeSteering) steeringMessages.pollFirst()?.let { return it }
             // 封口前刚到的子 Agent 通知：不封口，由主循环取走后继续下一轮（见 AgentLoop）。
@@ -153,8 +159,10 @@ internal class AgentRunController(
             null
         }
 
+    fun pollSteeringOrSeal(): String? = pollSteeringEntryOrSeal()?.text
+
     /** 回合结束后还没插入的消息（[endTurnBeforeSteering] 时封口留下的），一次取走。 */
-    fun drainSteering(): List<String> = lock.withLock {
+    fun drainSteering(): List<Steering> = lock.withLock {
         steeringMessages.toList().also { steeringMessages.clear() }
     }
 

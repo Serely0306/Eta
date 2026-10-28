@@ -546,6 +546,16 @@
   <string name="subagent_strategy_label">派出</string>
   <string name="subagent_strategy_auto">自动</string>
   <string name="subagent_strategy_on_request">仅在我要求时</string>
+  <string name="background_tasks_running">%1$d 个子 Agent 运行中</string>
+  <string name="background_tasks_view">查看</string>
+  <string name="background_tasks_title">后台任务</string>
+  <string name="background_tasks_process">过程</string>
+  <string name="background_tasks_message">发消息</string>
+  <string name="background_tasks_stop">停止</string>
+  <string name="background_tasks_close">关闭</string>
+  <string name="background_tasks_send">发送</string>
+  <string name="background_tasks_message_hint">直接告诉它…</string>
+  <string name="background_tasks_action_failed">操作子 Agent 失败，请重试</string>
   <string name="subagent_tag_interrupted">已中断</string>
   <string name="subagent_tag_closed">已关闭</string>
   <string name="subagent_tag_turn">第 %1$d 回合 · %2$d 轮</string>

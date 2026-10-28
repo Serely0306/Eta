@@ -54,6 +54,7 @@ import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.AppearanceSettingsScreen
 import io.github.mangi.eta.ui.SettingsScreen
 import io.github.mangi.eta.ui.components.MiuixDialogActions
+import io.github.mangi.eta.ui.components.BackgroundTasksUi
 import io.github.mangi.eta.ui.model.AgentHomeAction
 import io.github.mangi.eta.ui.model.AgentMemoryAction
 import io.github.mangi.eta.ui.model.AgentSkillsAction
@@ -383,10 +384,18 @@ fun AgentAppRoot(
         ) {
             entry<AppRoute.Home>(swipeDismiss = swipeDismiss) {
                 RoutedShell(route = AppRoute.Home) {
+                    val selectedConversationId = agentState.conversationPaneState.selectedConversationId
+                    val backgroundTasks = BackgroundTasksUi(
+                        subagents = agentState.conversationPaneState.conversations
+                            .firstOrNull { it.id == selectedConversationId }?.subagents.orEmpty()
+                            .filter { it.agentId.isNotBlank() },
+                        onAction = { action -> selectedConversationId?.let { agentState.handleSubagentPanelAction(it, action) } },
+                    )
                     AgentHomeScreen(
                         state = agentState.homeState,
                         modelPickerState = agentState.modelPickerState,
-                        conversationKey = agentState.conversationPaneState.selectedConversationId,
+                        conversationKey = selectedConversationId,
+                        backgroundTasks = backgroundTasks,
                         onAction = { action ->
                             when (action) {
                                 is AgentHomeAction.ReasoningEffortChanged ->
