@@ -95,7 +95,15 @@ internal object AgentPendingResultRecovery {
                     detail = result.error,
                 )
             }
-            if (assistantIndex >= 0) {
+            val target = messages.getOrNull(assistantIndex)
+            if (completedMessage is SystemNoticeMessageUi && target is AgentMessageUi && target.content.isNotBlank()) {
+                // 已写出的内容保留，提示接在后面（与运行中收到结果时一致）。
+                val kept = AgentRunMessageProjector.appendEndNotice(
+                    messages, assistantIndex, completedMessage.copy(id = AgentRunMessageProjector.endNoticeId(target.id)),
+                )
+                messages.clear()
+                messages += kept
+            } else if (assistantIndex >= 0) {
                 messages[assistantIndex] = completedMessage.copyWithId(messages[assistantIndex].id)
             } else {
                 messages += completedMessage

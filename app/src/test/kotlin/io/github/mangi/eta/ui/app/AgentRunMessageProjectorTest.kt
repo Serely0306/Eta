@@ -124,13 +124,38 @@ class AgentRunMessageProjectorTest {
         assertEquals(listOf("流式半截", "第二段"), AgentRunMessageProjector.applyResult("run", multi, "合并全文", null)
             .filterIsInstance<AgentMessageUi>().map { it.content })
 
+        // 已经写出的内容不被失败提示顶掉：内容保留，提示接在后面；重复应用不再追加。
         val failed = AgentRunMessageProjector.applyResult("run", single, "", SystemNoticeCode.RuntimeFailed, "错误")
-        val notice = failed.single() as SystemNoticeMessageUi
-        assertEquals(single.single().id, notice.id)
+        assertEquals(listOf("流式半截"), failed.filterIsInstance<AgentMessageUi>().map { it.content })
+        assertFalse(failed.filterIsInstance<AgentMessageUi>().single().isStreaming)
+        val notice = failed.last() as SystemNoticeMessageUi
+        assertEquals("${single.single().id}-end", notice.id)
         assertEquals("错误", notice.detail)
+        assertEquals(failed, AgentRunMessageProjector.applyResult("run", failed, "", SystemNoticeCode.RuntimeFailed, "错误"))
+
+        // 还是空占位的那一段照旧换成提示。
+        val placeholder = listOf(AgentMessageUi("assistant-run-2-0", "", isStreaming = true))
+        val replaced = AgentRunMessageProjector.applyResult("run", placeholder, "", SystemNoticeCode.Stopped)
+        assertEquals("assistant-run-2-0", (replaced.single() as SystemNoticeMessageUi).id)
 
         val empty = AgentRunMessageProjector.applyResult("other", emptyList(), "回答", null)
         assertEquals("assistant-other-1", empty.single().id)
+    }
+
+    @Test
+    fun stoppingWhileAToolRunsKeepsTheConclusionWrittenBeforeIt() {
+        val projector = AgentRunMessageProjector { 1_000L }
+        var messages: List<AgentChatMessageUi> = listOf(UserMessageUi("user", "整理一下"))
+        messages = projector.appendTextDelta("run", 1, 0, "已经整理完", messages)
+        // 用户插入补充后，模型先写一段中间结论，再开始执行下一步工具；这时用户停止。
+        messages = projector.applyEvent("run", AgentEvent.ProviderRequestStarted(2), messages)
+        messages = projector.appendTextDelta("run", 2, 0, "中间结论：A 可以，B 还要再查", messages)
+        messages = projector.applyEvent("run", AgentEvent.ToolStarted(2, "call-2", "terminal", "{}"), messages)
+        messages = AgentRunMessageProjector.applyResult("run", projector.finalizeRun("run", messages), "", SystemNoticeCode.Stopped)
+
+        assertEquals(listOf("已经整理完", "中间结论：A 可以，B 还要再查"), messages.filterIsInstance<AgentMessageUi>().map { it.content })
+        assertEquals(SystemNoticeCode.Stopped, (messages.last() as SystemNoticeMessageUi).code)
+        assertTrue(messages.any { it is ToolActivityMessageUi })
     }
 
     @Test

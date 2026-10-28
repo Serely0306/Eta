@@ -783,6 +783,9 @@ internal class AgentRunMessageProjector(
                 }
             }
             val target = messages[targetIndex] as AgentMessageUi
+            if (notice != null && target.content.isNotBlank()) {
+                return appendEndNotice(messages, targetIndex, SystemNoticeMessageUi(endNoticeId(target.id), notice, detail))
+            }
             val replacement = if (notice != null) SystemNoticeMessageUi(target.id, notice, detail) else {
                 val round = target.id.assistantRound(runId)
                 val sameRoundBlocks = round?.let {
@@ -796,6 +799,27 @@ internal class AgentRunMessageProjector(
             }
             return messages.mapIndexed { index, message -> if (index == targetIndex) replacement else message }
         }
+
+        /**
+         * 运行以停止、失败等提示结束，而最后一段已经写出内容时（例如模型写完中间结论、正在执行下一步工具时被停止）：
+         * 这段内容保留并收口，提示接在本次运行的末尾，不能把它换成提示（用户 2026-10-28 反馈中间结论被“已停止”顶掉）。
+         * 只有还是空占位的那一段才换成提示。重复应用时按提示的 id 原地替换。
+         */
+        fun appendEndNotice(
+            messages: List<AgentChatMessageUi>,
+            targetIndex: Int,
+            notice: SystemNoticeMessageUi,
+        ): List<AgentChatMessageUi> {
+            val finished = messages.mapIndexed { index, message ->
+                if (index == targetIndex && message is AgentMessageUi) message.copy(isStreaming = false, renderMarkdown = true)
+                else message
+            }
+            val existing = finished.indexOfFirst { it.id == notice.id }
+            return if (existing >= 0) finished.mapIndexed { index, message -> if (index == existing) notice else message }
+            else finished + notice
+        }
+
+        fun endNoticeId(targetId: String): String = "$targetId-end"
 
         private fun String.assistantRound(runId: String): Int? =
             removePrefix(assistantMessagePrefix(runId))

@@ -139,6 +139,22 @@ class AgentPendingResultRecoveryTest {
     }
 
     @Test
+    fun recoveryOfAStoppedRunKeepsTheTextAlreadyWrittenAndAppendsTheNotice() {
+        val conclusion = AgentMessageUi(id = "assistant-run-3-2-0", content = "中间结论：A 可以", isStreaming = true)
+        val tool = ToolActivityMessageUi("run-3-tool-2-call-1", "terminal", ToolActivityStatusUi.Running, "")
+        val state = AgentChatUiState(
+            messages = listOf(conclusion, tool), input = "", isStreaming = true, thinkingEnabled = false,
+        )
+        val result = AgentRuntimeWire.RunResult(runId = "run-3", ok = false, content = "", error = "已停止")
+        val recovered = AgentPendingResultRecovery.apply(state, "run-3", result, supplements = emptyList())
+
+        assertEquals("中间结论：A 可以", recovered.state.messages.filterIsInstance<AgentMessageUi>().single().content)
+        val notice = recovered.state.messages.last() as SystemNoticeMessageUi
+        assertEquals("assistant-run-3-2-0-end", notice.id)
+        assertEquals(SystemNoticeCode.RuntimeFailed, notice.code)
+    }
+
+    @Test
     fun recoveryDoesNotMergeEarlierTextBlockIntoSameRoundFinalBlock() {
         val state = AgentChatUiState(
             messages = listOf(
