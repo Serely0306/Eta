@@ -165,14 +165,18 @@ internal fun BackgroundTaskNotice(message: SystemNoticeMessageUi, modifier: Modi
     val entry = opened
     val agentId = entry?.agentId
     if (entry != null && agentId != null && conversationId != null) {
+        // 通知里的状态是交出那一刻的；窗口里用侧栏同一份最新状态，发消息后能看到它重新运行。
+        val live = LocalConversationSubagents.current.firstOrNull { it.agentId == agentId }
         SubagentTranscriptDialog(
             runId = "",
             toolCallId = agentId,
-            progress = SubagentProgressUi(index = 0, total = 1, status = entry.status, task = entry.title, conclusion = entry.summary),
+            progress = live?.progress
+                ?: SubagentProgressUi(index = 0, total = 1, status = entry.status, task = entry.title, conclusion = entry.summary),
             agentRowId = ConversationSubagentEntity.rowId(conversationId, agentId),
             show = show,
             onDismissRequest = { show = false },
             onDismissFinished = { opened = null },
+            controls = live?.controlsTarget() ?: SubagentControlsTarget(conversationId, agentId, running = false, closed = false),
         )
     }
 }

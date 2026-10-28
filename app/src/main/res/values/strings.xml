@@ -561,10 +561,6 @@
   <string name="subagent_strategy_label">Spawn</string>
   <string name="subagent_strategy_auto">Automatic</string>
   <string name="subagent_strategy_on_request">Only when I ask</string>
-  <string name="background_tasks_running">%1$d sub-agents running</string>
-  <string name="background_tasks_view">View</string>
-  <string name="background_tasks_title">Background tasks</string>
-  <string name="background_tasks_process">Process</string>
   <string name="background_tasks_message">Message</string>
   <string name="background_tasks_stop">Stop</string>
   <string name="background_tasks_close">Close</string>

@@ -195,8 +195,6 @@ internal fun AgentChatInputBar(
             .fillMaxWidth(),
     ) {
         if (recognitionEnabled) SpeechInputFeedback(dictation)
-        // 后台任务（AG-27）：有子 Agent 运行时在输入栏上方给出入口，可看进度、直接发消息、停止或关闭。
-        BackgroundTaskPanel(modifier = Modifier.padding(bottom = 8.dp))
         AnimatedVisibility(
             visible = queuedMessages.isNotEmpty(),
             enter = fadeIn(tween(160)),

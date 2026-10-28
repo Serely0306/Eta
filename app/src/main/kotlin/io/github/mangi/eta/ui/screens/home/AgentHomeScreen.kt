@@ -12,8 +12,8 @@ import io.github.mangi.eta.ui.components.AgentConversationLoadState
 import io.github.mangi.eta.ui.components.LocalRoleplayChat
 import io.github.mangi.eta.ui.components.LocalAgentBrowserSession
 import io.github.mangi.eta.ui.components.LocalChatConversationId
-import io.github.mangi.eta.ui.components.LocalBackgroundTasks
-import io.github.mangi.eta.ui.components.BackgroundTasksUi
+import io.github.mangi.eta.ui.components.LocalConversationSubagents
+import io.github.mangi.eta.ui.model.ConversationSubagentUi
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import io.github.mangi.eta.ui.components.chatConversationCompositionKey
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
@@ -38,8 +38,8 @@ internal fun AgentHomeScreen(
     conversationLoadFailed: Boolean = false,
     historyLoadState: ConversationHistoryLoadState = ConversationHistoryLoadState.Idle,
     isDrawerOpen: Boolean = false,
-    /** 当前会话的子 Agent 与用户操作（AG-27），给输入栏上方的后台任务面板。 */
-    backgroundTasks: BackgroundTasksUi = BackgroundTasksUi(),
+    /** 当前会话的子 Agent（最新状态，AG-27），通知卡片打开过程窗口时用。 */
+    subagents: List<ConversationSubagentUi> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     // key 内保持完整分支，避免提前返回遗留无法转换为 DEX 的编译器标记。
@@ -64,7 +64,7 @@ internal fun AgentHomeScreen(
                 LocalRoleplayChat provides state.roleplayChatUi(),
                 LocalAgentBrowserSession provides browser,
                 LocalChatConversationId provides conversationKey,
-                LocalBackgroundTasks provides backgroundTasks,
+                LocalConversationSubagents provides subagents,
             ) {
                 AgentChatBody(
                     messages = state.messages,

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -54,7 +55,7 @@ import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.AppearanceSettingsScreen
 import io.github.mangi.eta.ui.SettingsScreen
 import io.github.mangi.eta.ui.components.MiuixDialogActions
-import io.github.mangi.eta.ui.components.BackgroundTasksUi
+import io.github.mangi.eta.ui.components.LocalSubagentActions
 import io.github.mangi.eta.ui.model.AgentHomeAction
 import io.github.mangi.eta.ui.model.AgentMemoryAction
 import io.github.mangi.eta.ui.model.AgentSkillsAction
@@ -295,6 +296,9 @@ fun AgentAppRoot(
     fun RoutedShell(
         route: AppRoute,
         content: @Composable () -> Unit,
+    ) = CompositionLocalProvider(
+        // 子 Agent 过程窗口底部的操作（AG-27）：侧栏和聊天页里打开的窗口共用。
+        LocalSubagentActions provides remember(agentState) { agentState::handleSubagentPanelAction },
     ) {
         AgentAppShell(
             currentRoute = route,
@@ -385,17 +389,13 @@ fun AgentAppRoot(
             entry<AppRoute.Home>(swipeDismiss = swipeDismiss) {
                 RoutedShell(route = AppRoute.Home) {
                     val selectedConversationId = agentState.conversationPaneState.selectedConversationId
-                    val backgroundTasks = BackgroundTasksUi(
-                        subagents = agentState.conversationPaneState.conversations
-                            .firstOrNull { it.id == selectedConversationId }?.subagents.orEmpty()
-                            .filter { it.agentId.isNotBlank() },
-                        onAction = { action -> selectedConversationId?.let { agentState.handleSubagentPanelAction(it, action) } },
-                    )
                     AgentHomeScreen(
                         state = agentState.homeState,
                         modelPickerState = agentState.modelPickerState,
                         conversationKey = selectedConversationId,
-                        backgroundTasks = backgroundTasks,
+                        subagents = agentState.conversationPaneState.conversations
+                            .firstOrNull { it.id == selectedConversationId }?.subagents.orEmpty()
+                            .filter { it.agentId.isNotBlank() },
                         onAction = { action ->
                             when (action) {
                                 is AgentHomeAction.ReasoningEffortChanged ->

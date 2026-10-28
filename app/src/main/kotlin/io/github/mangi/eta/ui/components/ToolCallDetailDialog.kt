@@ -545,6 +545,8 @@ internal fun SubagentTranscriptDialog(
     onDismissFinished: () -> Unit,
     /** AG-19 会话级子 Agent：过程（跨回合）从库里的上下文读取。 */
     agentRowId: String? = null,
+    /** 会话级子 Agent 的操作（AG-27）：窗口底部给出发消息、停止、关闭；旧版 run_subagents 没有。 */
+    controls: SubagentControlsTarget? = null,
 ) {
     val context = LocalContext.current
     var record by remember { mutableStateOf<SubagentTranscriptStore.Record?>(null) }
@@ -584,8 +586,8 @@ internal fun SubagentTranscriptDialog(
         title = stringResource(R.string.subagent_title, progress.index + 1, progress.total),
         onDismissRequest = onDismissRequest,
         onDismissFinished = onDismissFinished,
-    ) {
-        val maxHeight = (LocalConfiguration.current.screenHeightDp * 0.75f).dp
+    ) { Column {
+        val maxHeight = (LocalConfiguration.current.screenHeightDp * if (controls != null) 0.68f else 0.75f).dp
         CompositionLocalProvider(LocalToolCallDetailSource provides source) {
             LazyColumn(
                 state = listState,
@@ -651,7 +653,8 @@ internal fun SubagentTranscriptDialog(
                 }
             }
         }
-    }
+        controls?.let { SubagentControlsBar(it, modifier = Modifier.padding(top = 8.dp)) }
+    } }
 }
 
 internal fun ToolActivityStatusUi.labelRes(): Int = when (this) {

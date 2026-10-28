@@ -301,6 +301,7 @@ internal fun ConversationPanePanel(
             show = showSubagent,
             onDismissRequest = { showSubagent = false },
             onDismissFinished = { openedSubagent = null },
+            controls = subagent.controlsTarget(),
         )
     }
 }
