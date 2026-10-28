@@ -7,6 +7,14 @@ import org.junit.Test
 
 class AgentChatScrollPolicyTest {
     @Test
+    fun historyPagingRunsDuringAStreamOnlyAfterTheUserLeavesTheBottom() {
+        assertTrue(historyPagingEnabled(isStreaming = false, keepBottomAnchored = true))
+        assertTrue(historyPagingEnabled(isStreaming = false, keepBottomAnchored = false))
+        assertFalse(historyPagingEnabled(isStreaming = true, keepBottomAnchored = true))
+        assertTrue(historyPagingEnabled(isStreaming = true, keepBottomAnchored = false))
+    }
+
+    @Test
     fun networkCompletionKeepsFollowingUntilRenderedTailSettles() {
         assertTrue(
             resolveBottomFollowEnabled(

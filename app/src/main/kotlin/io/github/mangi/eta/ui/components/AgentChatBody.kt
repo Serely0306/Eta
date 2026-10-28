@@ -596,7 +596,9 @@ internal fun AgentConversationMessages(
         messageCount = visibleMessages.size,
         hasEarlier = hasEarlierMessages,
         loadState = historyLoadState,
-        enabled = !isStreaming && editTargetMessageId == null,
+        // 运行中只要用户已经离开底部（不再跟随新内容）就允许加载更早的消息（AG-29）；仍在底部跟随时不加载，
+        // 避免与跟底滚动冲突。上游 ef0a1b3 原本整次运行期间都不加载。
+        enabled = historyPagingEnabled(isStreaming, keepBottomAnchored) && editTargetMessageId == null,
         canReleasePages = !isTailRendering && !isBottomSettling,
         keepBottomAnchored = keepBottomAnchored,
         onBottomAnchorChanged = onBottomAnchorChanged,
@@ -758,7 +760,7 @@ internal fun AgentConversationMessages(
                 item(key = ChatHistoryBoundaryKey) {
                     AgentHistoryLoadStatus(
                         state = historyLoadState,
-                        enabled = !isStreaming && editTargetMessageId == null,
+                        enabled = historyPagingEnabled(isStreaming, keepBottomAnchored) && editTargetMessageId == null,
                         onRetry = historyPaging.retry,
                     )
                 }
@@ -1183,6 +1185,10 @@ internal fun resolveKeepBottomAnchored(
     isAtBottom -> true
     else -> current
 }
+
+/** 历史分页是否可用（AG-29）：没有运行时总可用；运行中只在用户离开底部、不再跟随新内容时可用。 */
+internal fun historyPagingEnabled(isStreaming: Boolean, keepBottomAnchored: Boolean): Boolean =
+    !isStreaming || !keepBottomAnchored
 
 internal fun resolveBottomFollowEnabled(
     isStreaming: Boolean,
