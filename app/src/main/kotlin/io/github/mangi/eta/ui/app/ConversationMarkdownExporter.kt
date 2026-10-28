@@ -41,6 +41,7 @@ internal object ConversationMarkdownExporter {
         val noticeContextCompaction: String = "上下文压缩",
         val noticeModelFallback: String = "已切换备用模型",
     val noticeSubagentNotified: String = "子 Agent 通知",
+        val subagentsHeading: String = "子 Agent 过程",
     ) {
         fun toolStatus(status: ToolActivityStatusUi): String = when (status) {
             ToolActivityStatusUi.Running -> toolStatusRunning
@@ -61,16 +62,36 @@ internal object ConversationMarkdownExporter {
         }
     }
 
+    /** 一个会话级子 Agent 的过程（AG-27）：标题、任务与按回合还原的时间线。 */
+    data class SubagentSection(
+        val heading: String,
+        val task: String,
+        val timeline: List<AgentChatMessageUi>,
+    )
+
     fun export(
         title: String,
         messages: List<AgentChatMessageUi>,
         labels: Labels,
+        subagents: List<SubagentSection> = emptyList(),
     ): String {
         val blocks = messages.mapNotNull { message -> message.toMarkdownBlock(labels) }
         return buildString {
             append("# ").append(title.replace('\n', ' ')).append('\n')
             blocks.forEach { block ->
                 append('\n').append(block).append('\n')
+            }
+            // 子 Agent 的过程附在末尾，便于离线回看它们做了什么（主对话里只有派出行与完成通知）。
+            if (subagents.isNotEmpty()) {
+                append('\n').append("## ").append(labels.subagentsHeading).append('\n')
+                subagents.forEach { section ->
+                    append('\n').append("### ").append(section.heading.replace('\n', ' ')).append('\n')
+                    if (section.task.isNotBlank()) append('\n').append(section.task.trim()).append('\n')
+                    section.timeline.mapNotNull { it.toMarkdownBlock(labels) }.forEach { block ->
+                        // 时间线里的“## 助手”降到子 Agent 小节之下。
+                        append('\n').append(if (block.startsWith("## ")) "#### " + block.removePrefix("## ") else block).append('\n')
+                    }
+                }
             }
         }
     }

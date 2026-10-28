@@ -213,6 +213,7 @@
   <string name="conversation_export_user">User</string>
   <string name="conversation_export_assistant">Assistant</string>
   <string name="conversation_export_thinking">Thinking</string>
+  <string name="conversation_export_subagents">Sub-agent processes</string>
   <string name="conversation_export_tool_line">Tool: %1$s (%2$s)</string>
   <string name="conversation_export_tools_line">Tools: %1$s</string>
   <string name="conversation_export_tool_arguments">Arguments: %1$s</string>

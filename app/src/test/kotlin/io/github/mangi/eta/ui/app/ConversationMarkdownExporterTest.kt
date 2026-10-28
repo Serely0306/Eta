@@ -20,6 +20,25 @@ import org.junit.Test
 
 class ConversationMarkdownExporterTest {
 
+    @Test
+    fun subagentProcessesAreAppendedUnderTheirOwnHeading() {
+        val result = ConversationMarkdownExporter.export(
+            "排查", listOf(AgentMessageUi(id = "a", content = "已派出子 Agent。")), labels,
+            subagents = listOf(ConversationMarkdownExporter.SubagentSection(
+                heading = "log_scan（sub_1） · completed",
+                task = "查应用日志",
+                timeline = listOf(
+                    ToolActivityMessageUi("sub-tool-1-c1", "terminal", ToolActivityStatusUi.Success, "logcat -d"),
+                    AgentMessageUi(id = "sub-assistant-2", content = "没有异常。"),
+                ),
+            )),
+        )
+        assertTrue(result, result.contains("## 子 Agent 过程\n\n### log_scan（sub_1） · completed\n\n查应用日志\n"))
+        assertTrue(result.contains("#### Assistant\n\n没有异常。"))
+        assertTrue(result.indexOf("已派出子 Agent。") < result.indexOf("## 子 Agent 过程"))
+        assertFalse(ConversationMarkdownExporter.export("排查", emptyList(), labels).contains("子 Agent 过程"))
+    }
+
     private val labels = ConversationMarkdownExporter.Labels(
         user = "User",
         assistant = "Assistant",

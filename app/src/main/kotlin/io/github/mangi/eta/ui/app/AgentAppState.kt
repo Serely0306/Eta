@@ -57,6 +57,7 @@ import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.model.enabledModel
 import io.github.mangi.eta.data.repository.EtaBackupRepository
 import io.github.mangi.eta.data.db.EtaDatabase
+import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.data.repository.EtaBackupSummary
 import io.github.mangi.eta.data.repository.ProviderRepository
 import io.github.mangi.eta.data.repository.RuntimeConfigRepository
@@ -1187,7 +1188,9 @@ internal class AgentAppState(
         return withContext(Dispatchers.IO) { ConversationMarkdownExporter.export(
             title = title,
             messages = AgentConversationStore.loadAllMessages(appContext, conversationId),
+            subagents = exportSubagentSections(conversationId),
             labels = ConversationMarkdownExporter.Labels(
+                subagentsHeading = appContext.getString(R.string.conversation_export_subagents),
                 user = appContext.getString(R.string.conversation_export_user),
                 assistant = appContext.getString(R.string.conversation_export_assistant),
                 thinking = appContext.getString(R.string.conversation_export_thinking),
@@ -1211,6 +1214,16 @@ internal class AgentAppState(
             ),
         ) }
     }
+
+    /** 导出时附上的会话级子 Agent 过程（AG-27）：每个子 Agent 一节，时间线与过程窗口相同（按回合分段）。 */
+    private suspend fun exportSubagentSections(conversationId: String): List<ConversationMarkdownExporter.SubagentSection> =
+        runCatching { EtaDatabase.get(appContext).subagentDao().agents(conversationId) }.getOrDefault(emptyList()).map { row ->
+            ConversationMarkdownExporter.SubagentSection(
+                heading = (if (row.name == row.agentId) row.agentId else "${row.name}（${row.agentId}）") + " · " + row.status,
+                task = row.task,
+                timeline = SubagentDetails.timeline(AgentConversationCodec.decodeTranscript(row.transcriptJson)),
+            )
+        }
 
     private fun noticeText(code: SystemNoticeCode): String = appContext.getString(
         when (code) {

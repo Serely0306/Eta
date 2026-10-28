@@ -211,6 +211,7 @@
   <string name="conversation_export_user">用户</string>
   <string name="conversation_export_assistant">助手</string>
   <string name="conversation_export_thinking">思考过程</string>
+  <string name="conversation_export_subagents">子 Agent 过程</string>
   <string name="conversation_export_tool_line">工具：%1$s（%2$s）</string>
   <string name="conversation_export_tools_line">工具：%1$s</string>
   <string name="conversation_export_tool_arguments">参数：%1$s</string>
