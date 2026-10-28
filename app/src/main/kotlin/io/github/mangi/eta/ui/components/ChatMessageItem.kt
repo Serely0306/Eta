@@ -231,6 +231,8 @@ internal fun ChatMessageItem(
         )
         is SystemNoticeMessageUi -> if (message.code == SystemNoticeCode.ContextCompaction) {
             ContextCompactionMarker(message = message, modifier = modifier)
+        } else if (message.code == SystemNoticeCode.SubagentNotified) {
+            BackgroundTaskNotice(message = message, modifier = modifier)
         } else {
             AgentMessageBlock(
                 message = AgentMessageUi(

@@ -335,8 +335,13 @@ private fun SubagentPaneRow(subagent: ConversationSubagentUi, onClick: () -> Uni
         Spacer(modifier = Modifier.width(ConversationPanelMetrics.SectionIconGap))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = stringResource(R.string.subagent_title, progress.index + 1, progress.total) + " · " +
-                    stringResource(progress.status.labelRes()),
+                text = listOfNotNull(
+                    stringResource(R.string.subagent_title, progress.index + 1, progress.total),
+                    if (progress.interrupted) stringResource(R.string.subagent_tag_interrupted)
+                    else stringResource(progress.status.labelRes()),
+                    stringResource(R.string.subagent_tag_closed).takeIf { progress.closed },
+                    stringResource(R.string.subagent_tag_turn, progress.turn, progress.rounds).takeIf { progress.turn > 1 },
+                ).joinToString(" · "),
                 style = MiuixTheme.textStyles.footnote1,
                 color = if (failed) StatusError else MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 maxLines = 1,

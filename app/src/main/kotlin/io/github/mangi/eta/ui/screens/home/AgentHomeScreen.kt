@@ -11,6 +11,7 @@ import io.github.mangi.eta.ui.components.ToolCallDetailSource
 import io.github.mangi.eta.ui.components.AgentConversationLoadState
 import io.github.mangi.eta.ui.components.LocalRoleplayChat
 import io.github.mangi.eta.ui.components.LocalAgentBrowserSession
+import io.github.mangi.eta.ui.components.LocalChatConversationId
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
 import io.github.mangi.eta.ui.components.chatConversationCompositionKey
 import io.github.mangi.eta.ui.model.AgentChatHomeUiState
@@ -58,6 +59,7 @@ internal fun AgentHomeScreen(
                 LocalToolCallDetailSource provides toolDetails,
                 LocalRoleplayChat provides state.roleplayChatUi(),
                 LocalAgentBrowserSession provides browser,
+                LocalChatConversationId provides conversationKey,
             ) {
                 AgentChatBody(
                     messages = state.messages,

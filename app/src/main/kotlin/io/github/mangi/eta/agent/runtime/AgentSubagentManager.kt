@@ -589,7 +589,8 @@ internal class AgentSubagentManager(
             STATUS_INTERRUPTED -> "已中断"
             else -> "失败"
         }
-        return "$label $verb：${text.take(DISPLAY_CHARS)}"
+        // 主对话里只放一行摘要（AG-27）：不露出 Markdown 标记、不在句子中间截断；全文在过程窗口里看。
+        return "$label $verb：${BackgroundNoticeText.summary(text)}"
     }
 
     private fun notFound(target: String) = failure("SUBAGENT_NOT_FOUND", "本会话没有子 Agent $target")
@@ -609,7 +610,6 @@ internal class AgentSubagentManager(
         private const val TASK_SUMMARY_CHARS = 400
         private const val TASK_ECHO_CHARS = 200
         private const val PREVIEW_CHARS = 300
-        private const val DISPLAY_CHARS = 160
         private const val STOP_WAIT_MS = 10_000L
         private const val PROGRESS_SAVE_INTERVAL_MS = 2_000L
         private const val KIND_COMMAND = "command"

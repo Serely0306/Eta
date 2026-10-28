@@ -67,11 +67,12 @@ internal data class ConversationSubagentSummary(
     @ColumnInfo(name = "last_result") val lastResult: String,
     @ColumnInfo(name = "last_error") val lastError: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "rounds") val rounds: Int = 0,
 )
 
 @Dao
 internal interface SubagentDao : ChunkedTextDao {
-    @Query("SELECT id, conversation_id, agent_id, name, task, status, turn, last_result, last_error, created_at " +
+    @Query("SELECT id, conversation_id, agent_id, name, task, status, turn, last_result, last_error, created_at, rounds " +
         "FROM conversation_subagents ORDER BY conversation_id ASC, created_at ASC, agent_id ASC")
     suspend fun summaries(): List<ConversationSubagentSummary>
 
@@ -114,7 +115,7 @@ internal interface SubagentDao : ChunkedTextDao {
         upsertAgentRow(row.copy(transcriptJson = storeText(TABLE, row.id, TRANSCRIPT_FIELD, row.transcriptJson)))
     }
 
-    @Query("SELECT id, conversation_id, agent_id, name, task, status, turn, last_result, last_error, created_at " +
+    @Query("SELECT id, conversation_id, agent_id, name, task, status, turn, last_result, last_error, created_at, rounds " +
         "FROM conversation_subagents WHERE status = 'running' AND owner_instance_id != :ownerInstanceId")
     suspend fun staleRunning(ownerInstanceId: String): List<ConversationSubagentSummary>
 

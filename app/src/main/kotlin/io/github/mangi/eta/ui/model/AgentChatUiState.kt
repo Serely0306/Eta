@@ -181,6 +181,11 @@ data class SubagentProgressUi(
     val currentTool: String = "",
     val currentDetail: String = "",
     val conclusion: String = "",
+    /** 会话级子 Agent（AG-27）：第几回合、累计轮数；已中断、已关闭作为标签显示，不再一律算“结果未知”。 */
+    val turn: Int = 0,
+    val rounds: Int = 0,
+    val interrupted: Boolean = false,
+    val closed: Boolean = false,
 )
 
 enum class ToolActivityStatusUi {

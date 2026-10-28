@@ -62,8 +62,8 @@ internal object SubagentDetails {
     }
 
     /**
-     * AG-19 会话级子 Agent 的侧栏条目，按会话分组、按派出顺序。已中断与已关闭的显示为未知状态，
-     * 任务前带上名字（没起名时就是编号）。
+     * 会话级子 Agent 的侧栏条目，按会话分组、按派出顺序，任务前带上名字（没起名时就是编号）。
+     * 已中断与已关闭作为标签显示（AG-27）：已关闭的保留关闭前的结果（有结论算完成、有错误算失败）。
      */
     fun fromRegistry(rows: List<ConversationSubagentSummary>): Map<String, List<ConversationSubagentUi>> =
         rows.groupBy { it.conversationId }.mapValues { (conversationId, agents) ->
@@ -80,17 +80,27 @@ internal object SubagentDetails {
                             AgentSubagentManager.STATUS_RUNNING -> ToolActivityStatusUi.Running
                             AgentSubagentManager.STATUS_COMPLETED -> ToolActivityStatusUi.Success
                             AgentSubagentManager.STATUS_FAILED -> ToolActivityStatusUi.Failed
+                            AgentSubagentManager.STATUS_CLOSED -> when {
+                                row.lastError.isNotBlank() -> ToolActivityStatusUi.Failed
+                                row.lastResult.isNotBlank() -> ToolActivityStatusUi.Success
+                                else -> ToolActivityStatusUi.Unknown
+                            }
                             else -> ToolActivityStatusUi.Unknown
                         },
                         task = if (row.name == row.agentId) row.task else "${row.name} · ${row.task}",
                         conclusion = row.lastError.ifBlank { row.lastResult },
+                        turn = row.turn,
+                        rounds = row.rounds,
+                        interrupted = row.status == AgentSubagentManager.STATUS_INTERRUPTED,
+                        closed = row.status == AgentSubagentManager.STATUS_CLOSED,
                     ),
                 )
             }
         }
 
     /**
-     * 子 Agent 过程转成与主会话相同的思考、正文与工具行；首条用户消息是任务，不重复显示。
+     * 子 Agent 过程转成与主会话相同的思考、正文与工具行；首条用户消息是任务，不重复显示（AG-27 起按回合分段）：
+     * 之后的回合以“第 N 回合”与主 Agent 交给它的任务开头，回合中插入的“主 Agent 补充”单独标出。
      * [running] 为真时，还没出结果的工具显示为执行中，否则为结果未知。
      */
     fun timeline(
@@ -103,7 +113,24 @@ internal object SubagentDetails {
             .mapValues { (_, messages) -> ArrayDeque(messages) }
         val timeline = mutableListOf<AgentChatMessageUi>()
         var round = 0
-        transcript.filter { it.role == "assistant" }.forEach { message ->
+        var turn = 0
+        transcript.forEachIndexed { index, message ->
+            if (message.role == "user") {
+                val text = message.content.trim()
+                val supplement = SUPPLEMENT_PREFIXES.firstOrNull { text.startsWith("$it：") }
+                when {
+                    supplement != null -> timeline += AgentMessageUi(
+                        id = "sub-supplement-$index",
+                        content = "**$supplement**\n\n" + text.removePrefix("$supplement：").substringBefore(SUPPLEMENT_SUFFIX).trim(),
+                    )
+                    text.isNotBlank() && !message.contextSummary -> {
+                        turn++
+                        if (turn > 1) timeline += AgentMessageUi(id = "sub-turn-$turn", content = "**第 $turn 回合**\n\n$text")
+                    }
+                }
+                return@forEachIndexed
+            }
+            if (message.role != "assistant") return@forEachIndexed
             round++
             if (message.reasoningContent.isNotBlank()) {
                 timeline += ThinkingMessageUi(
@@ -142,4 +169,11 @@ internal object SubagentDetails {
         val calls = runCatching { JSONArray(toolCallsJson) }.getOrNull() ?: return emptyList()
         return AgentConversationCodec.parseToolCalls(JSONObject().put("tool_calls", calls))
     }
+
+    /** 回合中插入的消息前缀（见 AgentLoop.steeringPrompt）；旧记录里主 Agent 的补充标的是“用户补充指令”。 */
+    private val SUPPLEMENT_PREFIXES = listOf(
+        io.github.mangi.eta.agent.runtime.AgentRunController.COORDINATOR_STEERING_LABEL,
+        io.github.mangi.eta.agent.runtime.AgentRunController.DEFAULT_STEERING_LABEL,
+    )
+    private const val SUPPLEMENT_SUFFIX = "\n\n请基于当前任务上下文继续执行"
 }

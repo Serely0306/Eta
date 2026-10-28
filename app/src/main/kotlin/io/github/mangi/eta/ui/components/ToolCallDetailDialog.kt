@@ -523,7 +523,8 @@ private suspend fun loadRegistryRecord(
         total = progress.total,
         task = row.task,
         ok = row.status == AgentSubagentManager.STATUS_COMPLETED,
-        result = row.lastError.ifBlank { row.lastResult },
+        // 新回合运行中时库里的结论还是上一回合的，不当作本回合的结论显示（AG-27）；上一回合的结论在时间线里。
+        result = if (row.status == AgentSubagentManager.STATUS_RUNNING) "" else row.lastError.ifBlank { row.lastResult },
         createdAt = row.createdAt,
         transcript = AgentConversationCodec.decodeTranscript(row.transcriptJson),
         running = row.status == AgentSubagentManager.STATUS_RUNNING,

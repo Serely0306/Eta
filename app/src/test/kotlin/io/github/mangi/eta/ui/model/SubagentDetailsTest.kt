@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SubagentDetailsTest {
@@ -39,6 +40,22 @@ class SubagentDetailsTest {
             (SubagentDetails.timeline(inFlight, running = true).last() as ToolActivityMessageUi).status)
         assertEquals(ToolActivityStatusUi.Unknown,
             (SubagentDetails.timeline(inFlight).last() as ToolActivityMessageUi).status)
+    }
+
+    @Test
+    fun laterTurnsAndCoordinatorSupplementsAreMarkedInTheTimeline() {
+        val transcript = listOf(
+            ConversationMessage(role = "user", content = "查应用日志"),
+            ConversationMessage(role = "user", content = "主 Agent 补充：顺便看 crash 缓冲区\n\n请基于当前任务上下文继续执行，不要从头重复已经完成或已经验证过的操作。"),
+            ConversationMessage(role = "assistant", content = "两处都没有异常。"),
+            ConversationMessage(role = "user", content = "再查内核日志"),
+            ConversationMessage(role = "assistant", content = "内核日志也正常。"),
+        )
+        val timeline = SubagentDetails.timeline(transcript).filterIsInstance<AgentMessageUi>().map { it.content }
+        assertEquals(
+            listOf("**主 Agent 补充**\n\n顺便看 crash 缓冲区", "两处都没有异常。", "**第 2 回合**\n\n再查内核日志", "内核日志也正常。"),
+            timeline,
+        )
     }
 
     @Test
@@ -91,7 +108,22 @@ class SubagentDetailsTest {
         )
         assertEquals(listOf("无异常", "", "超时"), a.map { it.progress.conclusion })
         assertEquals(ToolActivityStatusUi.Unknown, grouped.getValue("conv-b").single().progress.status)
+        assertTrue(grouped.getValue("conv-b").single().progress.interrupted)
         assertEquals("conv-b", grouped.getValue("conv-b").single().conversationId)
+    }
+
+    @Test
+    fun closedAgentsKeepTheirLastOutcomeAndShowAsTagged() {
+        fun row(agent: String, result: String, error: String) = io.github.mangi.eta.data.db.ConversationSubagentSummary(
+            id = "conv|$agent", conversationId = "conv", agentId = agent, name = agent, task = "任务", status = "closed",
+            turn = 2, lastResult = result, lastError = error, createdAt = 1, rounds = 14,
+        )
+        val closed = SubagentDetails.fromRegistry(listOf(row("sub_1", "结论", ""), row("sub_2", "", "超时"), row("sub_3", "", "")))
+            .getValue("conv").map { it.progress }
+        assertEquals(listOf(ToolActivityStatusUi.Success, ToolActivityStatusUi.Failed, ToolActivityStatusUi.Unknown), closed.map { it.status })
+        assertTrue(closed.all { it.closed && !it.interrupted })
+        assertEquals(2, closed.first().turn)
+        assertEquals(14, closed.first().rounds)
     }
 
     @Test
