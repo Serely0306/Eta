@@ -48,6 +48,10 @@ internal object Prefs {
         const val AGENT_SUPPRESS_HEADS_UP = "agent_suppress_heads_up"
         /** 子 Agent 派出策略“仅在我要求时”；关闭则为“自动”（AG-19）。 */
         const val AGENT_SUBAGENT_ON_REQUEST = "agent_subagent_on_request"
+        /** 模型请求失败后的重试次数（AG-26），全局一个设置，主 Agent、子 Agent、压缩共用。 */
+        const val AGENT_MODEL_RETRY_LIMIT = "agent_model_retry_limit"
+        const val DEFAULT_MODEL_RETRY_LIMIT = 5
+        const val MAX_MODEL_RETRY_LIMIT = 10
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
         /** 用户单独关闭的工具名集合，仅 Runtime 消费，不同步到 RemotePreferences。 */
         const val AGENT_DISABLED_TOOLS = "agent_disabled_tools"
@@ -168,6 +172,17 @@ internal object Prefs {
     /** 本地 Agent 开关（如子 Agent 派出策略）；同进程的 Runtime 下一轮即读到新值。 */
     fun setLocalAgentEnabled(key: String, enabled: Boolean) {
         localAgent?.edit()?.putBoolean(key, enabled)?.apply()
+    }
+
+    /** 同进程的 Runtime 在下一次失败时读到新值；没有本地配置（单测、Hook 进程）时用默认值。 */
+    fun modelRetryLimit(): Int =
+        runCatching { localAgent?.getInt(Keys.AGENT_MODEL_RETRY_LIMIT, Keys.DEFAULT_MODEL_RETRY_LIMIT) }
+            .getOrNull()
+            ?.coerceIn(0, Keys.MAX_MODEL_RETRY_LIMIT)
+            ?: Keys.DEFAULT_MODEL_RETRY_LIMIT
+
+    fun setModelRetryLimit(limit: Int) {
+        localAgent?.edit()?.putInt(Keys.AGENT_MODEL_RETRY_LIMIT, limit.coerceIn(0, Keys.MAX_MODEL_RETRY_LIMIT))?.apply()
     }
 
     /** 同进程的 Runtime 读取内存中的最新值，下一轮模型请求即生效；落盘异步进行。 */

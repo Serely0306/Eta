@@ -48,6 +48,7 @@ internal object GeminiInteractionsProvider : AgentProviderClient {
                 runController.throwIfCancelled()
                 if (!response.isSuccessful) throw AgentModelFailure.http(
                     response.code, response.peekBody(16_384).string(), includeParameterDetails = true,
+                    retryAfterMs = response.retryAfterMs(),
                 )
                 val previousAssistant = (request.messages.length() - 1 downTo 0).firstNotNullOfOrNull {
                     request.messages.optJSONObject(it)?.takeIf { message -> message.optString("role") == "assistant" }

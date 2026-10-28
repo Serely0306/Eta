@@ -19,6 +19,7 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.FilterAlt
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.GppMaybe
 import androidx.compose.material.icons.rounded.Hearing
 import androidx.compose.material.icons.rounded.ImportContacts
@@ -51,6 +52,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -387,6 +389,29 @@ private fun SettingsPageContent(
                             },
                         )
                     }
+
+                    // 请求失败重试（AG-26）：全局一个次数，主 Agent、子 Agent、压缩共用，下一次失败即生效。
+                    var modelRetryLimit by remember { mutableIntStateOf(Prefs.modelRetryLimit()) }
+                    val retryOffLabel = stringResource(R.string.settings_model_retry_off)
+                    val retryItems = remember(retryOffLabel) {
+                        (0..Prefs.Keys.MAX_MODEL_RETRY_LIMIT).map { count ->
+                            DropdownItem(text = if (count == 0) retryOffLabel else context.getString(R.string.settings_model_retry_times, count))
+                        }
+                    }
+                    EtaPreferenceDivider()
+                    EtaDropdownPreference(
+                        title = stringResource(R.string.settings_model_retry_limit),
+                        summary = stringResource(R.string.settings_model_retry_limit_summary),
+                        items = retryItems,
+                        selectedIndex = modelRetryLimit,
+                        onSelectedIndexChange = { index ->
+                            Prefs.setModelRetryLimit(index)
+                            modelRetryLimit = index
+                        },
+                        startAction = {
+                            EtaPreferenceIcon(icon = Icons.Rounded.Refresh, tint = EtaPreferenceColors.Blue)
+                        },
+                    )
                 }
             }
 

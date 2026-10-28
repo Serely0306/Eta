@@ -67,9 +67,12 @@ internal sealed interface AgentEvent {
         val maxAttempts: Int,
         val delayMs: Int,
         val reasonCode: String,
+        /** 失败原因的一行说明（AG-26），由分类后的错误生成，不含请求内容。 */
+        val reasonMessage: String = "",
     ) : AgentEvent {
         val displayMessage: String
-            get() = "模型请求暂时中断，${delayMs / 1000} 秒后重试（$attempt/$maxAttempts）；此前工具结果已保留。"
+            get() = "请求失败，正在重试（$attempt/$maxAttempts）：${reasonMessage.ifBlank { reasonCode }} · " +
+                "${(delayMs + 999) / 1000} 秒后"
 
         override fun toLogLine(): String =
             "model_retry_scheduled round=$round, attempt=$attempt, delay_ms=$delayMs, code=${reasonCode.toSafeLogToken()}"

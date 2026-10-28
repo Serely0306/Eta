@@ -286,7 +286,7 @@ class AgentRuntimeWireTest {
 
     @Test
     fun retryEventSurvivesIpcAndArchiveJson() {
-        val event = AgentEvent.ModelRetryScheduled(7, 2, 3, 4_000, "MODEL_TIMEOUT")
+        val event = AgentEvent.ModelRetryScheduled(7, 2, 5, 4_000, "HTTP_502", "模型接口返回 HTTP 502")
         assertEquals(event, AgentRuntimeWire.eventFromBundle(AgentRuntimeWire.eventToBundle(event)))
         assertEquals(event, AgentEventJsonCodec.decode(AgentEventJsonCodec.encode(event)))
     }

@@ -146,8 +146,6 @@ internal fun AgentChatInputBar(
     onAttachFilePath: (String) -> Unit,
     onRemoveFileReference: (String) -> Unit,
     onCancelMessageEdit: () -> Unit,
-    /** 最后一轮被中断：输入框空着时在上方显示“继续”，点一下发送“继续”。 */
-    showContinue: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
@@ -197,17 +195,6 @@ internal fun AgentChatInputBar(
             .fillMaxWidth(),
     ) {
         if (recognitionEnabled) SpeechInputFeedback(dictation)
-        AnimatedVisibility(
-            visible = showContinue && !isStreaming && !canSend && queuedMessages.isEmpty(),
-            enter = fadeIn(tween(160)),
-            exit = fadeOut(tween(100)) + shrinkVertically(tween(150)),
-        ) {
-            val continueText = stringResource(R.string.chat_continue_interrupted_text)
-            InterruptedContinueStrip(
-                onContinue = { onSubmit(continueText) },
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-        }
         AnimatedVisibility(
             visible = queuedMessages.isNotEmpty(),
             enter = fadeIn(tween(160)),

@@ -1045,6 +1045,10 @@
   <string name="settings_model_fallback_none">不使用</string>
   <string name="settings_model_fallback_content_filter">回复被拦截时也换模型</string>
   <string name="settings_model_fallback_content_filter_summary">服务商审核中断回复时改用备用模型重试</string>
+  <string name="settings_model_retry_limit">请求失败重试次数</string>
+  <string name="settings_model_retry_limit_summary">断线、限流、服务端错误时自动重试并显示原因；主 Agent、子 Agent 与上下文压缩共用</string>
+  <string name="settings_model_retry_off">不重试</string>
+  <string name="settings_model_retry_times">%1$d 次</string>
   <string name="settings_vendor_assistant_model_summary">接管小爱或小布请求时使用的模型</string>
   <string name="settings_vendor_assistant_model_follow_default">跟随默认模型</string>
   <string name="settings_not_configured">未配置</string>
@@ -1795,9 +1799,6 @@
   <string name="chat_queue_status_count">排队中 · %1$d</string>
   <string name="chat_queue_interrupting">插话中</string>
   <string name="chat_queue_steer_now">立即追加到当前回复</string>
-  <string name="chat_continue_interrupted_text">继续</string>
-  <string name="chat_continue_interrupted_hint">上一次回复被中断了</string>
-  <string name="chat_continue_interrupted_action">继续</string>
   <string name="chat_queue_remove">移除排队消息</string>
   <string name="chat_queue_images_only">[%1$d 张图片]</string>
   <string name="chat_queue_files_only">[%1$d 个文件]</string>

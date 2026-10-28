@@ -1033,6 +1033,10 @@
   <string name="settings_model_fallback_none">不使用</string>
   <string name="settings_model_fallback_content_filter">回覆被攔截時也換模型</string>
   <string name="settings_model_fallback_content_filter_summary">服務商審核中斷回覆時改用備用模型重試</string>
+  <string name="settings_model_retry_limit">請求失敗重試次數</string>
+  <string name="settings_model_retry_limit_summary">斷線、限流、伺服器錯誤時自動重試並顯示原因；主 Agent、子 Agent 與上下文壓縮共用</string>
+  <string name="settings_model_retry_off">不重試</string>
+  <string name="settings_model_retry_times">%1$d 次</string>
   <string name="settings_vendor_assistant_model_summary">接管小愛或小布請求時使用的模型</string>
   <string name="settings_vendor_assistant_model_follow_default">跟隨預設模型</string>
   <string name="settings_not_configured">尚未設定</string>
@@ -1725,9 +1729,6 @@
   <string name="chat_queue_status_count">排隊中 · %1$d</string>
   <string name="chat_queue_interrupting">插話中</string>
   <string name="chat_queue_steer_now">立即追加到目前回覆</string>
-  <string name="chat_continue_interrupted_text">繼續</string>
-  <string name="chat_continue_interrupted_hint">上一次回覆被中斷了</string>
-  <string name="chat_continue_interrupted_action">繼續</string>
   <string name="chat_queue_remove">移除排隊訊息</string>
   <string name="chat_queue_images_only">[%1$d 張圖片]</string>
   <string name="chat_queue_files_only">[%1$d 個檔案]</string>

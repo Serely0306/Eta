@@ -105,18 +105,24 @@ class AgentContextRecoveryTest {
     }
 
     @Test
-    fun summaryFailureDoesNotSplitOrRetryAndKeepsOriginalHistory() {
-        for (code in listOf("CONTEXT_OVERFLOW", "MODEL_TIMEOUT")) {
+    fun summaryRequestFailureRetriesTransientOnlyAndKeepsOriginalHistory() {
+        // 临时失败按重试设置整次重发（AG-26），不拆分历史；上下文超限不重试。
+        for ((code, retryable, expectedRequests) in listOf(
+            Triple("CONTEXT_OVERFLOW", false, 1),
+            Triple("MODEL_TIMEOUT", true, 3),
+        )) {
             val messages = messages()
             val original = messages.toString()
             var requests = 0
             val session = AgentContextSession(config, messages, 1, "operation", provider { _, _ ->
                 requests++
-                throw AgentModelFailure(code, true, "fixture")
-            }, AgentRunController(), { emptySet() }, {}, { fail("失败摘要不能提交") })
+                throw AgentModelFailure(code, retryable, "fixture")
+            }, AgentRunController(), { emptySet() }, {}, { fail("失败摘要不能提交") },
+                modelRetry = AgentModelRetry(maxRetries = { 2 }) { _, _ -> })
             val failure = assertThrows(AgentModelFailure::class.java) { session.compact(force = true) }
             assertEquals(code, failure.code)
-            assertEquals(1, requests)
+            assertEquals(expectedRequests, requests)
+            if (retryable) assertTrue(failure.message.orEmpty().contains("已重试 2 次"))
             assertEquals(original, messages.toString())
             assertNull(session.snapshot())
         }

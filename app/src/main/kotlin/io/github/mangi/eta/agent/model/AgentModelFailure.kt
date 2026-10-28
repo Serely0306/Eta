@@ -1,32 +1,64 @@
 package io.github.mangi.eta.agent.model
 
+import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.ProtocolException
+import java.text.SimpleDateFormat
+import java.util.Locale
 import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
 
-/** Provider 边界只分类失败；重试预算与上下文由 Loop 持有。 */
+/** 服务商在失败响应里要求的等待时长，交给重试退避使用。 */
+internal fun Response.retryAfterMs(): Long? =
+    AgentModelFailure.parseRetryAfter(header("retry-after-ms"), header("Retry-After"))
+
+/**
+ * Provider 边界只分类失败；重试预算与上下文由 Loop 持有。可重试按排除法判断（AG-26）：
+ * 认证、额度、参数、不存在、内容过滤与上下文超限之外的失败都可重试。
+ */
 internal class AgentModelFailure(
     val code: String,
     val retryable: Boolean,
     message: String,
     cause: Throwable? = null,
+    /** 服务商通过 `Retry-After` / `retry-after-ms` 指定的等待时长。 */
+    val retryAfterMs: Long? = null,
 ) : IllegalStateException(message, cause) {
     companion object {
-        private val transientStatus = setOf(408, 429, 500, 502, 503, 504, 524, 529)
+        private val retryableClientStatus = setOf(408, 409, 425, 429)
         private val permanentCodes = setOf(
             "insufficient_quota", "quota_exceeded", "billing_error", "usage_limit_reached",
         )
-        private val transientCodes = setOf(
-            "rate_limit_exceeded", "rate_limit_error", "overloaded_error", "server_error",
-            "api_error", "internal_error", "provider_unavailable", "service_unavailable",
-            "RESOURCE_EXHAUSTED", "UNAVAILABLE", "INTERNAL", "DEADLINE_EXCEEDED",
+        /** 流里明确表示请求本身有问题、重发也不会好的错误；其余（含中转站的 upstream_error）都重试。 */
+        private val nonRetryableStreamCodes = setOf(
+            "invalid_request_error", "invalid_request", "invalid_api_key", "authentication_error",
+            "permission_error", "permission_denied", "not_found_error", "model_not_found",
+            "content_filter", "content_policy_violation",
+            "INVALID_ARGUMENT", "PERMISSION_DENIED", "NOT_FOUND", "FAILED_PRECONDITION", "UNAUTHENTICATED",
         )
 
         private val invalidApiKeyReasons = setOf("API_KEY_INVALID", "API_KEY_EXPIRED")
 
-        fun http(status: Int, body: String, includeParameterDetails: Boolean = false): AgentModelFailure {
+        fun isRetryableStatus(status: Int): Boolean = status in retryableClientStatus || status in 500..599
+
+        /** `retry-after-ms`（毫秒）优先，其次 `Retry-After`（秒数或 HTTP 日期）；无法解析时返回 null。 */
+        fun parseRetryAfter(retryAfterMs: String?, retryAfter: String?, nowMillis: Long = System.currentTimeMillis()): Long? {
+            retryAfterMs?.trim()?.toDoubleOrNull()?.takeIf { it >= 0 }?.let { return it.toLong() }
+            val value = retryAfter?.trim()?.takeIf(String::isNotEmpty) ?: return null
+            value.toDoubleOrNull()?.takeIf { it >= 0 }?.let { return (it * 1000).toLong() }
+            return runCatching {
+                SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US).parse(value)?.time
+            }.getOrNull()?.let { (it - nowMillis).coerceAtLeast(0) }
+        }
+
+        fun http(
+            status: Int,
+            body: String,
+            includeParameterDetails: Boolean = false,
+            retryAfterMs: Long? = null,
+        ): AgentModelFailure {
             val error = try {
                 JSONObject(body).optJSONObject("error")
             } catch (_: org.json.JSONException) {
@@ -44,7 +76,8 @@ internal class AgentModelFailure(
             }
             return AgentModelFailure(
                 code = "HTTP_$status",
-                retryable = status in transientStatus && !permanent,
+                retryable = isRetryableStatus(status) && !permanent,
+                retryAfterMs = retryAfterMs,
                 message = if (permanent) "模型接口额度或计费受限（HTTP $status），请检查服务商账户。"
                 else when (status) {
                     400 -> "模型请求参数无效（HTTP 400），请检查模型配置。"
@@ -68,10 +101,12 @@ internal class AgentModelFailure(
                 error.optString("status"),
                 error.optJSONObject("metadata")?.optString("error_type").orEmpty(),
             )
+            val nonRetryable = codes.any { code ->
+                code in nonRetryableStreamCodes || code.toIntOrNull()?.let { it in 400..499 && !isRetryableStatus(it) } == true
+            }
             return AgentModelFailure(
                 code = "PROVIDER_STREAM_ERROR",
-                retryable = !isPermanent(error, error.optString("message")) &&
-                    codes.any { it in transientCodes || it.toIntOrNull() in transientStatus },
+                retryable = !nonRetryable && !isPermanent(error, error.optString("message")),
                 message = message,
             )
         }
@@ -86,7 +121,11 @@ internal class AgentModelFailure(
                     "或上下文压缩总耗时超过 ${AgentHttpClient.COMPACTION_CALL_TIMEOUT_MS / 60_000} 分钟）。",
                 failure,
             )
-            is SSLException, is ProtocolException -> null
+            // 握手失败多为证书或协议配置问题，重发也不会好；连接中途的 SSL 与协议异常按断线重试。
+            is SSLHandshakeException -> null
+            is SSLException, is ProtocolException -> AgentModelFailure(
+                "MODEL_CONNECTION_FAILED", true, "模型连接中途断开（SSL 或协议异常），请检查网络与服务商状态。", failure,
+            )
             is IOException -> AgentModelFailure(
                 "MODEL_CONNECTION_FAILED", true, "模型连接中断或暂时无法建立，请检查网络与服务商状态。", failure,
             )

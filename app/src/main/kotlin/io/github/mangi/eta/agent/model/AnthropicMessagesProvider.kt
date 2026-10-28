@@ -93,7 +93,7 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                     if (fallbackMaxTokens != null && response.code == 400 && errorBody.contains("max_tokens", ignoreCase = true)) {
                         throw MaxTokensRejected()
                     }
-                    throw AgentModelFailure.http(response.code, errorBody)
+                    throw AgentModelFailure.http(response.code, errorBody, retryAfterMs = response.retryAfterMs())
                 }
                 val assistant = readStreamingAssistantMessage(response.body.byteStream(), runController, onEvent)
                 onEvent(ProviderEvent.Completed(assistant.optString("finish_reason").ifBlank { null }))

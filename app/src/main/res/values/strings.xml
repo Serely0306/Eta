@@ -1059,6 +1059,10 @@
   <string name="settings_model_fallback_none">Not used</string>
   <string name="settings_model_fallback_content_filter">Also switch when a reply is blocked</string>
   <string name="settings_model_fallback_content_filter_summary">Retry with the fallback model when provider moderation stops a reply</string>
+  <string name="settings_model_retry_limit">Retries on request failure</string>
+  <string name="settings_model_retry_limit_summary">Network drops, rate limits and server errors are retried with the reason shown; applies to the main agent, sub-agents and compaction</string>
+  <string name="settings_model_retry_off">Off</string>
+  <string name="settings_model_retry_times">%1$d times</string>
   <string name="settings_vendor_assistant_model_summary">Model used when XiaoAi or Breeno requests are taken over</string>
   <string name="settings_vendor_assistant_model_follow_default">Follow default model</string>
   <string name="settings_not_configured">Not configured</string>
@@ -1823,9 +1827,6 @@
   <string name="chat_queue_status_count">排队中 · %1$d</string>
   <string name="chat_queue_interrupting">插话中</string>
   <string name="chat_queue_steer_now">立即追加到当前回复</string>
-  <string name="chat_continue_interrupted_text">Continue</string>
-  <string name="chat_continue_interrupted_hint">The last reply was interrupted</string>
-  <string name="chat_continue_interrupted_action">Continue</string>
   <string name="chat_queue_remove">移除排队消息</string>
   <string name="chat_queue_images_only">[%1$d 张图片]</string>
   <string name="chat_queue_files_only">[%1$d 个文件]</string>

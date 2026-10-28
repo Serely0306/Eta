@@ -56,6 +56,7 @@ internal class AgentLoop(
         config, messages, systemCount, operationId, provider, runController,
         { sensitiveToolCallIds }, onEvent, onContextSnapshot, { transcript.length() },
         roleplay = roleplayContext != null,
+        modelRetry = modelRetry,
     )
     private var supplementIndex = initialSupplementIndex
     private var noticeIndex = 0

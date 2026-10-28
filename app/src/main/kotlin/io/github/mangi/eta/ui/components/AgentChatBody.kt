@@ -95,8 +95,6 @@ import io.github.mangi.eta.ui.model.MessageEditUiState
 import io.github.mangi.eta.ui.model.PendingFileReferenceUi
 import io.github.mangi.eta.ui.model.PendingImageUi
 import io.github.mangi.eta.ui.model.QueuedMessageUi
-import io.github.mangi.eta.ui.model.SystemNoticeCode
-import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
 import io.github.mangi.eta.ui.model.ThinkingMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
@@ -391,14 +389,7 @@ private fun AgentChatScaffold(
             bottom = 0.dp,
         ),
         bottomBar = {
-            // 最后一轮被中断（进程结束、设备重启）或被手动停止时，输入框上方给出“继续”。
-            val lastRunInterrupted = remember(visibleMessages) {
-                visibleMessages.lastOrNull().let {
-                    it is SystemNoticeMessageUi && it.code in setOf(SystemNoticeCode.Interrupted, SystemNoticeCode.Stopped)
-                }
-            }
             AgentChatBottomBar(
-                lastRunInterrupted = lastRunInterrupted,
                 messageBackdrop = messageBackdrop.takeIf { frostEnabled },
                 input = input,
                 modelPickerState = modelPickerState,
@@ -1020,7 +1011,6 @@ internal fun resolveFinalResultMessageIds(
 
 @Composable
 private fun AgentChatBottomBar(
-    lastRunInterrupted: Boolean,
     messageBackdrop: LayerBackdrop?,
     input: String,
     modelPickerState: AgentModelPickerUiState,
@@ -1169,7 +1159,6 @@ private fun AgentChatBottomBar(
                 onAttachFilePath = onAttachFilePath,
                 onRemoveFileReference = onRemoveFileReference,
                 onCancelMessageEdit = onCancelMessageEdit,
-                showContinue = lastRunInterrupted && pendingQuestion == null && messageEdit == null,
                 modifier = Modifier.fillMaxWidth(),
             )
         }

@@ -787,6 +787,7 @@ internal object AgentRuntimeWire {
                 putInt("max_attempts", event.maxAttempts)
                 putInt("delay_ms", event.delayMs)
                 putString("reason_code", event.reasonCode)
+                putString("reason_message", event.reasonMessage)
             }
 
             is AgentEvent.ProviderRequestStarted -> {
@@ -985,9 +986,10 @@ internal object AgentRuntimeWire {
         "model_retry_scheduled" -> AgentEvent.ModelRetryScheduled(
             round = bundle.getInt("round"),
             attempt = bundle.getInt("attempt", 1),
-            maxAttempts = bundle.getInt("max_attempts", 3),
-            delayMs = bundle.getInt("delay_ms", 2_000),
+            maxAttempts = bundle.getInt("max_attempts", Prefs.Keys.DEFAULT_MODEL_RETRY_LIMIT),
+            delayMs = bundle.getInt("delay_ms", 1_000),
             reasonCode = bundle.getString("reason_code").orEmpty(),
+            reasonMessage = bundle.getString("reason_message").orEmpty(),
         )
 
         "provider_request_started" -> AgentEvent.ProviderRequestStarted(

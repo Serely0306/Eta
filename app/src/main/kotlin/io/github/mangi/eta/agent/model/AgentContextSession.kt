@@ -17,6 +17,7 @@ internal class AgentContextSession(
     private val onContextSnapshot: (AgentContextSnapshot) -> Unit,
     private val transcriptSize: () -> Int = { 0 },
     private val roleplay: Boolean = false,
+    private val modelRetry: AgentModelRetry = AgentModelRetry(),
 ) {
     private val contextWindow = config.knownContextWindow
     private var inputTokens: Int? = null
@@ -84,7 +85,7 @@ internal class AgentContextSession(
         val operation = java.util.UUID.randomUUID().toString()
         onEvent(AgentEvent.ContextCompaction(operation, AgentEvent.ContextCompaction.PHASE_STARTED, before))
         try {
-            val candidate = AgentContextCompactor(config, provider, runController, roleplay = roleplay).compact(
+            val candidate = AgentContextCompactor(config, provider, runController, roleplay = roleplay, modelRetry = modelRetry).compact(
                 messages, systemCount, sensitiveIds(),
             )
             runController.throwIfCancelled()

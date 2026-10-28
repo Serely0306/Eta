@@ -4,12 +4,16 @@ import io.github.mangi.eta.agent.runtime.AgentRunController
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** 摘要只有完整成功后才能替换历史；失败时保留原文，不细分重放请求。 */
+/**
+ * 摘要只有完整成功后才能替换历史；失败时保留原文。请求本身的临时失败（断流、限流、5xx）按全局重试设置
+ * 整次重发（AG-26）；摘要内容不合格（调用工具、截断、为空）不重试。
+ */
 internal class AgentContextSummarizer(
     private val config: AgentModelClient.ModelConfig,
     private val provider: AgentProviderClient,
     private val controller: AgentRunController,
     private val roleplay: Boolean,
+    private val retry: AgentModelRetry = AgentModelRetry(),
 ) {
     fun summarize(history: List<AgentModelClient.ConversationMessage>): String {
         controller.throwIfCancelled()
@@ -24,13 +28,13 @@ internal class AgentContextSummarizer(
                 append("待整理的历史：\n")
                 history.forEach { append(AgentConversationCodec.toJsonObject(it)).append('\n') }
             }))
-        val response = provider.complete(
-            ProviderRequest(config, messages, JSONArray(), purpose = ProviderRequestPurpose.COMPACTION),
-            controller,
-        ) { event ->
-            if (event is ProviderEvent.HostedToolStarted ||
-                event is ProviderEvent.BlockStart && event.kind == AssistantBlockKind.TOOL_CALL) {
-                throw invalidSummary("模型尝试调用工具")
+        val request = ProviderRequest(config, messages, JSONArray(), purpose = ProviderRequestPurpose.COMPACTION)
+        val response = retry.retrying(controller) {
+            provider.complete(request, controller) { event ->
+                if (event is ProviderEvent.HostedToolStarted ||
+                    event is ProviderEvent.BlockStart && event.kind == AssistantBlockKind.TOOL_CALL) {
+                    throw invalidSummary("模型尝试调用工具")
+                }
             }
         }
         controller.throwIfCancelled()

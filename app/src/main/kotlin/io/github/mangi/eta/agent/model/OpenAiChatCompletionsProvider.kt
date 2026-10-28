@@ -83,7 +83,9 @@ internal object OpenAiChatCompletionsProvider : AgentProviderClient {
         ) { response ->
             onEvent(ProviderEvent.ResponseHeaders(response.code))
             if (!response.isSuccessful) {
-                throw AgentModelFailure.http(response.code, response.peekBody(16_384).string())
+                throw AgentModelFailure.http(
+                    response.code, response.peekBody(16_384).string(), retryAfterMs = response.retryAfterMs(),
+                )
             }
             val assistantMessage = readStreamingAssistantMessage(
                 response.body.byteStream(), runController, existingToolCallIds, onEvent,
