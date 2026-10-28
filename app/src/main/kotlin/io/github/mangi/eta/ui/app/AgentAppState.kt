@@ -973,8 +973,12 @@ internal class AgentAppState(
     private fun changeMessageWindow(loadEarlier: Boolean) {
         val conversationId = selectedConversationId ?: return
         if (historyPageJob?.isActive == true || !homeState.isConversationLoaded ||
-            (loadEarlier && !homeState.hasEarlierMessages) ||
-            homeState.isStreaming || homeState.messageEdit != null) return
+            (loadEarlier && !homeState.hasEarlierMessages) || homeState.messageEdit != null) return
+        if (homeState.isStreaming) {
+            // 运行中只往前插入更早的一页（AG-29）；释放旧页等运行结束后再做。
+            if (loadEarlier) prependEarlierPage(conversationId)
+            return
+        }
         val pageVersion = ++historyPageVersion
         historyPageReleasesEarlier = !loadEarlier
         historyLoadState = ConversationHistoryLoadState.Loading
@@ -1026,6 +1030,46 @@ internal class AgentAppState(
                     if (historyLoadState == ConversationHistoryLoadState.Loading) {
                         historyLoadState = ConversationHistoryLoadState.Idle
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * 运行中加载更早的一页（AG-29）：消息仍在不断变化，不能像空闲时那样先保存再整窗替换；
+     * 读出的页直接插到当前最新状态的前面，保存基线同步前移。期间窗口起点变了就放弃这一页。
+     */
+    private fun prependEarlierPage(conversationId: String) {
+        val pageVersion = ++historyPageVersion
+        historyPageReleasesEarlier = false
+        historyLoadState = ConversationHistoryLoadState.Loading
+        historyPageJob = scope.launch {
+            try {
+                conversationLoadMutex.withLock {
+                    val startIndex = conversationsById[conversationId]?.messageStartIndex ?: return@withLock
+                    val page = AgentConversationStore.loadEarlierMessages(appContext, conversationId, startIndex)
+                    val latest = conversationsById[conversationId]?.takeIf { it.canPrependEarlierPage(startIndex) }
+                        ?: return@withLock
+                    val originals = AgentConversationStore.loadRoleplayMessageContents(
+                        appContext, conversationId,
+                        RoleplayConversationReducer.requiredOriginalContentIds(latest.withEarlierPage(page)),
+                    )
+                    // 读原文期间又有新的流式内容，以最新状态为准再插入一次。
+                    val current = conversationsById[conversationId]?.takeIf { it.canPrependEarlierPage(startIndex) }
+                        ?: return@withLock
+                    conversationPersistence.prependEarlierMessages(conversationId, page.messages, startIndex, page.startIndex)
+                    updateConversation(conversationId, current.withEarlierPage(page).copy(
+                        roleplayOriginalContents = current.roleplayOriginalContents + originals,
+                    ), updateTimestamp = false)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                AndroidAgentLogger.error("Agent message page prepend failed: type=${failure.safeLogType()}")
+                if (historyPageVersion == pageVersion) historyLoadState = ConversationHistoryLoadState.Failed
+            } finally {
+                if (historyPageVersion == pageVersion && historyLoadState == ConversationHistoryLoadState.Loading) {
+                    historyLoadState = ConversationHistoryLoadState.Idle
                 }
             }
         }
@@ -2742,6 +2786,17 @@ private data class ContentMatchCacheEntry(
     val state: AgentChatHomeUiState,
     val matches: Boolean,
 )
+
+/** 运行中往前插入一页的前提（AG-29）：窗口起点没变、没有在编辑，且确实还有更早的消息。 */
+internal fun AgentChatHomeUiState.canPrependEarlierPage(startIndex: Int): Boolean =
+    isConversationLoaded && messageEdit == null && hasEarlierMessages && messageStartIndex == startIndex
+
+internal fun AgentChatHomeUiState.withEarlierPage(page: AgentConversationStore.MessagePage): AgentChatHomeUiState =
+    RoleplayConversationReducer.decorate(copy(
+        messages = page.messages + messages,
+        messageStartIndex = page.startIndex,
+        hasEarlierMessages = page.hasEarlierMessages,
+    ))
 
 private fun AgentChatHomeUiState.canReplaceMessageWindowOf(saved: AgentChatHomeUiState): Boolean =
     isConversationLoaded && !isStreaming && messageEdit == null &&

@@ -248,6 +248,48 @@ class AgentConversationPersistenceTest {
     }
 
     @Test
+    fun prependingAnEarlierPageWhileStreamingOnlyWritesTheStreamingChanges() = runBlocking {
+        val messages = (0 until 300).map { UserMessageUi("user-$it", "消息-$it") }
+        AgentConversationPersistence().save(context, snapshot(mapOf("active" to state("active").copy(messages = messages))))
+        val loaded = AgentConversationStore.load(context)
+        val persistence = AgentConversationPersistence(loaded)
+        val tail = loaded.conversationsById.getValue("active")
+        val streaming = tail.copy(isStreaming = true, messages = tail.messages + AgentMessageUi("answer", "片段"))
+        persistence.save(context, loaded.copy(conversationsById = mapOf("active" to streaming)))
+        val page = AgentConversationStore.loadEarlierMessages(context, "active", streaming.messageStartIndex)
+        assertTrue(streaming.canPrependEarlierPage(streaming.messageStartIndex))
+
+        persistence.prependEarlierMessages("active", page.messages, streaming.messageStartIndex, page.startIndex)
+        val expanded = streaming.withEarlierPage(page)
+        installAudit()
+        val updated = expanded.copy(messages = expanded.messages.dropLast(1) + AgentMessageUi("answer", "片段继续"))
+        persistence.save(context, loaded.copy(conversationsById = mapOf("active" to updated)))
+
+        assertEquals(44, expanded.messageStartIndex)
+        assertEquals(0, events("conversation_messages", "user-44"))
+        assertEquals(0, events("conversation_messages", "user-171"))
+        assertEquals(messages + AgentMessageUi("answer", "片段继续"), AgentConversationStore.loadAllMessages(context, "active"))
+    }
+
+    @Test
+    fun aSaveRacingAnEarlierPagePrependNeverDropsOlderRows() = runBlocking {
+        val messages = (0 until 300).map { UserMessageUi("user-$it", "消息-$it") }
+        AgentConversationPersistence().save(context, snapshot(mapOf("active" to state("active").copy(messages = messages))))
+        val loaded = AgentConversationStore.load(context)
+        val persistence = AgentConversationPersistence(loaded)
+        val tail = loaded.conversationsById.getValue("active").copy(isStreaming = true)
+        val page = AgentConversationStore.loadEarlierMessages(context, "active", tail.messageStartIndex)
+
+        // 基线已前移、界面状态还没换：用旧窗口保存一次，再用插入后的窗口保存。
+        persistence.prependEarlierMessages("active", page.messages, tail.messageStartIndex, page.startIndex)
+        val appended = tail.copy(messages = tail.messages + AgentMessageUi("answer", "回答"))
+        persistence.save(context, loaded.copy(conversationsById = mapOf("active" to appended)))
+        persistence.save(context, loaded.copy(conversationsById = mapOf("active" to appended.withEarlierPage(page))))
+
+        assertEquals(messages + AgentMessageUi("answer", "回答"), AgentConversationStore.loadAllMessages(context, "active"))
+    }
+
+    @Test
     fun offscreenRoleplayRevisionsUpdateStoredRowsWithoutLoadingTheirMessageWindow() = runBlocking {
         val messages = (0 until 300).map { index ->
             if (index % 2 == 0) UserMessageUi("message-$index", "正文-$index")

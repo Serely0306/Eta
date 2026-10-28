@@ -26,6 +26,22 @@ internal class AgentConversationPersistence(initial: AgentConversationStore.Snap
         saved = saved + (id to Content(state, title, updatedAt))
     }
 
+    /**
+     * 运行中往前插入更早的一页（AG-29）：这些消息本来就在库里，基线同步前移，下一次保存只写流式变化。
+     * 基线的窗口起点已经不同时不动：保存比对到起点不同会整窗重写当前窗口，只删窗口起点之后的行，更早的数据不受影响。
+     */
+    suspend fun prependEarlierMessages(
+        id: String,
+        messages: List<AgentChatMessageUi>,
+        fromStartIndex: Int,
+        newStartIndex: Int,
+    ) = mutex.withLock {
+        val content = saved[id]?.takeIf { it.isConversationLoaded && it.messageStartIndex == fromStartIndex } ?: return@withLock
+        saved = saved + (id to content.copy(messages = messages + content.messages, messageStartIndex = newStartIndex))
+    }
+
+    internal fun savedForTest(id: String): Content? = saved[id]
+
     suspend fun forgetConversation(id: String) = mutex.withLock {
         saved = saved - id
     }
