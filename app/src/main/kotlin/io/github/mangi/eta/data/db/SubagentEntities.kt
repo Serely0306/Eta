@@ -114,10 +114,18 @@ internal interface SubagentDao : ChunkedTextDao {
         upsertAgentRow(row.copy(transcriptJson = storeText(TABLE, row.id, TRANSCRIPT_FIELD, row.transcriptJson)))
     }
 
-    /** 进程重启后，上一个进程里还在运行的子 Agent 改为已中断，之后可以继续使用。 */
+    @Query("SELECT id, conversation_id, agent_id, name, task, status, turn, last_result, last_error, created_at " +
+        "FROM conversation_subagents WHERE status = 'running' AND owner_instance_id != :ownerInstanceId")
+    suspend fun staleRunning(ownerInstanceId: String): List<ConversationSubagentSummary>
+
     @Query("UPDATE conversation_subagents SET status = 'interrupted', updated_at = :now " +
         "WHERE status = 'running' AND owner_instance_id != :ownerInstanceId")
-    suspend fun interruptStale(ownerInstanceId: String, now: Long): Int
+    suspend fun markStaleInterrupted(ownerInstanceId: String, now: Long): Int
+
+    /** 进程重启后，上一个进程里还在运行的子 Agent 改为已中断（之后可以继续使用），返回这些子 Agent 以便补发中断通知。 */
+    @Transaction
+    suspend fun interruptStale(ownerInstanceId: String, now: Long): List<ConversationSubagentSummary> =
+        staleRunning(ownerInstanceId).also { markStaleInterrupted(ownerInstanceId, now) }
 
     @Insert
     suspend fun insertMail(mail: ConversationSubagentMailEntity): Long
@@ -129,11 +137,14 @@ internal interface SubagentDao : ChunkedTextDao {
     @Query("UPDATE conversation_subagent_mail SET delivered_run_id = :runId WHERE id IN (:ids)")
     suspend fun markMailDelivered(ids: List<Long>, runId: String?)
 
-    @Query("SELECT DISTINCT conversation_id FROM conversation_subagent_mail WHERE delivered_run_id IS NULL")
+    /** 有可唤醒通知（完成或失败）的会话；只有中断通知的会话等下一次 run 再交，不唤醒主 Agent。 */
+    @Query("SELECT DISTINCT conversation_id FROM conversation_subagent_mail " +
+        "WHERE delivered_run_id IS NULL AND status != 'interrupted'")
     suspend fun conversationsWithUndeliveredMail(): List<String>
 
-    @Query("SELECT COUNT(*) FROM conversation_subagent_mail WHERE conversation_id = :conversationId AND delivered_run_id IS NULL")
-    suspend fun undeliveredMailCount(conversationId: String): Int
+    @Query("SELECT COUNT(*) FROM conversation_subagent_mail " +
+        "WHERE conversation_id = :conversationId AND delivered_run_id IS NULL AND status != 'interrupted'")
+    suspend fun wakeableMailCount(conversationId: String): Int
 
     @Query("DELETE FROM conversation_subagents WHERE conversation_id = :conversationId")
     suspend fun deleteAgents(conversationId: String)

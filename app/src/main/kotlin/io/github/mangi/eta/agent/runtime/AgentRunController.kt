@@ -9,7 +9,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-internal class AgentRunController {
+/**
+ * @param steeringLabel 运行中插入的消息在模型上下文里的标注；子 Agent 收到的是主 Agent 的补充，不是用户的话。
+ * @param endTurnBeforeSteering 为真时（子 Agent，AG-27），模型写出最终回复后不再消费排队消息继续本回合：
+ *   回合照常结束、交出结论，排队消息由 [drainSteering] 取走作为下一回合的开头（与 Claude Code 一致）。
+ */
+internal class AgentRunController(
+    val steeringLabel: String = DEFAULT_STEERING_LABEL,
+    private val endTurnBeforeSteering: Boolean = false,
+) {
     private val resources = CopyOnWriteArraySet<CancellableResource>()
 
     @Volatile
@@ -138,15 +146,23 @@ internal class AgentRunController {
      */
     fun pollSteeringOrSeal(): String? =
         lock.withLock {
-            steeringMessages.pollFirst()?.let { return it }
+            if (!endTurnBeforeSteering) steeringMessages.pollFirst()?.let { return it }
             // 封口前刚到的子 Agent 通知：不封口，由主循环取走后继续下一轮（见 AgentLoop）。
             if (notices.isNotEmpty()) return null
             acceptingSteering = false
             null
         }
 
+    /** 回合结束后还没插入的消息（[endTurnBeforeSteering] 时封口留下的），一次取走。 */
+    fun drainSteering(): List<String> = lock.withLock {
+        steeringMessages.toList().also { steeringMessages.clear() }
+    }
+
     val hasPendingSteering: Boolean
         get() = lock.withLock { steeringMessages.isNotEmpty() }
+
+    val pendingSteeringCount: Int
+        get() = lock.withLock { steeringMessages.size }
 
     /**
      * 暂停执行：后续 [throwIfCancelled] 调用会阻塞挂起，直到 [resume] 或 [cancel]。
@@ -218,6 +234,11 @@ internal class AgentRunController {
         fun cancel() {
             if (cancelled.compareAndSet(false, true)) cancelBlock()
         }
+    }
+
+    companion object {
+        const val DEFAULT_STEERING_LABEL = "用户补充指令"
+        const val COORDINATOR_STEERING_LABEL = "主 Agent 补充"
     }
 }
 

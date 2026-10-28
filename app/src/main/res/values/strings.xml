@@ -554,6 +554,9 @@
   <string name="subagent_strategy_label">Spawn</string>
   <string name="subagent_strategy_auto">Automatic</string>
   <string name="subagent_strategy_on_request">Only when I ask</string>
+  <string name="subagent_auto_wake_label">When a sub-agent finishes after the reply</string>
+  <string name="subagent_auto_wake_on">Continue automatically</string>
+  <string name="subagent_auto_wake_off">Wait for my next message</string>
   <string name="tool_status_running">Running</string>
   <string name="tool_status_success">Completed</string>
   <string name="tool_status_failed">Failed</string>

@@ -127,6 +127,8 @@ internal fun ToolCard(
         if (tool.id == SUBAGENT_CARD && toggleText == null) {
             Spacer(modifier = Modifier.height(10.dp))
             SubagentStrategySelector()
+            Spacer(modifier = Modifier.height(6.dp))
+            SubagentAutoWakeSelector()
         }
         Spacer(modifier = Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -171,17 +173,36 @@ private const val SUBAGENT_CARD = "spawn_agent"
 
 @Composable
 private fun SubagentStrategySelector() {
-    var onRequest by remember { mutableStateOf(Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST)) }
+    LocalChoiceRow(
+        key = Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST,
+        label = R.string.subagent_strategy_label,
+        options = listOf(false to R.string.subagent_strategy_auto, true to R.string.subagent_strategy_on_request),
+    )
+}
+
+/** 主对话已结束时，子 Agent 完成后是否自动开一轮让主 Agent 处理结果（AG-27）。 */
+@Composable
+private fun SubagentAutoWakeSelector() {
+    LocalChoiceRow(
+        key = Prefs.Keys.AGENT_SUBAGENT_AUTO_WAKE,
+        label = R.string.subagent_auto_wake_label,
+        options = listOf(true to R.string.subagent_auto_wake_on, false to R.string.subagent_auto_wake_off),
+    )
+}
+
+@Composable
+private fun LocalChoiceRow(key: String, label: Int, options: List<Pair<Boolean, Int>>) {
+    var current by remember { mutableStateOf(Prefs.isEnabled(key)) }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
-            text = stringResource(R.string.subagent_strategy_label),
+            text = stringResource(label),
             style = MiuixTheme.textStyles.footnote1,
             color = MiuixTheme.colorScheme.onSurfaceVariantActions,
         )
-        listOf(false to R.string.subagent_strategy_auto, true to R.string.subagent_strategy_on_request).forEach { (value, label) ->
-            val selected = onRequest == value
+        options.forEach { (value, optionLabel) ->
+            val selected = current == value
             Text(
-                text = stringResource(label),
+                text = stringResource(optionLabel),
                 style = MiuixTheme.textStyles.footnote1,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -189,8 +210,8 @@ private fun SubagentStrategySelector() {
                     .clip(RoundedCornerShape(8.dp))
                     .background(if (selected) MiuixTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)
                     .selectable(selected = selected, role = Role.RadioButton) {
-                        Prefs.setLocalAgentEnabled(Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST, value)
-                        onRequest = value
+                        Prefs.setLocalAgentEnabled(key, value)
+                        current = value
                     }
                     .padding(horizontal = 10.dp, vertical = 4.dp),
             )

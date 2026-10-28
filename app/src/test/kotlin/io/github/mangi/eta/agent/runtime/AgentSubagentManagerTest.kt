@@ -4,10 +4,11 @@ import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentModelClient.ConversationMessage
 import io.github.mangi.eta.data.db.ConversationSubagentEntity
 import io.github.mangi.eta.data.db.ConversationSubagentMailEntity
+import io.github.mangi.eta.data.db.ConversationSubagentSummary
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
-import kotlin.concurrent.thread
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -22,9 +23,12 @@ class AgentSubagentManagerTest {
 
         @Synchronized override fun agents(conversationId: String) = agents.values.filter { it.conversationId == conversationId }
         @Synchronized override fun save(agent: ConversationSubagentEntity) { agents[agent.id] = agent }
-        @Synchronized override fun interruptStale(ownerInstanceId: String, now: Long) {
-            agents.replaceAll { _, row ->
-                if (row.status == "running" && row.ownerInstanceId != ownerInstanceId) row.copy(status = "interrupted") else row
+        @Synchronized override fun interruptStale(ownerInstanceId: String, now: Long): List<ConversationSubagentSummary> {
+            val stale = agents.values.filter { it.status == "running" && it.ownerInstanceId != ownerInstanceId }
+            stale.forEach { agents[it.id] = it.copy(status = "interrupted") }
+            return stale.map {
+                ConversationSubagentSummary(it.id, it.conversationId, it.agentId, it.name, it.task, it.status, it.turn,
+                    it.lastResult, it.lastError, it.createdAt)
             }
         }
         @Synchronized override fun addMail(mail: ConversationSubagentMailEntity) { this.mail += mail.copy(id = nextMailId++) }
@@ -38,7 +42,7 @@ class AgentSubagentManagerTest {
             mail.removeAll { it.conversationId == conversationId }
         }
         @Synchronized override fun conversationsWithUndeliveredMail() =
-            mail.filter { it.deliveredRunId == null }.map { it.conversationId }.distinct()
+            mail.filter { it.deliveredRunId == null && it.status != "interrupted" }.map { it.conversationId }.distinct()
     }
 
     /** 每个回合把自己交出来，等测试给出结果。 */
@@ -73,42 +77,107 @@ class AgentSubagentManagerTest {
         )
     }
 
+    /** 像 AgentLoop 那样：模型写出最终回复后先封口，再交出结论。 */
+    private fun sealThenAnswer(text: String): (SubagentTurn) -> SubagentTurnResult = { turn ->
+        assertNull("子 Agent 写完结论后不能再消费排队消息", turn.controller.pollSteeringOrSeal())
+        answer(text)(turn)
+    }
+
     private fun nextTurn(): SubagentTurn = requireNotNull(runner.turns.poll(5, TimeUnit.SECONDS)) { "子 Agent 的回合没有开始" }
 
+    private fun awaitStatus(status: String) {
+        val deadline = System.currentTimeMillis() + 5_000
+        while (manager.snapshot("conv").first().status != status && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        assertEquals(status, manager.snapshot("conv").first().status)
+    }
+
     @Test
-    fun spawnReturnsAtOnceAndWaitTakesTheResultWithoutASecondNotice() {
+    fun spawnReturnsAtOnceAndTheConclusionArrivesAsANotice() {
         val parent = AgentRunController()
         manager.attachParent("conv", "run-1", parent)
         val spawned = manager.spawn(environment, task = "查日志", context = "", name = "log_scan", reason = "并行检索")
         assertTrue(spawned.getBoolean("ok"))
         assertEquals("sub_1", spawned.getString("agent_id"))
         assertEquals("running", spawned.getString("status"))
-        assertTrue(nextTurn().prompt.contains("查日志"))
+        val turn = nextTurn()
+        assertTrue(turn.prompt.contains("查日志"))
+        // 主 Agent 发来的消息不当作用户的话。
+        assertEquals(AgentRunController.COORDINATOR_STEERING_LABEL, turn.controller.steeringLabel)
 
-        thread { Thread.sleep(200); runner.replies.put(answer("无异常")) }
-        val waited = manager.wait(environment, listOf("log_scan"), 5_000, parent)
-
-        assertEquals("无异常", waited.getJSONArray("agents").getJSONObject(0).getString("result"))
-        assertFalse(waited.getBoolean("timed_out"))
-        assertFalse(parent.hasPendingNotices)
-        assertTrue(store.undeliveredMail("conv").isEmpty())
+        runner.replies.put(answer("无异常"))
+        val deadline = System.currentTimeMillis() + 5_000
+        while (!parent.hasPendingNotices && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        val notice = parent.pollNotices().single()
+        assertTrue(notice.modelText.contains("无异常"))
+        assertFalse(notice.modelText.contains("close_agent"))
+        assertTrue(notice.display.contains("log_scan（sub_1） 完成：无异常"))
     }
 
     @Test
     fun sendContinuesTheSameAgentWithItsEarlierContext() {
-        val parent = AgentRunController()
         manager.spawn(environment, "查第一个目录", "", null, "")
         val first = nextTurn()
-        thread { Thread.sleep(100); runner.replies.put(answer("目录 A 有 3 个文件")) }
-        manager.wait(environment, listOf("sub_1"), 5_000, parent)
+        runner.replies.put(answer("目录 A 有 3 个文件"))
+        awaitStatus("completed")
 
-        val sent = manager.send(environment, "sub_1", "再查第二个目录", interrupt = false)
+        val sent = manager.send(environment, "sub_1", "再查第二个目录")
         assertEquals("started", sent.getString("delivery"))
         val second = nextTurn()
         assertEquals(2, second.turn)
         assertEquals(first.modelSessionId, second.modelSessionId)
         assertTrue(second.history.any { it.content == "目录 A 有 3 个文件" })
         runner.replies.put(answer("目录 B 有 1 个文件"))
+    }
+
+    @Test
+    fun messageBetweenToolCallsStaysInTheCurrentTurn() {
+        manager.spawn(environment, "查日志", "", null, "")
+        val turn = nextTurn()
+        assertEquals("queued", manager.send(environment, "sub_1", "顺便看 crash 缓冲区").getString("delivery"))
+        // AgentLoop 在下一次请求模型前取走它，回合继续。
+        assertEquals("顺便看 crash 缓冲区", turn.controller.pollSteeringMessage())
+        runner.replies.put(sealThenAnswer("两处都没有异常"))
+        awaitStatus("completed")
+        assertNull(runner.turns.poll(300, TimeUnit.MILLISECONDS))
+        assertEquals(1, store.mail.size)
+    }
+
+    @Test
+    fun messageAfterTheFinalReplyEndsTheTurnFirstAndStartsTheNext() {
+        manager.spawn(environment, "查日志", "", null, "")
+        val first = nextTurn()
+        assertEquals("queued", manager.send(environment, "sub_1", "再查一下内核日志").getString("delivery"))
+        // 模型已写出最终回复：封口时不消费排队消息，回合照常结束交出结论。
+        runner.replies.put(sealThenAnswer("应用日志没有异常"))
+        val second = nextTurn()
+        assertEquals(2, second.turn)
+        assertEquals("再查一下内核日志", second.prompt)
+        assertTrue(second.history.any { it.content == "应用日志没有异常" })
+        val firstMail = store.mail.single()
+        assertEquals(1, firstMail.turn)
+        assertEquals("completed", firstMail.status)
+        assertTrue(firstMail.payload.contains("应用日志没有异常"))
+        assertTrue(first.controller !== second.controller)
+        runner.replies.put(answer("内核日志也正常"))
+        awaitStatus("completed")
+        assertEquals(listOf(1, 2), store.mail.map { it.turn })
+    }
+
+    @Test
+    fun runningAgentsReportProgressWithoutTheirTranscript() {
+        manager.spawn(environment, "查日志", "", null, "")
+        val turn = nextTurn()
+        val call = """[{"id":"c1","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"/data/log.txt\"}"}}]"""
+        turn.onProgress(turn.history + ConversationMessage("user", turn.prompt) +
+            ConversationMessage("assistant", "先读应用日志", toolCallsJson = call))
+        val agent = manager.list(environment, emptyList()).getJSONArray("agents").getJSONObject(0)
+        assertEquals("running", agent.getString("status"))
+        val progress = agent.getJSONObject("progress")
+        assertEquals(1, progress.getInt("rounds_this_turn"))
+        assertEquals("先读应用日志", progress.getString("latest_note"))
+        assertTrue(progress.getString("latest_tool").startsWith("read_file"))
+        assertEquals(0, progress.getInt("queued_messages"))
+        runner.replies.put(answer("完成"))
     }
 
     @Test
@@ -141,19 +210,26 @@ class AgentSubagentManagerTest {
     }
 
     @Test
-    fun stoppingTheMainRunInterruptsRunningAgentsWithoutANotice() {
+    fun stoppingTheMainRunInterruptsRunningAgentsWithAQuietNotice() {
+        val wakes = AtomicInteger()
+        manager.wakeListener = { wakes.incrementAndGet() }
         manager.spawn(environment, "长任务", "", null, "")
         val turn = nextTurn()
         manager.stopRunning("conv")
         assertTrue(turn.controller.isCancelled)
         runner.replies.put { SubagentTurnResult(false, "已停止", it.history, 0, cancelled = it.controller.isCancelled) }
 
-        val deadline = System.currentTimeMillis() + 5_000
-        while (manager.snapshot("conv").single().status == "running" && System.currentTimeMillis() < deadline) Thread.sleep(20)
-        assertEquals("interrupted", manager.snapshot("conv").single().status)
-        assertTrue(store.mail.isEmpty())
+        awaitStatus("interrupted")
+        val mail = store.mail.single()
+        assertEquals("interrupted", mail.status)
+        Thread.sleep(200)
+        // 只有中断通知：不唤醒，下一次 run 再交给主 Agent。
+        assertEquals(0, wakes.get())
+        val next = AgentRunController()
+        manager.attachParent("conv", "run-2", next)
+        assertTrue(next.pollNotices().single().display.contains("sub_1 已中断"))
         // 之后仍可继续。
-        assertEquals("started", manager.send(environment, "sub_1", "接着做", interrupt = false).getString("delivery"))
+        assertEquals("started", manager.send(environment, "sub_1", "接着做").getString("delivery"))
         nextTurn()
         runner.replies.put(answer("完成"))
     }
@@ -167,7 +243,7 @@ class AgentSubagentManagerTest {
     }
 
     @Test
-    fun agentsLeftRunningByAnEarlierProcessBecomeInterruptedAndClosedOnesRejectMessages() {
+    fun agentsLeftRunningByAnEarlierProcessBecomeInterruptedWithANoticeAndClosedOnesRejectMessages() {
         store.save(ConversationSubagentEntity(
             id = ConversationSubagentEntity.rowId("conv", "sub_1"), conversationId = "conv", agentId = "sub_1",
             name = "sub_1", task = "旧任务", status = "running", turn = 1, rounds = 3, lastResult = "", lastError = "",
@@ -175,9 +251,12 @@ class AgentSubagentManagerTest {
             createdRunId = "run-0", lastRunId = "run-0", createdAt = 0, updatedAt = 0,
         ))
         assertEquals("interrupted", manager.snapshot("conv").single().status)
+        val mail = store.mail.single()
+        assertEquals("interrupted", mail.status)
+        assertTrue(store.conversationsWithUndeliveredMail().isEmpty())
 
         manager.close(environment, "sub_1")
-        assertEquals("SUBAGENT_CLOSED", manager.send(environment, "sub_1", "还在吗", interrupt = false).getString("code"))
-        assertEquals("SUBAGENT_NOT_FOUND", manager.send(environment, "sub_9", "你好", interrupt = false).getString("code"))
+        assertEquals("SUBAGENT_CLOSED", manager.send(environment, "sub_1", "还在吗").getString("code"))
+        assertEquals("SUBAGENT_NOT_FOUND", manager.send(environment, "sub_9", "你好").getString("code"))
     }
 }

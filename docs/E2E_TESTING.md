@@ -66,6 +66,7 @@
 | 思考强度按模型设置（AG-16 返工）：模型编辑“默认强度”，取消全局默认与 MCP 页按模型强度，新会话跟随模型默认 | `bf8c168` | F5、I30 | 未执行 |
 | 上下文压缩（AG-22）：摘要不限长度、Anthropic 压缩输出预算与回退、思考跟随本次 run、失败原因可见 | `56cfd56` | F7–F9 | 未执行 |
 | 请求失败重试（AG-26）：全局重试次数（默认 5）、排除法判断可重试、1 秒起指数退避加抖动、遵从 Retry-After、压缩与托管搜索也重试、提示显示原因与 n/5；去掉 AG-21 的“继续”条 | AG-26 提交 | S1–S8、K2、R1、R5、R6 | 未执行 |
+| 后台任务（AG-27 阶段 A）：子 Agent 按 Claude Code 的机制——运行中消息在下一次请求前插入、写完结论后到达的作为下一回合、标注“主 Agent 补充”；去掉 `wait_agents`、`close_agent` 与 40 轮上限；中断（含进程结束）也写通知但不唤醒；`list_agents` 附进度摘要；进度限频落盘；侧栏按固定间隔刷新；自动唤醒开关 | AG-27 阶段 A 提交 | J3、J5、J6、J8、J17、J20–J22、J28–J32 | 未执行 |
 
 后续阶段的用例在实现时补充；虚拟屏执行实现时在 M 组追加。
 
@@ -304,12 +305,12 @@ AG-19 起子 Agent 是会话级的（`spawn_agent`、`send_agent`、`wait_agents
 |---|---|---|
 | J1 `M` | 剧本先 `update_plan`（第 1 步进行中）再执行工具，随后把第 1 步标为完成 | 胶囊显示第 1 步标题与“步骤 1/3”，更新后切到第 2 步；`events` 中有两条 `PlanUpdated` |
 | J2 `M` | `update_plan` 提交两个 in_progress 或非法状态 | 工具结果 `INVALID_PLAN`，run 继续，不发 `PlanUpdated` |
-| J3 `M` | 剧本用 `spawn_agent` 派出 3 个子 Agent，各自调用 `terminal` 后回复；主 Agent 随后调用 `wait_agents` | 三次 `spawn_agent` 都立即返回 `agent_id`（`sub_1`–`sub_3`）与 `running`；三个子 Agent 的请求并行到达 Mock；`wait_agents` 返回已结束的子 Agent 及其结论；被等待取走的结论不再另发通知 |
+| J3 `M` | 剧本用 `spawn_agent` 派出 3 个子 Agent，各自调用 `terminal` 后回复；主 Agent 不等待，先结束本轮回答 | 三次 `spawn_agent` 都立即返回 `agent_id`（`sub_1`–`sub_3`）与 `running`；三个子 Agent 的请求并行到达 Mock；三个结论各以一条通知交回主 Agent（主 run 已结束时自动唤醒，见 J24），每个只交一次 |
 | J4 `M` | 子 Agent 剧本调用 `observe_screen`、`browser_use`、`ask_user` | Mock 收到的子 Agent 工具列表不含这些工具；强行调用返回 `SUBAGENT_TOOL_UNAVAILABLE` |
-| J5 `M` | 子 Agent 剧本持续调用工具不结束 | 本回合第 40 轮后停止，状态为失败并说明轮数上限；其余子 Agent 正常结束；之后仍可用 `send_agent` 给它发新任务 |
-| J6 `M` | 子 Agent 运行中停止主 run；再在新的一轮里 `send_agent` 给它 | 主 run 以停止结束；本会话运行中的子 Agent 一起停，`list_agents` 显示为已中断，不产生完成通知；`send_agent` 后它带着之前的上下文继续 |
+| J5 `M` | 子 Agent 剧本持续调用工具不结束，超过 40 轮后主 Agent `stop_agent` | 不再因轮数停止（AG-27 去掉上限）；停止后状态为已中断，主 Agent 收到“已中断”通知；其余子 Agent 正常结束；之后仍可用 `send_agent` 给它发新任务 |
+| J6 `M` | 子 Agent 运行中停止主 run；再在新的一轮里 `send_agent` 给它 | 主 run 以停止结束；本会话运行中的子 Agent 一起停，`list_agents` 显示为已中断；产生一条“已中断”通知，但不自动唤醒，下一次 run 开始时交给主 Agent；`send_agent` 后它带着之前的上下文继续 |
 | J7 `M` | 主 Agent 先 `observe_screen` 取得手机操作权，再派子 Agent，子 Agent 结束后主 Agent 继续操作界面 | 子 Agent 结束不释放主 run 的操作权（`gui.owner` 仍为主 run）；子 Agent 的工具列表不含界面工具、`release_gui` 与浏览器 |
-| J8 `M` | 工具页关闭 `update_plan` 与“子 Agent”卡片 | Mock 收到的工具列表与系统提示都不再包含 `update_plan` 与 `spawn_agent` 等六个子 Agent 工具；从历史强行调用返回 `TOOL_DISABLED` |
+| J8 `M` | 工具页关闭 `update_plan` 与“子 Agent”卡片 | Mock 收到的工具列表与系统提示都不再包含 `update_plan` 与 `spawn_agent` 等四个子 Agent 工具；从历史强行调用返回 `TOOL_DISABLED` |
 | J9 `M` | 电脑端委托的任务调用 `update_plan` | `eta_task_status` 返回的快照带 `plan` |
 | J10 `M` | 派 3 个子 Agent：一个调用两次 `terminal` 后成功，一个失败，一个运行较久；运行中展开 `run_subagents` 工具行 | 标题下显示“完成 1 · 运行中 1 · 失败 1”；每个子 Agent 一栏，显示任务、运行中的“当前：<工具参数摘要>”、结束后的结论开头；每个子 Agent 都有“查看过程”，包括运行中的 |
 | J11 `M` | J10 结束后点成功那个子 Agent 的“查看过程”；再点其中一个终端工具的“详情”；重启 App 后重复 | 弹窗依次显示任务、思考、正文、两个终端工具行（可展开输出、看详情）与结论；失败的子 Agent 也能查看到停止前的过程；重启后仍能查看 |
@@ -317,17 +318,22 @@ AG-19 起子 Agent 是会话级的（`spawn_agent`、`send_agent`、`wait_agents
 | J14 `R` | J10 运行中与结束后各打开一次侧栏；展开该会话的子 Agent；点完成的那个；点运行中的那个 | 有子 Agent 的会话行右侧显示子 Agent 图标与个数，点它只展开不切换会话；展开后按派出顺序列出每个子 Agent 的序号、状态与任务；每个都能点开“子 Agent 过程”弹窗（运行中的看实时进度，见 J15）；结束后状态随之更新，重启 App 后仍能展开查看 |
 | J15 `M` | J10 运行中点开运行较久的子 Agent 的过程，停在末尾；再往上翻看；等它结束 | 弹窗显示“执行中”与当前步骤，每 2 秒刷新，模型每回复一次、工具每出一次结果就多一轮；未出结果的工具显示执行中；停在末尾时跟随到最新一轮，往上翻看时不跳走；结束后状态变为完成并显示结论，不再刷新 |
 | J16 `R` | 一个会话分 3 批派子 Agent（每批 2 个），批次之间多聊几轮，让消息超过一页（128 条）；冷启动后在侧栏展开它的子 Agent；再点开会话后展开 | 两次都按派出顺序列出 6 个子 Agent，每个的任务与结论对应自己那一批（服务商每轮都用 `call_0` 时也不串）；点开会话后子 Agent 标记不消失 |
-| J17 `M` | 第 1 轮 `spawn_agent` 派出 `log_scan` 查一个目录并等它结束；第 2 轮用户追问，主 Agent `send_agent` 让 `log_scan` 再查另一个目录 | 第 2 轮子 Agent 的请求带着第 1 轮的上下文，模型会话 id 相同（缓存可命中）；`list_agents` 显示 `log_scan` 回合数为 2 |
+| J17 `M` | 第 1 轮 `spawn_agent` 派出 `log_scan` 查一个目录，收到它的完成通知；第 2 轮用户追问，主 Agent `send_agent` 让 `log_scan` 再查另一个目录 | 第 2 轮子 Agent 的请求带着第 1 轮的上下文，模型会话 id 相同（缓存可命中）；`list_agents` 显示 `log_scan` 回合数为 2 |
 | J18 `M` | 主 Agent 派出子 Agent 后不等待，继续调用其他工具；子 Agent 在主 Agent 的下一轮开始前完成 | 下一轮请求里多一条 `<subagent_notification>` 用户消息（不是“用户补充指令”）；对话里出现“子 Agent 的结果已交给主 Agent”的系统提示；同一结论只出现一次 |
 | J19 `M` | 主 Agent 写最终回答时子 Agent 恰好完成；另测一次主 run 已结束、App 不在前台时子 Agent 才完成 | 前者主 run 不结束，多一轮处理通知后再回答；后者由 J24 的自动唤醒处理，进程被杀则见 J25 |
-| J20 `M` | `wait_agents` 等待中用户在输入框追加一条要求；另测一次等待超时 | 前者立即返回 `interrupted_by_user=true`，主 Agent 处理追加要求；后者 `timed_out=true`，子 Agent 继续运行 |
-| J21 `M` | 一个会话同时运行 4 个子 Agent 后再派第 5 个；`close_agent` 一个后再 `send_agent` 给它 | 第 5 个返回 `SUBAGENT_LIMIT`；关闭后发消息返回 `SUBAGENT_CLOSED` |
-| J22 `R` | 子 Agent 运行中强停 Eta，重新打开后让主 Agent `list_agents`，再 `send_agent` 给它 | 状态为已中断；继续后带着之前的上下文完成 |
+| J20 `M` | 查看 Mock 收到的主 Agent 工具列表与子 Agent 完成通知；剧本强行调用 `wait_agents`、`close_agent` | 工具列表只有 `spawn_agent`、`send_agent`、`list_agents`、`stop_agent`；系统提示与通知里没有“等待”“关闭”的引导，通知写明子 Agent 会一直保留、相关的事交给同一个；强行调用返回未知工具 |
+| J21 `M` | 一个会话同时运行 4 个子 Agent 后再派第 5 个；用户在后台任务面板关闭一个后，主 Agent 再 `send_agent` 给它 | 第 5 个返回 `SUBAGENT_LIMIT`；关闭后发消息返回 `SUBAGENT_CLOSED` |
+| J22 `R` | 子 Agent 运行中强停 Eta，重新打开后在该会话发一句话，再让主 Agent `send_agent` 给它 | 重开后不自动唤醒；发话后主 Agent 收到“已中断：Eta 进程结束”的通知，`list_agents` 状态为已中断；继续后带着之前的上下文完成 |
 | J23 `R` | App 会话里派出两个子 Agent（一个起名），运行中与结束后各打开一次侧栏，展开该会话的子 Agent 并点开过程；之后 `send_agent` 给其中一个再看一次 | 侧栏按派出顺序列出两个，名字、状态与任务正确，运行中约 1 秒内跟着更新；过程弹窗显示该子 Agent 全部回合（第二回合接在第一回合之后），结束后显示结论；不必先打开会话 |
 | J24 `M` | 主 Agent 派出子 Agent 后直接结束回答；子 Agent 随后完成 | 会话自动开始新一轮：对话里出现“子 Agent 的结果已交给主 Agent”的系统提示（没有用户气泡），主 Agent 基于结论继续回答；通知只交一次 |
 | J25 `R` | 子 Agent 完成时 Eta 已被划掉（通知未交出），之后重新打开 Eta | 启动后自动唤醒该会话处理结论；电脑端、小爱会话的通知在该会话下一次任务开始时交出 |
 | J26 `R` | 有子 Agent 的会话导出 Eta 备份，删除会话后导入该备份；再导入一份旧版本备份 | 导入后侧栏仍列出子 Agent，`send_agent` 可以接着用；导入旧备份后设备上的子 Agent 被清空，不残留指向已不存在会话的记录 |
 | J27 `M` | 工具页“子 Agent”卡片的派出策略依次选“自动”“仅在我要求时”，再关闭卡片；每种设置下各发一句不提子 Agent 的普通请求，再发一句“用子 Agent 并行查一下 A 和 B” | 系统提示随档位变化：自动为“至少有两个互不依赖……才派”，仅在我要求时为“只有用户在本轮消息里明确要求……才派”，关闭后没有子 Agent 的说明与工具；“仅在我要求时”下普通请求不派、明确要求时派；切换后下一轮即生效 |
+| J28 `M` | 子 Agent 两次工具调用之间，主 Agent `send_agent` 补充一句 | 返回 `delivery=queued`；子 Agent 的下一次请求里多一条以“主 Agent 补充：”开头的用户消息（不是“用户补充指令”），回合继续，结束后只有一条通知 |
+| J29 `M` | 子 Agent 的最终回复已经返回、回合正在收尾时，主 Agent `send_agent` 再交一件事 | 第 1 回合的结论照常作为通知交给主 Agent；随后以这条消息开始第 2 回合（带着第 1 回合的上下文），结束后再交一条通知；两个结论都不丢 |
+| J30 `M` | 子 Agent 运行中（已调过工具、写过一段中间说明）主 Agent `list_agents`；它第 2 回合运行中再查一次 | 运行中的子 Agent 带 `progress`：`elapsed_seconds`、`rounds_this_turn`、`latest_tool`（工具名与参数摘要）、`latest_note`（最多 300 字）、`queued_messages`；不返回完整过程；第 2 回合运行中，上一回合的结论标为 `previous_result_preview` |
+| J31 `R` | 工具页“子 Agent”卡片里“回答结束后子 Agent 才完成时”选“等我下次发消息”；派出子 Agent 后主 Agent 先结束回答 | 子 Agent 完成后不自动开新一轮；下次发消息时结论随通知交给主 Agent；改回“自动继续”后恢复 J24 的行为 |
+| J32 `R` | 同一会话两个子 Agent 同时运行，其中一个先完成；打开侧栏展开该会话 | 先完成的那个约 1 秒内显示为完成，不会因另一个还在运行而停在“运行中” |
 | J13 `R` | 删除 J10 所在会话；另把一个过程文件的修改时间改到 31 天前后再派一次子 Agent | 会话删除后对应 run 的过程目录被删除；过期目录在下一次保存时被清理 |
 
 ### K. 模型回退链

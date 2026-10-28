@@ -6,13 +6,13 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * 主 Agent 使用子 Agent 的六个工具（AG-19，机制参考 Codex）：派出、发消息、等待、查看、停止、关闭。
- * 子 Agent 属于会话，跨轮次保留上下文；派出与发消息都立即返回，主 Agent 可以继续做别的。
+ * 主 Agent 使用子 Agent 的四个工具（AG-27，机制按 Claude Code）：派出、发消息、查看、停止。
+ * 子 Agent 属于会话，跨轮次保留上下文；派出与发消息都立即返回，结果作为通知交回，没有等待工具；
+ * 模型不能关闭子 Agent，关闭只留给用户。
  */
 internal class AgentSubagentTools(
     private val manager: AgentSubagentManager,
     private val environment: SubagentEnvironment,
-    private val parentController: AgentRunController,
 ) {
     fun execute(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
         val arguments = runCatching { JSONObject(call.argumentsJson.ifBlank { "{}" }) }.getOrElse {
@@ -34,18 +34,13 @@ internal class AgentSubagentTools(
                 val target = arguments.optString("agent_id").trim()
                 val message = arguments.optString("message").trim()
                 if (target.isEmpty() || message.isEmpty()) return result(invalid("需要 agent_id 与 message"))
-                manager.send(environment, target, message.take(MAX_TASK_CHARS), arguments.optBoolean("interrupt"))
-            }
-            WAIT -> {
-                val seconds = arguments.optInt("timeout_seconds", DEFAULT_WAIT_SECONDS)
-                    .coerceIn(MIN_WAIT_SECONDS, MAX_WAIT_SECONDS)
-                manager.wait(environment, ids(arguments), seconds * 1_000L, parentController)
+                manager.send(environment, target, message.take(MAX_TASK_CHARS))
             }
             LIST -> manager.list(environment, ids(arguments))
-            STOP, CLOSE -> {
+            STOP -> {
                 val target = arguments.optString("agent_id").trim()
                 if (target.isEmpty()) return result(invalid("缺少 agent_id"))
-                if (call.name == STOP) manager.stop(environment, target) else manager.close(environment, target)
+                manager.stop(environment, target)
             }
             else -> invalid("未知的子 Agent 工具")
         }
@@ -64,27 +59,23 @@ internal class AgentSubagentTools(
     internal companion object {
         const val SPAWN = "spawn_agent"
         const val SEND = "send_agent"
-        const val WAIT = "wait_agents"
         const val LIST = "list_agents"
         const val STOP = "stop_agent"
-        const val CLOSE = "close_agent"
-        val TOOL_NAMES = setOf(SPAWN, SEND, WAIT, LIST, STOP, CLOSE)
+        val TOOL_NAMES = setOf(SPAWN, SEND, LIST, STOP)
 
         private const val MAX_TASK_CHARS = 4_000
         private const val MAX_CONTEXT_CHARS = 8_000
         private const val MAX_REASON_CHARS = 120
-        private const val DEFAULT_WAIT_SECONDS = 30
-        private const val MIN_WAIT_SECONDS = 10
-        private const val MAX_WAIT_SECONDS = 600
 
         fun schemas(): List<JSONObject> = listOf(
             AgentToolSchema.function(
                 name = SPAWN,
-                description = "派出一个子 Agent 处理相互独立、需要大量读取或检索的子问题，立即返回 agent_id，你可以继续做别的。" +
+                description = "派出一个子 Agent 在后台处理相互独立、需要大量读取或检索的子问题，立即返回 agent_id。" +
+                    "派出后继续做别的，或先结束本轮回答；它完成后结论会作为通知交给你，不要猜测或预先描述还没出来的结果。" +
                     "子 Agent 有独立上下文，使用与你相同的模型和非界面工具（终端、文件、网页等），不能操作手机界面、不能提问、看不到当前对话，" +
-                    "所以 task 要写清目标、范围与期望的结论形式，必要背景放进 context。它完成后结论会作为通知自动交给你；需要结果才能继续时用 wait_agents。" +
-                    "子 Agent 属于当前会话，之后的轮次也能用 send_agent 继续交给它，它记得之前的内容。" +
-                    "一两次工具调用能完成的、需要操作界面的、需要和用户来回确认的事自己做，不要派。",
+                    "所以 task 要写清目标、范围与期望的结论形式，必要背景放进 context。" +
+                    "派出前先看本会话已有的子 Agent：做过相关工作的，用 send_agent 交给它，不要新开。" +
+                    "一两次工具调用、本机几条命令能查清的、需要操作界面的、需要和用户来回确认的事自己做，不要派。",
                 parameters = objectSchema(
                     required = listOf("task", "reason"),
                     "task" to stringSchema("子任务的目标、范围与期望的结论形式", MAX_TASK_CHARS),
@@ -96,30 +87,19 @@ internal class AgentSubagentTools(
             ),
             AgentToolSchema.function(
                 name = SEND,
-                description = "给已有的子 Agent 发新任务或补充说明，它带着之前的上下文继续。运行中时排进它的下一轮；空闲时开始新回合。" +
-                    "interrupt 为 true 时先停掉它当前的回合。",
+                description = "给本会话已有的子 Agent 发新任务或补充说明，它带着之前的全部上下文继续，立即返回。" +
+                    "它正在运行时，消息在它下一次请求模型前送达；已写完本回合结论的，结论照常交给你，消息作为下一回合的开头；" +
+                    "空闲时开始新回合。要改方向先 stop_agent 再发。",
                 parameters = objectSchema(
                     required = listOf("agent_id", "message"),
                     "agent_id" to stringSchema("子 Agent 的 agent_id 或名字", 64),
                     "message" to stringSchema("要交给它的任务或补充", MAX_TASK_CHARS),
-                    "interrupt" to JSONObject().put("type", "boolean").put("description", "可选；先停掉它当前的回合"),
-                ),
-            ),
-            AgentToolSchema.function(
-                name = WAIT,
-                description = "等子 Agent 出结果：指定的（省略则为全部运行中的）任一结束、用户追加了输入、或超时就返回，结束的会带上结论。" +
-                    "只在确实需要结果才能继续时使用。",
-                parameters = objectSchema(
-                    required = emptyList(),
-                    "agent_ids" to JSONObject().put("type", "array").put("items", JSONObject().put("type", "string"))
-                        .put("description", "可选；要等的子 Agent"),
-                    "timeout_seconds" to JSONObject().put("type", "integer").put("minimum", MIN_WAIT_SECONDS)
-                        .put("maximum", MAX_WAIT_SECONDS).put("description", "可选；默认 $DEFAULT_WAIT_SECONDS 秒"),
                 ),
             ),
             AgentToolSchema.function(
                 name = LIST,
-                description = "查看本会话的子 Agent：状态（运行中、已完成、失败、已中断、已关闭）、任务、回合数与结论；不等待。",
+                description = "查看本会话的子 Agent，不等待：状态（运行中、已完成、失败、已中断、已关闭）、任务、回合数；" +
+                    "运行中的附进度（已运行时间、本回合轮数、最近的工具与最新一段中间说明）；还没交给你的结论附全文。",
                 parameters = objectSchema(
                     required = emptyList(),
                     "agent_ids" to JSONObject().put("type", "array").put("items", JSONObject().put("type", "string"))
@@ -128,12 +108,7 @@ internal class AgentSubagentTools(
             ),
             AgentToolSchema.function(
                 name = STOP,
-                description = "停掉子 Agent 当前的回合；它变为已中断，之后仍可用 send_agent 继续。",
-                parameters = objectSchema(required = listOf("agent_id"), "agent_id" to stringSchema("子 Agent 的 agent_id 或名字", 64)),
-            ),
-            AgentToolSchema.function(
-                name = CLOSE,
-                description = "不再使用这个子 Agent：运行中会先停掉，之后不能再给它发消息；它的过程仍保留供查看。",
+                description = "停掉子 Agent 当前的回合；它变为已中断并通知你，之后仍可用 send_agent 继续。",
                 parameters = objectSchema(required = listOf("agent_id"), "agent_id" to stringSchema("子 Agent 的 agent_id 或名字", 64)),
             ),
         )

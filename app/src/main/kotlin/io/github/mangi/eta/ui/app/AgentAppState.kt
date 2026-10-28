@@ -2518,8 +2518,8 @@ internal class AgentAppState(
         val manager = AgentSubagentManager.get(appContext)
         manager.wakeListener = { conversationId -> scope.launch(Dispatchers.Main) { wakeForSubagents(conversationId) } }
         scope.launch {
-            manager.revision.collectLatest {
-                delay(SUBAGENT_REGISTRY_REFRESH_MS)
+            // 先刷新再等：子 Agent 持续有进展时也按固定间隔刷新，不会被一直往后推而停在旧状态（AG-27）。
+            manager.revision.collect {
                 val summaries = withContext(Dispatchers.IO) {
                     runCatching { EtaDatabase.get(appContext).subagentDao().summaries() }.getOrDefault(emptyList())
                 }
@@ -2527,6 +2527,7 @@ internal class AgentAppState(
                     registrySubagents = SubagentDetails.fromRegistry(summaries)
                     refreshConversationSummaries()
                 }
+                delay(SUBAGENT_REGISTRY_REFRESH_MS)
             }
         }
         scope.launch {
@@ -2537,10 +2538,11 @@ internal class AgentAppState(
 
     /** 只唤醒 App 里的普通会话；正在运行、正被删除或已没有待处理通知时不动。 */
     private suspend fun wakeForSubagents(conversationId: String) {
+        if (!Prefs.isEnabled(Prefs.Keys.AGENT_SUBAGENT_AUTO_WAKE)) return
         if (conversationId !in conversationsById || conversationId in pendingConversationDeletes) return
         if (runStore.activeRunId(conversationId) != null) return
         val pending = withContext(Dispatchers.IO) {
-            runCatching { EtaDatabase.get(appContext).subagentDao().undeliveredMailCount(conversationId) }.getOrDefault(0)
+            runCatching { EtaDatabase.get(appContext).subagentDao().wakeableMailCount(conversationId) }.getOrDefault(0)
         }
         if (pending == 0) return
         withLoadedConversations(setOf(conversationId)) {
@@ -2678,7 +2680,7 @@ internal class AgentAppState(
         const val LEGACY_STOPPED_ERROR = "已停止"
         const val SYNTHETIC_STATUS_STOPPED = "eta_status:stopped"
         /** 子 Agent 每轮都会落盘，侧栏只需去抖后刷新。 */
-        const val SUBAGENT_REGISTRY_REFRESH_MS = 800L
+        const val SUBAGENT_REGISTRY_REFRESH_MS = 1_000L
 
         fun emptyChatState(thinkingEnabled: Boolean): AgentChatHomeUiState =
             AgentChatHomeUiState(

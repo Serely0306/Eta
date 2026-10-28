@@ -341,7 +341,6 @@ internal class AgentRuntimeRunExecutor(
                     executionContext = mainLocalTools.terminalExecutionContext,
                     usageContext = usageContext,
                 ),
-                parentController = runController,
             )
             if (receivesSubagentNotices) subagentManager.attachParent(subagentConversation, request.runId, runController)
             // 提问在工具内阻塞等待；问题与结论作为独立事件推给 App、胶囊和恢复日志。

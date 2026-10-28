@@ -361,7 +361,7 @@ internal class AgentLoop(
     }
 
     private fun steeringPrompt(supplement: String): String =
-        "用户补充指令：$supplement\n\n请基于当前任务上下文继续执行，不要从头重复已经完成或已经验证过的操作。"
+        "${runController.steeringLabel}：$supplement\n\n请基于当前任务上下文继续执行，不要从头重复已经完成或已经验证过的操作。"
 
     private fun steeringMessage(supplement: String): JSONObject =
         AgentConversationCodec.userTextMessage(steeringPrompt(supplement))

@@ -546,6 +546,9 @@
   <string name="subagent_strategy_label">派出</string>
   <string name="subagent_strategy_auto">自动</string>
   <string name="subagent_strategy_on_request">仅在我要求时</string>
+  <string name="subagent_auto_wake_label">回答结束后子 Agent 才完成时</string>
+  <string name="subagent_auto_wake_on">自动继续</string>
+  <string name="subagent_auto_wake_off">等我下次发消息</string>
   <string name="tool_status_running">执行中</string>
   <string name="tool_status_success">已完成</string>
   <string name="tool_status_failed">失败</string>

@@ -48,6 +48,8 @@ internal object Prefs {
         const val AGENT_SUPPRESS_HEADS_UP = "agent_suppress_heads_up"
         /** 子 Agent 派出策略“仅在我要求时”；关闭则为“自动”（AG-19）。 */
         const val AGENT_SUBAGENT_ON_REQUEST = "agent_subagent_on_request"
+        /** 主对话已结束时，子 Agent 完成或失败后自动开一轮让主 Agent 处理结果（AG-27）。 */
+        const val AGENT_SUBAGENT_AUTO_WAKE = "agent_subagent_auto_wake"
         /** 模型请求失败后的重试次数（AG-26），全局一个设置，主 Agent、子 Agent、压缩共用。 */
         const val AGENT_MODEL_RETRY_LIMIT = "agent_model_retry_limit"
         const val DEFAULT_MODEL_RETRY_LIMIT = 5
@@ -76,6 +78,7 @@ internal object Prefs {
             AGENT_AUTO_COMPACTION_ENABLED to true,
             AGENT_SUPPRESS_HEADS_UP to true,
             AGENT_SUBAGENT_ON_REQUEST to false,
+            AGENT_SUBAGENT_AUTO_WAKE to true,
         )
 
         /** 由 Eta Runtime 最终裁决、不要求 Xposed 框架在线的开关。 */
@@ -89,6 +92,7 @@ internal object Prefs {
             AGENT_AUTO_COMPACTION_ENABLED,
             AGENT_SUPPRESS_HEADS_UP,
             AGENT_SUBAGENT_ON_REQUEST,
+            AGENT_SUBAGENT_AUTO_WAKE,
         )
     }
 

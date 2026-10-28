@@ -24,16 +24,20 @@ class AgentSubagentToolTest {
     }
 
     @Test
-    fun sixToolsAreExposedWithTheirRequiredArguments() {
+    fun fourToolsAreExposedWithoutWaitOrClose() {
         val schemas = AgentSubagentTools.schemas().associate { schema ->
             val function = schema.getJSONObject("function")
             function.getString("name") to function.getJSONObject("parameters").getJSONArray("required")
                 .let { array -> (0 until array.length()).map(array::getString) }
         }
+        assertEquals(setOf("spawn_agent", "send_agent", "list_agents", "stop_agent"), schemas.keys)
         assertEquals(AgentSubagentTools.TOOL_NAMES, schemas.keys)
         assertEquals(listOf("task", "reason"), schemas.getValue("spawn_agent"))
         assertEquals(listOf("agent_id", "message"), schemas.getValue("send_agent"))
-        assertEquals(emptyList<String>(), schemas.getValue("wait_agents"))
-        assertEquals(listOf("agent_id"), schemas.getValue("close_agent"))
+        assertEquals(emptyList<String>(), schemas.getValue("list_agents"))
+        assertEquals(listOf("agent_id"), schemas.getValue("stop_agent"))
+        // 与 Claude Code 一致：不教模型等待或关闭子 Agent。
+        val descriptions = AgentSubagentTools.schemas().joinToString { it.getJSONObject("function").getString("description") }
+        assertTrue("wait_agents" !in descriptions && "close_agent" !in descriptions)
     }
 }

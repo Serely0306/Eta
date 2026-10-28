@@ -15,7 +15,6 @@ import io.github.mangi.eta.agent.tool.AgentToolRequirements
 internal object AgentSubagentTool {
     /** 旧版 `run_subagents`：新版本不再提供，旧会话的工具行照旧显示。 */
     const val TOOL_NAME = "run_subagents"
-    const val MAX_ROUNDS = 40
     const val MAX_RESULT_CHARS = 8_000
 
     /** 只属于主 Agent 的协作工具；列入停用集合，子 Agent 的提示词也不会提到它们。 */
@@ -52,6 +51,8 @@ internal object AgentSubagentTool {
         append("- 只用当前公开的工具独立完成；你不能操作手机界面，也不能向用户提问。")
         append("需要界面操作或用户决定的部分，在结论里写明，由主 Agent 处理。\n")
         append("- 你看不到主对话，只依据下面的任务与背景工作，不要假设未提供的信息。\n")
+        append("- 工作中可能收到标注为“主 Agent 补充”的消息，据此调整，不必从头开始。\n")
+        append("- 你最后一段不再调用工具的回复就是本次结论，会原样交给主 Agent；中途的说明不算结论。\n")
         append("- terminal_job、terminal_daemon 启动的后台任务在你结束后仍会继续运行；只在确有必要时使用，并在结论里写明任务 id。\n")
         append("- 结论要具体：给出关键事实、文件路径、命令输出要点或来源链接，并说明不确定之处；不寒暄，不复述任务。\n\n")
         append("子任务：\n").append(task)
