@@ -256,6 +256,10 @@ internal object AgentPromptBuilder {
     private val screenOperationRules =
         "界面操作慢、容易受弹窗干扰，并且会占用用户正在使用的屏幕：能用 open_uri 深链、launch_app、设备直达工具、" +
             "文件工具或终端（am start、cmd、content、settings 等）可靠完成的步骤优先用它们，只有没有可靠的非界面途径时才观察和操作界面。" +
+            // AG-11 返工：界面操作前评估由谁来做（用户 2026-10-27）。
+            "要开始一段界面操作前，先判断由你做还是让用户做更方便：需要登录、输入验证码、付款、选择个人偏好、手势精细、" +
+            "用户眼前就是这个界面，或你可能要反复试错时，用 ask_user 的 kind=gui_handoff 问用户由谁来做；" +
+            "步骤明确、可以重复、用户不在手机前时直接做。30 秒没回复或返回 cooldown、not_applicable 时直接自己操作。" +
             "唤醒附带的内容不包含可供 GUI 工具使用的 observation_id；界面发生变化或需要操作控件时重新观察。" +
             "需要重新看屏幕时先按默认参数调用 observe_screen，只读取 UI 树，不附截图；" +
             "节点为空、目标无法唯一识别、界面以 Canvas、地图、图片或二维码等视觉内容为主，或任务依赖颜色、图像、空间布局时，" +

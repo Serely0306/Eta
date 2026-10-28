@@ -7,7 +7,12 @@ import org.json.JSONObject
  * ask_user 的问题模型。Runtime、App 问题面板与状态胶囊共用同一份解析结果，
  * 回答统一折叠为 [AgentUserAnswer] 后作为工具结果交回模型。
  */
-internal data class AgentUserQuestion(val items: List<Item>) {
+internal data class AgentUserQuestion(
+    val items: List<Item>,
+    /** [KIND_GUI_HANDOFF]：界面操作前问用户由谁来做（AG-11 返工），30 秒没回复就由 Agent 自己做。 */
+    val kind: String = KIND_QUESTION,
+) {
+    val isGuiHandoff: Boolean get() = kind == KIND_GUI_HANDOFF
     data class Item(
         val question: String,
         val header: String,
@@ -17,7 +22,7 @@ internal data class AgentUserQuestion(val items: List<Item>) {
 
     data class Option(val label: String, val description: String)
 
-    fun toJson(): String = JSONObject().put("questions", JSONArray().also { array ->
+    fun toJson(): String = JSONObject().put("kind", kind).put("questions", JSONArray().also { array ->
         items.forEach { item ->
             array.put(JSONObject()
                 .put("question", item.question)
@@ -35,13 +40,22 @@ internal data class AgentUserQuestion(val items: List<Item>) {
         const val TOOL_NAME = "ask_user"
         /** 无人回答时按跳过处理，避免任务与前台服务无限期挂起。 */
         const val TIMEOUT_MS = 10 * 60 * 1000L
+        const val KIND_QUESTION = "question"
+        const val KIND_GUI_HANDOFF = "gui_handoff"
+        /** 界面交接问题：30 秒没回复由 Agent 自己操作；超时后 3 分钟内同一会话不再问（用户 2026-10-27）。 */
+        const val GUI_HANDOFF_TIMEOUT_MS = 30_000L
+        const val GUI_HANDOFF_COOLDOWN_MS = 3 * 60 * 1000L
+        const val GUI_HANDOFF_AGENT_OPTION = "你来操作"
+        const val GUI_HANDOFF_USER_OPTION = "我自己来"
         private const val MAX_QUESTIONS = 4
         private const val MIN_OPTIONS = 2
         private const val MAX_OPTIONS = 4
 
         fun parse(raw: String): AgentUserQuestion? = runCatching {
-            val array = JSONObject(raw).getJSONArray("questions")
-            val items = (0 until minOf(array.length(), MAX_QUESTIONS)).mapNotNull { index ->
+            val root = JSONObject(raw)
+            val kind = if (root.optString("kind") == KIND_GUI_HANDOFF) KIND_GUI_HANDOFF else KIND_QUESTION
+            val array = root.getJSONArray("questions")
+            val items = (0 until minOf(array.length(), if (kind == KIND_GUI_HANDOFF) 1 else MAX_QUESTIONS)).mapNotNull { index ->
                 val item = array.optJSONObject(index) ?: return@mapNotNull null
                 val options = item.optJSONArray("options") ?: JSONArray()
                 Item(
@@ -55,7 +69,17 @@ internal data class AgentUserQuestion(val items: List<Item>) {
                     multiSelect = item.optBoolean("multi_select", false),
                 ).takeIf { it.question.isNotBlank() }
             }
-            AgentUserQuestion(items).takeIf { items.isNotEmpty() }
+            // 界面交接固定两个选项，模型写的选项不用。
+            val normalized = if (kind == KIND_GUI_HANDOFF) items.map { item ->
+                item.copy(
+                    options = listOf(
+                        Option(GUI_HANDOFF_AGENT_OPTION, "由 Eta 操作手机"),
+                        Option(GUI_HANDOFF_USER_OPTION, "我在手机上自己操作，完成后告诉 Eta"),
+                    ),
+                    multiSelect = false,
+                )
+            } else items
+            AgentUserQuestion(normalized, kind).takeIf { normalized.isNotEmpty() }
         }.getOrNull()
 
         fun schema(): JSONObject = AgentToolSchema.function(
@@ -65,9 +89,16 @@ internal data class AgentUserQuestion(val items: List<Item>) {
                 "需要用户亲手完成某个界面步骤时，也可用本工具说明要做什么并提供“已完成”等选项，等待确认后继续。" +
                 "每次 1–4 个问题，每题 2–4 个互斥选项（multi_select=true 时可多选）；用户总能输入自定义答案，不要添加“其他”选项。" +
                 "返回 status：answered 时读取 answers 或 text；skipped 表示用户选择不回答，timeout 表示长时间无人回答，" +
-                "这两种情况按最合理的假设继续或说明需要用户补充的内容，不要立即重复同一问题。",
+                "这两种情况按最合理的假设继续或说明需要用户补充的内容，不要立即重复同一问题。" +
+                "kind=gui_handoff 用于界面操作前问用户由谁来做：只写一个问题说明要做什么，选项固定为“你来操作”“我自己来”；" +
+                "30 秒没回复（timeout）或返回 cooldown、not_applicable 时直接自己操作；用户选“我自己来”时先 release_gui，" +
+                "再用普通 ask_user 请用户完成后告知，确认后重新观察屏幕再继续。",
             parameters = JSONObject().put("type", "object").put("required", JSONArray().put("questions"))
-                .put("properties", JSONObject().put("questions", JSONObject()
+                .put("properties", JSONObject()
+                    .put("kind", JSONObject().put("type", "string")
+                        .put("enum", JSONArray().put(KIND_QUESTION).put(KIND_GUI_HANDOFF))
+                        .put("description", "默认 question；界面操作前问由谁来做时用 gui_handoff"))
+                    .put("questions", JSONObject()
                     .put("type", "array").put("minItems", 1).put("maxItems", MAX_QUESTIONS)
                     .put("items", JSONObject().put("type", "object")
                         .put("required", JSONArray().put("question").put("options"))

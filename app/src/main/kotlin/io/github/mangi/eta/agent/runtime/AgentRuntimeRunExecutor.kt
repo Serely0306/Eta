@@ -15,6 +15,7 @@ import io.github.mangi.eta.agent.model.ModelUsageScope
 import io.github.mangi.eta.agent.model.AgentHttpClient
 import io.github.mangi.eta.agent.model.AgentTaskPlan
 import io.github.mangi.eta.agent.model.ModelFallbackPolicy
+import io.github.mangi.eta.agent.model.AgentUserAnswer
 import io.github.mangi.eta.agent.model.AgentUserQuestion
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
@@ -353,15 +354,22 @@ internal class AgentRuntimeRunExecutor(
                         .put("code", "INVALID_QUESTION")
                         .put("message", "问题为空或格式无效：至少提供一个问题，每题 2–4 个选项")
                         .toString())
+                // 界面交接（AG-11 返工）：只在 App 里问；语音、自动任务、电脑端没人盯着屏幕，冷却期内也不再问。
+                if (question.isGuiHandoff) {
+                    GuiHandoffPolicy.skipReason(request.handoff?.source, subagentConversation)?.let { (status, message) ->
+                        return AgentModelClient.ToolResult(JSONObject().put("status", status).put("message", message).toString())
+                    }
+                }
+                val timeoutMs = if (question.isGuiHandoff) AgentUserQuestion.GUI_HANDOFF_TIMEOUT_MS else AgentUserQuestion.TIMEOUT_MS
                 val questionId = "${request.runId}:${call.id}"
                 acceptEvent(
                     session,
-                    AgentEvent.UserQuestionAsked(questionId, call.id, question.toJson(), AgentUserQuestion.TIMEOUT_MS),
+                    AgentEvent.UserQuestionAsked(questionId, call.id, question.toJson(), timeoutMs),
                     archivedEvents,
                     entrySurfaceGuard,
                     checkpointRecorder,
                 )
-                val answer = runController.awaitUserAnswer(questionId, AgentUserQuestion.TIMEOUT_MS)
+                val answer = runController.awaitUserAnswer(questionId, timeoutMs)
                 acceptEvent(
                     session,
                     AgentEvent.UserQuestionResolved(questionId, answer.status),
@@ -369,6 +377,11 @@ internal class AgentRuntimeRunExecutor(
                     entrySurfaceGuard,
                     checkpointRecorder,
                 )
+                if (question.isGuiHandoff && answer == AgentUserAnswer.TimedOut) {
+                    GuiHandoffPolicy.startCooldown(subagentConversation)
+                    return AgentModelClient.ToolResult(JSONObject().put("status", AgentUserAnswer.STATUS_TIMEOUT)
+                        .put("message", "30 秒没有回复，由你直接操作；3 分钟内不再询问由谁操作").toString())
+                }
                 return AgentModelClient.ToolResult(answer.toToolResult(question))
             }
             val runToolExecutor = AgentModelClient.ToolExecutor { call ->
