@@ -27,6 +27,7 @@ class PrefsDefaultsTest {
                 Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED to true,
                 Prefs.Keys.AGENT_SUPPRESS_HEADS_UP to true,
                 Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST to false,
+                Prefs.Keys.AGENT_SUBAGENT_AUTO_WAKE to true,
             ),
             Prefs.Keys.BOOLEAN_DEFAULTS,
         )
@@ -48,6 +49,7 @@ class PrefsDefaultsTest {
                 Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED,
                 Prefs.Keys.AGENT_SUPPRESS_HEADS_UP,
                 Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST,
+                Prefs.Keys.AGENT_SUBAGENT_AUTO_WAKE,
             ),
             Prefs.Keys.LOCAL_AGENT_KEYS,
         )
