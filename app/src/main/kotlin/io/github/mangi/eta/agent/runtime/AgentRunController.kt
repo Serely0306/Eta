@@ -30,6 +30,8 @@ internal class AgentRunController(
     private val pauseCondition = lock.newCondition()
     private val questionCondition = lock.newCondition()
     private val steeringMessages = ArrayDeque<Steering>()
+    /** 取消时还没插入的消息（见 [cancel]、[drainSteering]）。 */
+    private val cancelledSteering = mutableListOf<Steering>()
     /** 子 Agent 的完成通知；与用户补充分开，进入模型时标明是系统通知，界面显示为系统提示。 */
     private val notices = ArrayDeque<Notice>()
     private var acceptingSteering = true
@@ -45,6 +47,8 @@ internal class AgentRunController(
         lock.withLock {
             cancelled = true
             acceptingSteering = false
+            // 不再插入当前回合；另存一份，子 Agent 管理器回合结束时经 drainSteering 取回，写进中断通知。
+            cancelledSteering.addAll(steeringMessages)
             steeringMessages.clear()
             // 通知不清：主 run 结束时由子 Agent 管理器取回，恢复为未投递。
             paused = false
@@ -163,7 +167,10 @@ internal class AgentRunController(
 
     /** 回合结束后还没插入的消息（[endTurnBeforeSteering] 时封口留下的），一次取走。 */
     fun drainSteering(): List<Steering> = lock.withLock {
-        steeringMessages.toList().also { steeringMessages.clear() }
+        (cancelledSteering + steeringMessages).also {
+            cancelledSteering.clear()
+            steeringMessages.clear()
+        }
     }
 
     val hasPendingSteering: Boolean
