@@ -4,6 +4,7 @@ import android.content.Context
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.agent.device.RootAccess
 import io.github.mangi.eta.agent.runtime.AgentExecutionService
+import io.github.mangi.eta.agent.runtime.AgentSubagentManager
 import java.io.File
 
 internal enum class LinuxExecutionBackend(val wireName: String) {
@@ -29,6 +30,8 @@ internal object TerminalRuntime {
             releaseLease = { AgentExecutionService.release("terminal-background-commands") },
             onCompleted = { BackgroundCommandNotification.show(app, it) },
             completionNotificationsEnabled = { app.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled() },
+            // 主 Agent 启动的命令结束后，结果作为通知交回它的会话；主对话已结束时唤醒（AG-27）。
+            onOwnedTaskFinished = { task, tail -> AgentSubagentManager.get(app).notifyBackgroundCommand(task, tail) },
         ).also { backgroundJobs = it }
     }
 

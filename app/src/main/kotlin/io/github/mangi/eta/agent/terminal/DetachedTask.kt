@@ -23,6 +23,8 @@ internal data class DetachedTask(
     val endReason: String? = null,
     val completionNotified: Boolean = false,
     val isolatedGroup: Boolean? = null,
+    /** 由哪个会话的主 Agent 启动（AG-27）；完成后结果作为通知交回这个会话，空表示只发系统通知。 */
+    val ownerConversationId: String? = null,
 )
 
 internal data class DetachedTaskStatus(
@@ -63,6 +65,7 @@ internal fun DetachedTask.toRecordJson(): JSONObject = JSONObject()
     .put("end_reason", endReason ?: JSONObject.NULL)
     .put("completion_notified", completionNotified)
     .put("isolated_group", isolatedGroup ?: JSONObject.NULL)
+    .put("owner_conversation_id", ownerConversationId ?: JSONObject.NULL)
 
 internal fun JSONObject.toDetachedTask(): DetachedTask = DetachedTask(
     id = getString("id"),
@@ -88,6 +91,7 @@ internal fun JSONObject.toDetachedTask(): DetachedTask = DetachedTask(
     endReason = if (isNull("end_reason")) null else getString("end_reason"),
     completionNotified = optBoolean("completion_notified", false),
     isolatedGroup = if (isNull("isolated_group")) null else getBoolean("isolated_group"),
+    ownerConversationId = optString("owner_conversation_id").takeIf { it.isNotBlank() && it != "null" },
 )
 
 internal val DetachedTask.commandStatus: String get() = when {

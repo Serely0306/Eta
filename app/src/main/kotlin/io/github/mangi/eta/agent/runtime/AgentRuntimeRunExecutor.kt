@@ -258,6 +258,8 @@ internal class AgentRuntimeRunExecutor(
                 skillPackageInstaller = skillPackageInstaller,
                 runAvailableSkillIds = skillContext.installedSkills.mapTo(mutableSetOf()) { it.id },
                 pendingSkillConflict = pendingSkillConflict,
+                // 只有主 Agent 启动的后台命令回报给会话；子 Agent 启动的仍只发系统通知（AG-27）。
+                backgroundJobOwner = subagentConversation.takeIf { ownerId == request.runId && receivesSubagentNotices },
             )
             val mainLocalTools = newLocalTools()
             val routingExecutor = RoutingToolExecutor(

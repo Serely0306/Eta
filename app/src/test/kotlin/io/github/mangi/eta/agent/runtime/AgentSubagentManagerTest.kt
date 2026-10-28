@@ -2,6 +2,8 @@ package io.github.mangi.eta.agent.runtime
 
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.model.AgentModelClient.ConversationMessage
+import io.github.mangi.eta.agent.terminal.DetachedTask
+import io.github.mangi.eta.agent.terminal.TerminalEnvironment
 import io.github.mangi.eta.data.db.ConversationSubagentEntity
 import io.github.mangi.eta.data.db.ConversationSubagentMailEntity
 import io.github.mangi.eta.data.db.ConversationSubagentSummary
@@ -232,6 +234,38 @@ class AgentSubagentManagerTest {
         assertEquals("started", manager.send(environment, "sub_1", "接着做").getString("delivery"))
         nextTurn()
         runner.replies.put(answer("完成"))
+    }
+
+    @Test
+    fun ownedBackgroundCommandsReportBackAndStoppedOnesDoNotWake() {
+        val parent = AgentRunController()
+        manager.attachParent("conv", "run-1", parent)
+        val finished = DetachedTask(
+            id = "job_1", pid = 1, token = "t", command = "make", cwd = "/", identity = "root",
+            environment = TerminalEnvironment.ANDROID, logPath = "/daemon/job_1.log", startedAt = 0, commandTask = true,
+            description = "编译", completedAt = 5, exitCode = 0, ownerConversationId = "conv",
+        )
+        manager.notifyBackgroundCommand(finished, "BUILD SUCCESSFUL")
+        val notice = parent.pollNotices().single()
+        assertTrue(notice.modelText.contains("<background_command_notification>"))
+        assertTrue(notice.modelText.contains("BUILD SUCCESSFUL"))
+        assertFalse(notice.modelText.contains("send_agent"))
+        assertEquals("后台命令 编译（job_1） 完成（退出码 0）", notice.display)
+
+        manager.detachParent("conv", "run-1")
+        val wakes = AtomicInteger()
+        manager.wakeListener = { wakes.incrementAndGet() }
+        manager.notifyBackgroundCommand(finished.copy(id = "job_2", endReason = "stopped", exitCode = null), "")
+        Thread.sleep(200)
+        assertEquals(0, wakes.get())
+        manager.notifyBackgroundCommand(finished.copy(id = "job_3", exitCode = 2), "error: x")
+        val deadline = System.currentTimeMillis() + 5_000
+        while (wakes.get() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(20)
+        assertEquals(1, wakes.get())
+        // 没有归属会话的（子 Agent 或电脑端直调启动的）只发系统通知。
+        val before = store.mail.size
+        manager.notifyBackgroundCommand(finished.copy(id = "job_4", ownerConversationId = null), "")
+        assertEquals(before, store.mail.size)
     }
 
     @Test

@@ -25,20 +25,20 @@ internal object AgentTerminalToolCatalog {
         tools.put(
             AgentToolSchema.function(
                 name = "terminal_job",
-                description = "启动可在本次回复结束后继续运行的后台命令。start 立即返回 job_id，完成或失败时发送系统通知；返回的 completion_notifications_enabled 表示当前通知是否可用。" +
-                    "list 查看任务，read 查看当前状态和日志，wait 在需要结果时等待，stop 终止任务。" +
+                description = "启动可在本次回复结束后继续运行的后台命令。start 立即返回 job_id；命令结束（完成、失败、超时）后，" +
+                    "结果与日志末尾会作为通知交给你，主对话已结束时会自动继续，所以启动后继续做别的或先结束回答，不要轮询或等待，" +
+                    "也不要猜测还没出来的结果。list 查看任务，read 查看当前状态和日志，stop 终止任务。" +
                     "日志保存为文件，read 返回 output_path；预览截断时可用 read_file 分页读取完整日志。" +
-                    "后台命令使用独立 Shell；不继承 terminal 会话。启动后可继续其他工作或回复用户，不必轮询等待。",
+                    "后台命令使用独立 Shell；不继承 terminal 会话。",
                 parameters = parameters(
                     executionProperties()
-                        .put("action", action("start", "list", "read", "wait", "stop"))
+                        .put("action", action("start", "list", "read", "stop"))
                         .put("command", text("start 要执行的完整命令。"))
                         .put("description", text("可选的简短任务说明，用于列表和完成通知。"))
                         .put("timeout_ms", integer("start 的命令运行上限，默认 600000 毫秒；0 表示不设超时。"))
-                        .put("job_id", text("start 或 list 返回的任务 ID；read、wait、stop 使用。"))
+                        .put("job_id", text("start 或 list 返回的任务 ID；read、stop 使用。"))
                         .put("active_only", bool("list 是否只返回运行中的任务，默认 true。"))
-                        .put("max_bytes", integer("read 返回的日志尾部字节数，默认 16000，最多 65536；完整日志保存在 output_path。"))
-                        .put("wait_ms", integer("wait 最长等待毫秒数，默认 30000，最多 60000；等待超时不会停止命令。")),
+                        .put("max_bytes", integer("read 返回的日志尾部字节数，默认 16000，最多 65536；完整日志保存在 output_path。")),
                     "action",
                 ),
             ),

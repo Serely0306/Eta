@@ -23,6 +23,8 @@ internal class RootShellTerminalController(
     },
     private val rootAvailable: () -> Boolean = { TerminalRuntime.rootAvailable },
     executionContext: TerminalExecutionContext? = null,
+    /** 主 Agent 启动的后台命令归属的会话（AG-27）；完成后结果作为通知交回该会话。子 Agent 与电脑端直调为空。 */
+    private val backgroundJobOwner: String? = null,
 ) : AutoCloseable {
     private companion object {
         const val USER_STORAGE = "/storage/emulated/0"
@@ -84,7 +86,7 @@ internal class RootShellTerminalController(
                 val command = args.requiredText("command")
                 if (command.isBlank()) return errorJson("INVALID_ARGUMENT", "command 不能为空")
                 jobs.start(launcher, command, cwd, identity, environment,
-                    args.optString("description", "后台命令"), args.optLong("timeout_ms", 600_000))
+                    args.optString("description", "后台命令"), args.optLong("timeout_ms", 600_000), backgroundJobOwner)
             }
             "list" -> jobs.list(args.optBoolean("active_only", true))
             "read" -> jobs.read(args.requiredText("job_id"), args.optInt("max_bytes", 16_000))

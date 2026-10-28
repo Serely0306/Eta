@@ -67,6 +67,7 @@
 | 上下文压缩（AG-22）：摘要不限长度、Anthropic 压缩输出预算与回退、思考跟随本次 run、失败原因可见 | `56cfd56` | F7–F9 | 未执行 |
 | 请求失败重试（AG-26）：全局重试次数（默认 5）、排除法判断可重试、1 秒起指数退避加抖动、遵从 Retry-After、压缩与托管搜索也重试、提示显示原因与 n/5；去掉 AG-21 的“继续”条 | AG-26 提交 | S1–S8、K2、R1、R5、R6 | 未执行 |
 | 后台任务（AG-27 阶段 A）：子 Agent 按 Claude Code 的机制——运行中消息在下一次请求前插入、写完结论后到达的作为下一回合、标注“主 Agent 补充”；去掉 `wait_agents`、`close_agent` 与 40 轮上限；中断（含进程结束）也写通知但不唤醒；`list_agents` 附进度摘要；进度限频落盘；侧栏按固定间隔刷新；自动唤醒开关 | AG-27 阶段 A 提交 | J3、J5、J6、J8、J17、J20–J22、J28–J32 | 未执行 |
+| 后台任务（AG-27 阶段 B1）：主 Agent 启动的后台命令记下归属会话，结束后结果与日志末尾作为通知交回（被停止的不唤醒），`terminal_job` 去掉 wait | AG-27 阶段 B1 提交 | E5、E8、E9 | 未执行 |
 
 后续阶段的用例在实现时补充；虚拟屏执行实现时在 M 组追加。
 
@@ -217,8 +218,10 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | E2 `M` | Root 未授权，或文件工具显式传 `identity=user`，读写工作区内相对路径 | 以应用身份执行，工作目录与 E1 相同，不随身份移动 |
 | E3 `M` | `terminal` 的 exec 带与动作无关的字段（例如 `page_size`） | 执行成功，不做参数预检，不再返回 `ignored_arguments` |
 | E4 `M` | `terminal` 的 `close` 不带 `session_id` | 返回 `INVALID_ARGUMENT`，说明关闭会话需要 `session_id` |
-| E5 `M` | `terminal_job` start 一个运行 90 秒的命令，随即结束回复；之后 list、read、wait（超时 10 秒）、stop | start 立即返回 job_id；回复结束后命令仍在运行；read 的 `output` 显示日志；wait 超时返回 `wait_timed_out=true`；stop 后状态为已停止；正常完成时发系统通知 |
+| E5 `M` | `terminal_job` start 一个运行 90 秒的命令，随即结束回复；之后 list、read、stop | start 立即返回 job_id；回复结束后命令仍在运行；read 的 `output` 显示日志；stop 后状态为已停止；正常完成时发系统通知；工具说明与参数里不再有 wait（旧调用仍可执行） |
 | E6 `R` | 工具页先只关闭“后台命令”卡片，再关闭“终端命令”卡片 | 只关后台命令时 `terminal` 仍可用；关闭终端命令后 `terminal_job`、`terminal_daemon` 一并从工具列表消失，卡片显示依赖终端命令；电脑端 MCP 的 `tools/list` 同样不再列出 |
+| E8 `M` | 主 Agent `terminal_job` start 一个约 5 秒、输出几行的命令后直接结束回答 | 命令结束后会话自动开始新一轮（工具页“自动继续”为开时）：对话里出现“后台命令 <说明>（job_…） 完成（退出码 0）”的系统提示，模型收到 `<background_command_notification>`，带状态、退出码与日志末尾；系统通知照常 |
+| E9 `M` | 主 run 运行中后台命令完成；另测命令被 `stop`、命令超时、退出码非 0；再让子 Agent 启动一个后台命令 | 运行中完成的在下一次模型请求前插入；被停止的显示“已停止”，不唤醒，下一次 run 再交；超时与非 0 退出码显示“超时”“失败（退出码 N）”并会唤醒；子 Agent 启动的命令只发系统通知，不交给主 Agent |
 | E7 `R` | 终端页打开控制台，运行 vim 与 htop，切横屏、弹出软键盘 | 全屏界面正常绘制，网格随尺寸变化；键条的 Ctrl、方向键可用 |
 
 ### F. 缓存与上下文

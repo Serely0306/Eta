@@ -109,6 +109,8 @@ internal class AgentLocalTools(
     private val rootAvailable: () -> Boolean = { RootAccess.isGranted },
     private val guiControl: GuiControlCoordinator.RunControl? = null,
     browserSession: AgentBrowserSession? = null,
+    /** 主 Agent 的后台命令归属会话（AG-27）；完成后结果作为通知交回。 */
+    backgroundJobOwner: String? = null,
 ) : AgentModelClient.ToolExecutor, AutoCloseable {
 
     private val closed = AtomicBoolean(false)
@@ -147,6 +149,7 @@ internal class AgentLocalTools(
             rootAvailable = rootAvailable,
         ),
         linuxSharedMountsProvider = { SharedFolderMounts.current() },
+        backgroundJobOwner = backgroundJobOwner,
     )
 
     private val publishedObservation = AtomicReference(PublishedObservation())
