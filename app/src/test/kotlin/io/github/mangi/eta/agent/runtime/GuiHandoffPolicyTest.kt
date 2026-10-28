@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.runtime
 
+import io.github.mangi.eta.agent.model.AgentUserAnswer
 import io.github.mangi.eta.agent.model.AgentUserQuestion
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -20,10 +21,24 @@ class GuiHandoffPolicyTest {
             assertEquals(GuiHandoffPolicy.STATUS_NOT_APPLICABLE, GuiHandoffPolicy.skipReason(source, "conv", now = 0)?.first)
         }
 
-        GuiHandoffPolicy.startCooldown("conv", now = 1_000)
+        GuiHandoffPolicy.onAnswered("conv", AgentUserAnswer.TimedOut, now = 1_000)
         assertEquals(GuiHandoffPolicy.STATUS_COOLDOWN, GuiHandoffPolicy.skipReason(null, "conv", now = 1_000 + 179_999)?.first)
         assertNull(GuiHandoffPolicy.skipReason(null, "other", now = 2_000))
         assertNull(GuiHandoffPolicy.skipReason(null, "conv", now = 1_000 + 180_000))
+    }
+
+    @Test
+    fun choosingYouDoItAlsoSilencesForThreeMinutesButDoingItMyselfDoesNot() {
+        GuiHandoffPolicy.onAnswered("agreed", AgentUserAnswer.Selected(listOf(listOf(AgentUserQuestion.GUI_HANDOFF_AGENT_OPTION))), now = 0)
+        val skipped = GuiHandoffPolicy.skipReason(null, "agreed", now = 179_999)
+        assertEquals(GuiHandoffPolicy.STATUS_COOLDOWN, skipped?.first)
+        assertTrue(skipped!!.second.contains("同意"))
+        assertNull(GuiHandoffPolicy.skipReason(null, "agreed", now = 180_000))
+
+        GuiHandoffPolicy.onAnswered("mine", AgentUserAnswer.Selected(listOf(listOf(AgentUserQuestion.GUI_HANDOFF_USER_OPTION))), now = 0)
+        GuiHandoffPolicy.onAnswered("typed", AgentUserAnswer.Text("你来吧"), now = 0)
+        assertNull(GuiHandoffPolicy.skipReason(null, "mine", now = 1_000))
+        assertNull(GuiHandoffPolicy.skipReason(null, "typed", now = 1_000))
     }
 
     @Test

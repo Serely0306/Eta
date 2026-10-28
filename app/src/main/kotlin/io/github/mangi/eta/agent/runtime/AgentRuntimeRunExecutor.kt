@@ -377,8 +377,8 @@ internal class AgentRuntimeRunExecutor(
                     entrySurfaceGuard,
                     checkpointRecorder,
                 )
+                if (question.isGuiHandoff) GuiHandoffPolicy.onAnswered(subagentConversation, answer)
                 if (question.isGuiHandoff && answer == AgentUserAnswer.TimedOut) {
-                    GuiHandoffPolicy.startCooldown(subagentConversation)
                     return AgentModelClient.ToolResult(JSONObject().put("status", AgentUserAnswer.STATUS_TIMEOUT)
                         .put("message", "30 秒没有回复，由你直接操作；3 分钟内不再询问由谁操作").toString())
                 }
