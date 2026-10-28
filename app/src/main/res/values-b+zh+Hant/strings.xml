@@ -261,7 +261,10 @@
   <string name="system_notice_subagent_notified">背景任務的結果已交給主 Agent</string>
   <string name="model_waiting_thinking">思考中 · %1$d 秒</string>
   <string name="model_waiting_response">等待模型 · %1$d 秒</string>
-  <string name="thinking_total_seconds">思考共 %1$d 秒</string>
+  <string name="answer_duration">用時 %1$s</string>
+  <string name="duration_seconds">%1$d 秒</string>
+  <string name="duration_minutes_seconds">%1$d 分 %2$d 秒</string>
+  <string name="duration_hours_minutes_seconds">%1$d 小時 %2$d 分 %3$d 秒</string>
   <string name="subagent_wake_prompt">[Eta 系統] 背景的子 Agent 有了新結果（見下一條通知）。請據此繼續之前的任務；已經可以給出結論時，直接向使用者匯報。</string>
   <string name="tool_status_unknown">結果未知</string>
   <string name="voice_listening">聆聽中...</string>

@@ -1217,10 +1217,30 @@ internal fun isWaitingForModel(messages: List<AgentChatMessageUi>): Boolean = wh
     else -> false
 }
 
+/**
+ * 等待行的起点记在列表外（AG-28）：列表会回收滑出屏幕的行，起点记在行里会在滑回来时从 0 重计；
+ * 按“这一段等待”的标识记一次，切换会话再回来也接着计时。只保留最近的若干段。
+ */
+internal object ModelWaitClock {
+    private const val MAX_ENTRIES = 64
+    private val startedAt = LinkedHashMap<String, Long>()
+
+    @Synchronized
+    fun startOf(key: String, now: Long): Long {
+        startedAt[key]?.let { return it }
+        if (startedAt.size >= MAX_ENTRIES) startedAt.remove(startedAt.keys.first())
+        startedAt[key] = now
+        return now
+    }
+}
+
 /** “思考中 · 12 秒”：从这一段等待开始计时，每秒刷新；出现输出后整行消失。 */
 @Composable
-private fun ModelWaitingRow(thinkingEnabled: Boolean, sinceKey: Any?) {
-    val startedAt = remember(sinceKey) { SystemClock.elapsedRealtime() }
+private fun ModelWaitingRow(thinkingEnabled: Boolean, sinceKey: String?) {
+    val startedAt = remember(sinceKey) {
+        val now = SystemClock.elapsedRealtime()
+        sinceKey?.let { ModelWaitClock.startOf(it, now) } ?: now
+    }
     var seconds by remember(sinceKey) { mutableIntStateOf(0) }
     LaunchedEffect(sinceKey) {
         while (true) {

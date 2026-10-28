@@ -714,11 +714,11 @@ private fun AgentMessageBlock(
                         )
                     }
                 }
-                // 本次回答的思考总用时（AG-28），小字放在操作行末尾；推理 token 只记在用量里。
-                message.thinkingSeconds?.let { seconds ->
+                // 本次回答的总用时（AG-28），小字放在操作行末尾。
+                message.durationSeconds?.let { seconds ->
                     Spacer(Modifier.weight(1f))
                     Text(
-                        text = stringResource(R.string.thinking_total_seconds, seconds),
+                        text = stringResource(R.string.answer_duration, answerDurationText(seconds)),
                         style = MiuixTheme.textStyles.footnote2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
@@ -1203,5 +1203,18 @@ private fun SuggestionChipsRow(
                 )
             }
         }
+    }
+}
+
+/** 回答总用时：“45 秒”“2 分 5 秒”“1 小时 2 分 3 秒”（AG-28）。 */
+@Composable
+internal fun answerDurationText(totalSeconds: Int): String {
+    val hours = totalSeconds / 3600
+    val minutes = totalSeconds % 3600 / 60
+    val seconds = totalSeconds % 60
+    return when {
+        hours > 0 -> stringResource(R.string.duration_hours_minutes_seconds, hours, minutes, seconds)
+        minutes > 0 -> stringResource(R.string.duration_minutes_seconds, minutes, seconds)
+        else -> stringResource(R.string.duration_seconds, seconds)
     }
 }

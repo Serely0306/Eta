@@ -23,6 +23,16 @@ class AgentChatScrollPolicyTest {
     }
 
     @Test
+    fun waitingClockKeepsTheFirstStartOfEachWaitAcrossRecomposition() {
+        assertEquals(1_000L, ModelWaitClock.startOf("clock-test-a", 1_000L))
+        // 行被回收后重新创建：同一段等待仍从第一次的起点算。
+        assertEquals(1_000L, ModelWaitClock.startOf("clock-test-a", 9_000L))
+        assertEquals(9_000L, ModelWaitClock.startOf("clock-test-b", 9_000L))
+        repeat(64) { ModelWaitClock.startOf("clock-test-fill-$it", 10_000L) }
+        assertEquals(20_000L, ModelWaitClock.startOf("clock-test-a", 20_000L))
+    }
+
+    @Test
     fun historyPagingRunsDuringAStreamOnlyAfterTheUserLeavesTheBottom() {
         assertTrue(historyPagingEnabled(isStreaming = false, keepBottomAnchored = true))
         assertTrue(historyPagingEnabled(isStreaming = false, keepBottomAnchored = false))

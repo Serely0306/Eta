@@ -356,7 +356,10 @@
   <string name="system_notice_subagent_notified">Background task results handed to the main agent</string>
   <string name="model_waiting_thinking">Thinking · %1$d s</string>
   <string name="model_waiting_response">Waiting for the model · %1$d s</string>
-  <string name="thinking_total_seconds">Thought for %1$d s</string>
+  <string name="answer_duration">Took %1$s</string>
+  <string name="duration_seconds">%1$d s</string>
+  <string name="duration_minutes_seconds">%1$d min %2$d s</string>
+  <string name="duration_hours_minutes_seconds">%1$d h %2$d min %3$d s</string>
   <string name="subagent_wake_prompt">[Eta system] Background sub-agents have new results (see the next notice). Continue the earlier task with them; if you can already conclude, report to the user directly.</string>
   <string name="tool_status_unknown">Result unknown</string>
   <string name="voice_listening">Listening...</string>

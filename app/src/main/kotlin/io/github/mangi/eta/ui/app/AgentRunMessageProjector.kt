@@ -20,13 +20,8 @@ internal class AgentRunMessageProjector(
 ) {
     private val thinkingStartedAt = mutableMapOf<String, Long>()
 
-    /**
-     * 思考总用时（AG-28）：每轮从请求发出到第一个可见输出（正文、思考摘要、工具）之间按 run 累加；
-     * 服务商多数轮次不返回思考摘要，所以不靠思考块计时。只有确实推理过（有思考块或推理 token）的 run 才显示。
-     */
-    private val roundWaitStartedAt = mutableMapOf<String, Long>()
-    private val runWaitMillis = mutableMapOf<String, Long>()
-    private val runsWithReasoning = mutableSetOf<String>()
+    /** 本次回答的总用时（AG-28，用户 2026-10-28 改为“用时”）：从 run 的第一个事件到结束。 */
+    private val runStartedAt = mutableMapOf<String, Long>()
 
     /**
      * App 与系统助手浮层共用的事件到消息投影。无可见变化的事件原样返回同一列表，
@@ -37,7 +32,8 @@ internal class AgentRunMessageProjector(
         event: AgentEvent,
         messages: List<AgentChatMessageUi>,
     ): List<AgentChatMessageUi> {
-        trackThinkingTime(runId, event)
+        runStartedAt.putIfAbsent(runId, nowElapsedRealtime())
+        if (event is AgentEvent.RunFailed) runStartedAt.remove(runId)
         return project(runId, event, messages)
     }
 
@@ -84,7 +80,7 @@ internal class AgentRunMessageProjector(
         is AgentEvent.AssistantReceived -> if (event.reasoningContent.isBlank()) messages else {
             ensureCompletedThinking(runId, event.round, event.reasoningContent, messages)
         }
-        is AgentEvent.RunFinished -> attachThinkingTotal(runId, finalizeText(runId, finalizeThinking(runId, messages)))
+        is AgentEvent.RunFinished -> attachDuration(runId, finalizeText(runId, finalizeThinking(runId, messages)))
         is AgentEvent.SubagentUpdate -> updateSubagent(runId, event, messages)
         // 子 Agent 的完成通知交给主 Agent 时，在对话里留一条系统提示（不是用户消息）。
         is AgentEvent.SubagentNotified -> {
@@ -109,35 +105,14 @@ internal class AgentRunMessageProjector(
         -> messages
     }
 
-    private fun trackThinkingTime(runId: String, event: AgentEvent) {
-        when (event) {
-            is AgentEvent.ProviderRequestStarted -> roundWaitStartedAt.putIfAbsent("$runId#${event.round}", nowElapsedRealtime())
-            is AgentEvent.AssistantBlockStart -> {
-                if (event.kind == AgentEvent.AssistantBlockKind.THINKING) runsWithReasoning += runId
-                closeRoundWait(runId, event.round)
-            }
-            is AgentEvent.ToolStarted -> closeRoundWait(runId, event.round)
-            is AgentEvent.HostedToolStarted -> closeRoundWait(runId, event.round)
-            is AgentEvent.UsageReceived -> if ((event.usage.reasoningTokens ?: 0) > 0) runsWithReasoning += runId
-            else -> Unit
-        }
-    }
-
-    private fun closeRoundWait(runId: String, round: Int) {
-        val startedAt = roundWaitStartedAt.remove("$runId#$round") ?: return
-        runWaitMillis[runId] = (runWaitMillis[runId] ?: 0L) + (nowElapsedRealtime() - startedAt).coerceAtLeast(0)
-    }
-
-    /** 回答结束时把思考总用时记在本次回答的最后一段上（AG-28）。 */
-    private fun attachThinkingTotal(runId: String, messages: List<AgentChatMessageUi>): List<AgentChatMessageUi> {
-        roundWaitStartedAt.keys.removeAll { it.startsWith("$runId#") }
-        val total = runWaitMillis.remove(runId) ?: return messages
-        val reasoned = runsWithReasoning.remove(runId)
-        val seconds = (total / 1000).toInt()
-        if (!reasoned || seconds < 1) return messages
+    /** 回答结束时把本次总用时记在回答的最后一段上（AG-28）。 */
+    private fun attachDuration(runId: String, messages: List<AgentChatMessageUi>): List<AgentChatMessageUi> {
+        val startedAt = runStartedAt.remove(runId) ?: return messages
+        val seconds = ((nowElapsedRealtime() - startedAt) / 1000).toInt()
+        if (seconds < 1) return messages
         val index = messages.indexOfLast { it is AgentMessageUi && it.id.startsWith(assistantMessagePrefix(runId)) }
         if (index < 0) return messages
-        return messages.toMutableList().apply { this[index] = (this[index] as AgentMessageUi).copy(thinkingSeconds = seconds) }
+        return messages.toMutableList().apply { this[index] = (this[index] as AgentMessageUi).copy(durationSeconds = seconds) }
     }
 
     private fun attachSearchSuggestions(
@@ -631,6 +606,7 @@ internal class AgentRunMessageProjector(
 
     fun clearRun(runId: String) {
         thinkingStartedAt.keys.removeAll { it.startsWith("$runId-thinking-") }
+        runStartedAt.remove(runId)
     }
 
     /** 时长只在块从流式转为结束时定格；已结束的块在整轮收尾或恢复时保持原值，不再按“开始到现在”累计。 */
