@@ -53,9 +53,12 @@ internal object ToolCallDetails {
         journal: List<AgentModelClient.ConversationMessage>,
         messages: List<AgentChatMessageUi>,
         target: ToolActivityMessageUi,
+        storedToolRows: List<ToolActivityMessageUi> = emptyList(),
     ): ToolCallDetail? {
         val callId = toolCallId(target.id) ?: return null
-        val ordinal = messages.asSequence()
+        val loadedIds = messages.map { it.id }.toSet()
+        val allMessages = storedToolRows.filter { it.id !in loadedIds } + messages
+        val ordinal = allMessages.asSequence()
             .filterIsInstance<ToolActivityMessageUi>()
             .filter { toolCallId(it.id) == callId }
             .indexOfFirst { it.id == target.id }

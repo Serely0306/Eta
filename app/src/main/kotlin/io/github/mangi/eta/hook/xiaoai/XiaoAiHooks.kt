@@ -782,7 +782,11 @@ internal object XiaoAiHooks {
 
     private fun cancelInBackground(logger: ModuleLogger, block: () -> Unit) {
         try {
-            cancelExecutor.execute { runCatching(block) }
+            cancelExecutor.execute {
+                runCatching(block).onFailure { failure ->
+                    logger.error("超级小爱取消任务失败：${failure.message ?: failure.javaClass.simpleName}")
+                }
+            }
         } catch (_: RejectedExecutionException) {
             // 被打断的旧任务线程在 AgentRuntimeClient.run 中仍会自行发送取消。
             logger.warnThrottled("xiaoai_cancel_rejected") {

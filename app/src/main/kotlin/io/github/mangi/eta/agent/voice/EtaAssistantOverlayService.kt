@@ -688,8 +688,13 @@ internal class EtaAssistantOverlayService : Service(), LifecycleOwner, SavedStat
     }
 
     private fun requestRuntimeCancellation(runId: String) {
-        runCatching {
-            cancellationExecutor.execute { runtimeClient.cancelRun(runId) }
+        cancellationExecutor.execute {
+            runCatching { runtimeClient.cancelRun(runId) }.onFailure { failure ->
+                mainHandler.post {
+                    android.widget.Toast.makeText(this, failure.message ?: failure.javaClass.simpleName,
+                        android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 

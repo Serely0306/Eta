@@ -23,7 +23,6 @@ import kotlinx.coroutines.runBlocking
 internal object UsageQuotaMonitor {
     private const val CHANNEL = "eta_usage_quota"
     private const val PREFS = "eta_usage_quota_notified"
-    private const val MAX_ROWS = 50_000
     private const val ROLLING_COOLDOWN_MS = 5 * 60 * 60 * 1000L
 
     fun check(context: Context, providerId: String, now: Long = System.currentTimeMillis()) {
@@ -40,7 +39,7 @@ internal object UsageQuotaMonitor {
         if (!quota.notifyAt80 && !quota.notifyAt100) return
         val zone = ZoneId.systemDefault()
         val start = UsageReports.quotaPeriodStart(quota.period, now, zone)
-        val records = runBlocking { EtaDatabase.get(context).modelUsageDao().between(start, now + 1, MAX_ROWS) }
+        val records = runBlocking { EtaDatabase.get(context).modelUsageDao().between(start, now + 1) }
         val usage = UsageReports.quotaUsage(quota, records, now, zone, UsagePriceResolver(pricing)::cost)
         val threshold = when {
             usage.ratio >= 1.0 && quota.notifyAt100 -> 100

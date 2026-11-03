@@ -42,6 +42,8 @@ internal data class AgentChatUiState(
     /** 当前展示窗口首条消息的持久化 sort_index，保存只更新这一位置之后的后缀。 */
     val messageStartIndex: Int = 0,
     val hasEarlierMessages: Boolean = false,
+    /** 完整工具行索引，分页后仍按完整 journal 的调用顺序查详情。 */
+    val storedToolRows: List<ToolActivityMessageUi> = emptyList(),
     val conversationCharacterName: String? = null,
     val conversationCharacterAvatarPath: String? = null,
 ) {

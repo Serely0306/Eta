@@ -92,7 +92,7 @@ internal class AgentAutomationTool(
             trigger = trigger,
             enabled = if (args.has("enabled")) args.optBoolean("enabled", true) else existing?.enabled ?: true,
             createdAt = existing?.createdAt ?: now(),
-            lastRunAt = existing?.lastRunAt,
+            lastRunAt = if (trigger is AutomationTrigger.Once && trigger != existing?.trigger) null else existing?.lastRunAt,
             lastStatus = existing?.lastStatus,
             lastSummary = existing?.lastSummary,
             modelId = modelId,

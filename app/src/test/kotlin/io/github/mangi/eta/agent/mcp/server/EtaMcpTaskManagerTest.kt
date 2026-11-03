@@ -8,6 +8,8 @@ import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import org.json.JSONArray
 import org.json.JSONObject
@@ -306,6 +308,124 @@ class EtaMcpTaskManagerTest {
         }.start()
         val stopped = manager.call(EtaMcpTaskManager.STOP, JSONObject().put("task_id", taskId))
         assertEquals("stopped", stopped.getString("status"))
+    }
+
+    @Test
+    fun stoppingBeforeTheLaunchThreadRunsDoesNotStartTheRunner() {
+        var pending: (() -> Unit)? = null
+        val delayedRunner = object : EtaMcpTaskManager.Runner by runner {
+            override fun cancel(runId: String) {
+                runner.cancel(runId)
+                checkNotNull(pending).invoke()
+            }
+        }
+        val delayedManager = EtaMcpTaskManager(delayedRunner, launch = { _, block -> pending = block })
+        runner.steps.put { AgentRuntimeWire.RunResult("", ok = true, content = "should not run") }
+        val started = delayedManager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("wait_seconds", 0))
+        val stopped = delayedManager.call(EtaMcpTaskManager.STOP, JSONObject().put("task_id", started.getString("task_id")))
+        assertEquals("stopped", stopped.getString("status"))
+        assertTrue(runner.prompts.isEmpty())
+    }
+
+    @Test
+    fun stopDuringPreparationIsDeliveredWhenRuntimeStarts() {
+        val preparing = CountDownLatch(1)
+        val registrationAllowed = CountDownLatch(1)
+        val registered = AtomicBoolean(false)
+        val cancelledAfterRegistration = CountDownLatch(1)
+        val preparingRunner = object : EtaMcpTaskManager.Runner by runner {
+            override fun run(
+                runId: String,
+                conversationKey: String,
+                prompt: String,
+                modelId: String?,
+                reasoningEffort: String?,
+                onEvent: (AgentEvent) -> Unit,
+            ): AgentRuntimeWire.RunResult {
+                preparing.countDown()
+                check(registrationAllowed.await(5, TimeUnit.SECONDS))
+                registered.set(true)
+                onEvent(AgentEvent.RunStarted(0, 0, 0, false))
+                val cancelled = cancelledAfterRegistration.await(5, TimeUnit.SECONDS)
+                return AgentRuntimeWire.RunResult(runId, ok = !cancelled, content = "", error = if (cancelled) "已停止" else null)
+            }
+
+            override fun cancel(runId: String) {
+                if (registered.get()) cancelledAfterRegistration.countDown() else registrationAllowed.countDown()
+            }
+        }
+        val preparingManager = EtaMcpTaskManager(preparingRunner)
+        val started = preparingManager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("wait_seconds", 0))
+        assertTrue(preparing.await(5, TimeUnit.SECONDS))
+        val stopped = preparingManager.call(EtaMcpTaskManager.STOP, JSONObject().put("task_id", started.getString("task_id")))
+        assertEquals(0L, cancelledAfterRegistration.count)
+        assertEquals("stopped", stopped.getString("status"))
+    }
+
+    @Test
+    fun cancellationFailuresRemainVisibleUntilTheRealRunResultArrives() {
+        for (failAfterRegistration in listOf(false, true)) {
+            val scripted = ScriptedRunner()
+            val preparing = CountDownLatch(1)
+            val startEventAllowed = CountDownLatch(1)
+            val finishAllowed = CountDownLatch(1)
+            val taskFinished = CountDownLatch(1)
+            val cancelCalls = AtomicInteger()
+            val message = "cancel transport failed"
+            val failingRunner = object : EtaMcpTaskManager.Runner by scripted {
+                override fun cancel(runId: String) {
+                    if (failAfterRegistration && cancelCalls.incrementAndGet() == 1) {
+                        startEventAllowed.countDown()
+                    } else {
+                        throw IllegalStateException(message)
+                    }
+                }
+            }
+            scripted.steps.put { onEvent ->
+                preparing.countDown()
+                if (failAfterRegistration) {
+                    check(startEventAllowed.await(5, TimeUnit.SECONDS))
+                    onEvent(AgentEvent.RunStarted(0, 0, 0, false))
+                }
+                check(finishAllowed.await(5, TimeUnit.SECONDS))
+                AgentRuntimeWire.RunResult(
+                    "", ok = failAfterRegistration, content = if (failAfterRegistration) "actual result" else "",
+                    error = if (failAfterRegistration) null else "actual run failure",
+                )
+            }
+            val failingManager = EtaMcpTaskManager(failingRunner, launch = { name, block ->
+                Thread {
+                    block()
+                    if (name == "eta-mcp-task") taskFinished.countDown()
+                }.start()
+            })
+            val started = failingManager.call(EtaMcpTaskManager.START, JSONObject().put("prompt", "x").put("wait_seconds", 0))
+            val taskId = started.getString("task_id")
+            try {
+                assertTrue(preparing.await(5, TimeUnit.SECONDS))
+                val stopped = failingManager.call(EtaMcpTaskManager.STOP, JSONObject().put("task_id", taskId))
+                assertFalse(stopped.getBoolean("ok"))
+                assertEquals("running", stopped.getString("status"))
+                assertEquals("CANCEL_FAILED", stopped.getString("code"))
+                assertEquals(message, stopped.getString("error"))
+                val status = failingManager.call(EtaMcpTaskManager.STATUS, JSONObject().put("task_id", taskId).put("wait_seconds", 5))
+                assertEquals(message, status.getString("error"))
+            } finally {
+                startEventAllowed.countDown()
+                finishAllowed.countDown()
+            }
+            assertTrue(taskFinished.await(5, TimeUnit.SECONDS))
+            val done = failingManager.call(EtaMcpTaskManager.STATUS, JSONObject().put("task_id", taskId).put("wait_seconds", 0))
+            assertTrue(done.getBoolean("ok"))
+            assertEquals(if (failAfterRegistration) "completed" else "failed", done.getString("status"))
+            if (failAfterRegistration) {
+                assertEquals("actual result", done.getString("result"))
+                assertFalse(done.has("error"))
+            } else {
+                assertEquals("actual run failure", done.getString("error"))
+            }
+            assertFalse(done.has("code"))
+        }
     }
 
     @Test

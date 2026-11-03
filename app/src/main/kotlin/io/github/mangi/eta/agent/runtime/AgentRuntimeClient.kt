@@ -122,10 +122,13 @@ internal class AgentRuntimeClient(
 
     fun cancelRun(runId: String) {
         if (runId.isBlank()) return
-        withRuntimeMessenger(Unit) { serviceMessenger ->
+        val lease = checkNotNull(AgentRuntimeConnection.acquire(context, logger)) { "无法连接 Agent Runtime，停止请求未送达" }
+        try {
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_CANCEL)
             msg.data = AgentRuntimeWire.ackBundle(runId)
-            serviceMessenger.send(msg)
+            lease.messenger.send(msg)
+        } finally {
+            lease.close()
         }
     }
 
@@ -149,14 +152,27 @@ internal class AgentRuntimeClient(
         }
     }
 
-    /** 回答 ask_user 的问题；是否被接受以随后的 UserQuestionResolved 事件为准。 */
+    /** false means Runtime rejected a stale answer; connection and reply failures are reported to the caller. */
     fun answerQuestion(runId: String, questionId: String, answer: AgentUserAnswer): Boolean {
-        if (runId.isBlank() || questionId.isBlank()) return false
-        return withRuntimeMessenger(false) { serviceMessenger ->
+        require(runId.isNotBlank() && questionId.isNotBlank()) { "缺少运行或问题编号" }
+        val responseLatch = CountDownLatch(1)
+        val acceptedRef = AtomicReference(false)
+        val clientMessenger = Messenger(
+            SteerHandler(AgentRuntimeWire.MSG_ANSWER_QUESTION_RESPONSE) { accepted ->
+                acceptedRef.set(accepted)
+                responseLatch.countDown()
+            }
+        )
+        val lease = checkNotNull(AgentRuntimeConnection.acquire(context, logger)) { "无法连接 Agent Runtime，回答尚未提交" }
+        try {
             val msg = Message.obtain(null, AgentRuntimeWire.MSG_ANSWER_QUESTION)
+            msg.replyTo = clientMessenger
             msg.data = AgentRuntimeWire.answerQuestionBundle(runId, questionId, answer)
-            serviceMessenger.send(msg)
-            true
+            lease.messenger.send(msg)
+            check(responseLatch.await(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) { "等待回答回执超时，尚未确认 Runtime 是否接收" }
+            return acceptedRef.get()
+        } finally {
+            lease.close()
         }
     }
 
@@ -382,10 +398,11 @@ internal class AgentRuntimeClient(
     }
 
     private class SteerHandler(
+        private val responseType: Int = AgentRuntimeWire.MSG_STEER_RESPONSE,
         private val onResponse: (Boolean) -> Unit,
     ) : Handler(Looper.getMainLooper()) {
         override fun handleMessage(msg: Message) {
-            if (msg.what == AgentRuntimeWire.MSG_STEER_RESPONSE) {
+            if (msg.what == responseType) {
                 onResponse(AgentRuntimeWire.steerAccepted(msg.data ?: return))
             }
         }

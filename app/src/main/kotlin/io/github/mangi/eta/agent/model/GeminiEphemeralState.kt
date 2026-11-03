@@ -52,4 +52,10 @@ internal object GeminiEphemeralState {
             remove(RUN_START)
             remove(PENDING_SUGGESTIONS)
         }
+
+    fun strip(message: JSONObject) {
+        message.remove(STEPS)
+        message.remove(RUN_START)
+        message.remove(PENDING_SUGGESTIONS)
+    }
 }

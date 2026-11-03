@@ -106,6 +106,9 @@ internal object AgentRuntimeWire {
     /** service -> client：返回各运行的会话归属与当前阶段。 */
     const val MSG_QUERY_ACTIVE_RUNS_RESPONSE = 20
 
+    /** service -> client: whether the requested question accepted this answer. */
+    const val MSG_ANSWER_QUESTION_RESPONSE = 21
+
     private const val MODULE_PACKAGE = "io.github.mangi.eta"
     private const val SERVICE_CLASS = "io.github.mangi.eta.agent.runtime.AgentRuntimeService"
 

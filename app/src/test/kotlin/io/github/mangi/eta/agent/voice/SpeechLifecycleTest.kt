@@ -28,11 +28,17 @@ import org.robolectric.shadows.ShadowSpeechRecognizer
 class SpeechLifecycleTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val results = mutableListOf<String>()
+    private val captureEvents = mutableListOf<String>()
     private lateinit var controller: SpeechInputController
 
     @Before fun setup() {
         ShadowSpeechRecognizer.setIsOnDeviceRecognitionAvailable(true)
-        controller = SpeechInputController(RuntimeEnvironment.getApplication(), scope, onResult = results::add)
+        controller = SpeechInputController(
+            RuntimeEnvironment.getApplication(), scope,
+            beforeCapture = { captureEvents += "start" },
+            afterCapture = { captureEvents += "stop" },
+            onResult = results::add,
+        )
     }
     @After fun close() { controller.cancel(); scope.cancel() }
 
@@ -48,13 +54,17 @@ class SpeechLifecycleTest {
     private fun text(value: String) = Bundle().apply { putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(value)) }
 
     @Test fun dictationWaitsForUserEvenWhenSystemReturnsEarly() {
-        start().triggerOnResults(text("可编辑的草稿"))
+        val recognizer = start()
+        assertEquals(listOf("start"), captureEvents)
+        recognizer.triggerOnResults(text("可编辑的草稿"))
+        assertEquals(listOf("start", "stop"), captureEvents)
         assertTrue(results.isEmpty())
         assertEquals("可编辑的草稿", controller.state.value.preview)
         controller.finish()
         controller.finish()
         assertEquals(listOf("可编辑的草稿"), results)
         assertFalse(controller.state.value.active)
+        assertEquals(listOf("start", "stop"), captureEvents)
     }
 
     @Test fun canceledSessionCannotSubmitOrReplaceNewPreview() {
@@ -67,6 +77,7 @@ class SpeechLifecycleTest {
         controller.finish()
         current.triggerOnResults(text("新结果"))
         assertEquals(listOf("新结果"), results)
+        assertEquals(listOf("start", "stop", "start", "stop"), captureEvents)
     }
 
     @Test fun closingOwnerReleasesRecognitionAndTimeouts() {
@@ -77,6 +88,17 @@ class SpeechLifecycleTest {
         assertTrue(recognizer.isDestroyed)
         assertTrue(results.isEmpty())
         assertNull(controller.state.value.error)
+        assertEquals(listOf("start", "stop"), captureEvents)
+    }
+
+    @Test fun systemRecognitionErrorReleasesCaptureAndKeepsTheErrorVisible() {
+        val recognizer = start()
+        recognizer.triggerOnError(SpeechRecognizer.ERROR_NETWORK)
+        assertEquals(listOf("start", "stop"), captureEvents)
+        assertNotNull(controller.state.value.error)
+        assertEquals(SpeechRecognizer.ERROR_NETWORK, controller.state.value.systemIssue?.errorCode)
+        controller.cancel()
+        assertEquals(listOf("start", "stop"), captureEvents)
     }
 
     @Test fun anotherAudioOwnerInterruptsRecording() {
@@ -95,6 +117,7 @@ class SpeechLifecycleTest {
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(recognizer.isDestroyed)
         assertFalse(controller.state.value.active)
+        assertEquals(listOf("start", "stop"), captureEvents)
     }
 
     @Test fun disabledRecognitionDoesNotAcquireAudioOrRequireCloudCredentials() {
@@ -109,6 +132,7 @@ class SpeechLifecycleTest {
                 assertNull(controller.state.value.error)
                 assertTrue(results.isEmpty())
                 assertFalse(interrupted)
+                assertTrue(captureEvents.isEmpty())
             }
         } finally { lease.close() }
     }

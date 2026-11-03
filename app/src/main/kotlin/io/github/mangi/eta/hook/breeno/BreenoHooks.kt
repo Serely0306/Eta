@@ -605,7 +605,7 @@ internal object BreenoHooks {
                             config = config,
                             images = images,
                             history = request.history,
-                            handoff = request.toRuntimeHandoff(prompt)
+                            handoff = request.toRuntimeHandoff(prompt, config.effectiveReasoningEffort)
                         )
                     ) { event ->
                         if (activeAgentRun.get() === runState) {
@@ -956,7 +956,10 @@ internal object BreenoHooks {
         if (map.size > 256) map.clear()
     }
 
-    private fun TextRequest.toRuntimeHandoff(userText: String): AgentRuntimeWire.EntryHandoff =
+    private fun TextRequest.toRuntimeHandoff(
+        userText: String,
+        effort: ReasoningEffort,
+    ): AgentRuntimeWire.EntryHandoff =
         AgentRuntimeWire.EntryHandoff(
             id = runId,
             source = BREENO_HANDOFF_SOURCE,
@@ -969,8 +972,8 @@ internal object BreenoHooks {
                     .ifBlank { recordId }
                     .ifBlank { runId },
                 title = archiveTitle(userText),
-                thinkingEnabled = thinkingEnabledOverride,
-                reasoningEffort = thinkingEnabledOverride?.let(ReasoningEffort::fromLegacy),
+                thinkingEnabled = effort.enablesReasoning,
+                reasoningEffort = effort,
                 adapterPayload = JSONObject()
                     .put("recordId", recordId)
                     .put("originalRecordId", originalRecordId)

@@ -28,6 +28,8 @@ class ToolCallDetailsTest {
         assertEquals("""{"command":"pwd"}""", detail.argumentsJson)
         assertEquals("""{"stdout":"second"}""", detail.result)
         assertFalse(detail.sensitive)
+        val paged = ToolCallDetails.find(journal, listOf(second), second, listOf(first, second))!!
+        assertEquals(detail, paged)
     }
 
     @Test

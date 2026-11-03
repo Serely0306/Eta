@@ -67,6 +67,30 @@ class AgentAutomationToolTest {
     }
 
     @Test
+    fun changingAnExecutedTaskToANewOnceTimeReschedulesIt() {
+        val created = call(
+            JSONObject().put("action", "create").put("name", "提醒").put("prompt", "提醒喝水")
+                .put("trigger", JSONObject().put("type", "daily").put("time", "08:00")),
+        )
+        val id = created.getJSONObject("automation").getString("id")
+        AgentAutomationStore.recordRun(id, now - 60_000, AgentAutomation.STATUS_COMPLETED, "done")
+        val updated = call(
+            JSONObject().put("action", "update").put("id", id).put("enabled", true)
+                .put("trigger", JSONObject().put("type", "once").put("at", "2026-10-12 09:00")),
+        )
+        assertEquals("2026-10-12 09:00", updated.getJSONObject("automation").getString("next_run"))
+
+        AgentAutomationStore.recordRun(id, now, AgentAutomation.STATUS_COMPLETED, "done")
+        val unchanged = call(JSONObject().put("action", "update").put("id", id).put("enabled", true))
+        assertFalse(unchanged.getJSONObject("automation").has("next_run"))
+        val rescheduled = call(
+            JSONObject().put("action", "update").put("id", id).put("enabled", true)
+                .put("trigger", JSONObject().put("type", "once").put("at", "2026-10-12 10:00")),
+        )
+        assertEquals("2026-10-12 10:00", rescheduled.getJSONObject("automation").getString("next_run"))
+    }
+
+    @Test
     fun invalidTriggersAreRejectedWithReasons() {
         fun create(trigger: JSONObject) = call(
             JSONObject().put("action", "create").put("name", "x").put("prompt", "y").put("trigger", trigger),

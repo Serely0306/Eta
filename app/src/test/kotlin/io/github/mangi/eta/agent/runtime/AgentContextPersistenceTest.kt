@@ -5,6 +5,8 @@ import android.content.Context
 import io.github.mangi.eta.agent.model.AgentContextSnapshot
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.data.db.EtaDatabase
+import io.github.mangi.eta.data.db.ConversationSubagentMailEntity
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -30,6 +32,28 @@ class AgentContextPersistenceTest {
         AgentRunArchiveStore.remove(context, "context-persist")
         EtaDatabase.closeForTests()
         context.deleteDatabase("eta.db")
+    }
+
+    @Test
+    fun notificationDeliveryCommitsWithTheDurableTranscript() = runBlocking {
+        val dao = EtaDatabase.get(context).subagentDao()
+        val id = dao.insertMail(ConversationSubagentMailEntity(
+            conversationId = "conversation", agentId = "sub_1", turn = 1, status = "completed",
+            payload = "saved result", createdAt = 0, deliveredRunId = null,
+        ))
+        val transcript = listOf(AgentModelClient.ConversationMessage("user", "saved result"))
+        assertFalse(AgentRunCheckpointStore.saveTranscript(context, "missing", transcript, listOf(id)))
+        assertEquals(1, dao.undeliveredMail("conversation").size)
+        val request = AgentRuntimeWire.RunRequest(
+            "notice-commit", "", AgentModelClient.ModelConfig(
+                baseUrl = "https://example.invalid", apiKey = "fixture", model = "fixture", systemPrompt = ""),
+            emptyList(), handoff = AgentRuntimeWire.EntryHandoff("notice-commit", AgentRuntimeWire.AGENT_UI_HANDOFF_SOURCE, "conversation"),
+        )
+        assertTrue(AgentRunCheckpointStore.start(context, request))
+        assertTrue(AgentRunCheckpointStore.saveTranscript(context, request.runId, transcript, listOf(id)))
+        EtaDatabase.closeForTests()
+        assertEquals(transcript, AgentRunCheckpointStore.list(context).single().transcript)
+        assertTrue(EtaDatabase.get(context).subagentDao().undeliveredMail("conversation").isEmpty())
     }
 
     @Test

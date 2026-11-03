@@ -8,6 +8,7 @@ import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.db.RuntimeArchiveEventEntity
 import io.github.mangi.eta.data.db.RuntimeArchiveRunEntity
 import io.github.mangi.eta.data.db.RuntimeArchiveRunWithEvents
+import io.github.mangi.eta.data.db.RuntimeRunDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -38,14 +39,17 @@ internal object AgentRunArchiveStore {
     fun add(context: Context, run: ArchivedRun) {
         val appContext = context.applicationContext
         runBlocking(Dispatchers.IO) {
-            val dao = EtaDatabase.get(appContext).runtimeRunDao()
-            val compacted = run.copy(events = compactEvents(run.events))
-            val archiveRunId = compacted.archiveRunId
-            dao.replaceArchivedRun(
-                run = compacted.toEntity(archiveRunId),
-                events = compacted.toEventEntities(archiveRunId),
-            )
+            add(EtaDatabase.get(appContext).runtimeRunDao(), run)
         }
+    }
+
+    suspend fun add(dao: RuntimeRunDao, run: ArchivedRun) {
+        val compacted = run.copy(events = compactEvents(run.events))
+        val archiveRunId = compacted.archiveRunId
+        dao.replaceArchivedRun(
+            run = compacted.toEntity(archiveRunId),
+            events = compacted.toEventEntities(archiveRunId),
+        )
     }
 
     fun list(context: Context): List<ArchivedRun> {

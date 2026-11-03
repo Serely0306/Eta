@@ -36,7 +36,7 @@ class AgentSubagentManagerTest {
         @Synchronized override fun addMail(mail: ConversationSubagentMailEntity) { this.mail += mail.copy(id = nextMailId++) }
         @Synchronized override fun undeliveredMail(conversationId: String) =
             mail.filter { it.conversationId == conversationId && it.deliveredRunId == null }
-        @Synchronized override fun markDelivered(ids: List<Long>, runId: String?) {
+        @Synchronized fun markDelivered(ids: List<Long>, runId: String?) {
             mail.replaceAll { if (it.id in ids) it.copy(deliveredRunId = runId) else it }
         }
         @Synchronized override fun deleteConversation(conversationId: String) {
@@ -282,7 +282,7 @@ class AgentSubagentManagerTest {
         val deadline = System.currentTimeMillis() + 5_000
         while (!parent.hasPendingNotices && System.currentTimeMillis() < deadline) Thread.sleep(20)
         assertTrue(parent.hasPendingNotices)
-        assertEquals("run-1", store.mail.single().deliveredRunId)
+        assertNull(store.mail.single().deliveredRunId)
 
         // 主 run 没来得及把通知交给模型就结束：通知恢复为未投递，并唤醒主 Agent。
         manager.detachParent("conv", "run-1")
@@ -295,6 +295,8 @@ class AgentSubagentManagerTest {
         val notice = next.pollNotices().single()
         assertTrue(notice.modelText.contains("<subagent_notification>"))
         assertTrue(notice.display.contains("sub_1 完成：下载目录占 2 GB"))
+        assertNull(store.mail.single().deliveredRunId)
+        store.markDelivered(notice.mailIds, "run-2")
         assertEquals("run-2", store.mail.single().deliveredRunId)
     }
 
@@ -338,6 +340,7 @@ class AgentSubagentManagerTest {
         assertTrue(notice.modelText.contains("BUILD SUCCESSFUL"))
         assertFalse(notice.modelText.contains("send_agent"))
         assertEquals("后台命令 编译（job_1） 完成（退出码 0）", notice.display)
+        store.markDelivered(notice.mailIds, "run-1")
 
         manager.detachParent("conv", "run-1")
         val wakes = AtomicInteger()
@@ -361,6 +364,64 @@ class AgentSubagentManagerTest {
         val fifth = manager.spawn(environment, "任务 5", "", null, "")
         assertEquals("SUBAGENT_LIMIT", fifth.getString("code"))
         repeat(4) { nextTurn(); runner.replies.put(answer("ok")) }
+    }
+
+    @Test
+    fun queuedNoticeSurvivesProcessRestartBeforeTranscriptCommit() {
+        val parent = AgentRunController()
+        manager.attachParent("conv", "run-1", parent)
+        manager.spawn(environment, "inspect", "", null, "")
+        nextTurn()
+        runner.replies.put(answer("saved result"))
+        awaitStatus("completed")
+        assertTrue(parent.hasPendingNotices)
+        assertNull(store.mail.single().deliveredRunId)
+        val restarted = AgentSubagentManager(store, runner, ownerInstanceId = "process-2")
+        val nextParent = AgentRunController()
+        restarted.attachParent("conv", "run-2", nextParent)
+        assertTrue(nextParent.pollNotices().single().modelText.contains("saved result"))
+    }
+
+    @Test
+    fun normalParentRunRestoresUserMessagingEnvironmentAfterRestart() {
+        manager.spawn(environment, "inspect", "", null, "")
+        nextTurn()
+        runner.replies.put(answer("remembered fact"))
+        awaitStatus("completed")
+        val restarted = AgentSubagentManager(store, runner, ownerInstanceId = "process-2")
+        assertEquals("SUBAGENT_ENVIRONMENT_UNAVAILABLE",
+            restarted.sendFromUser("conv", "sub_1", "continue").getString("code"))
+        restarted.attachParent("conv", "run-1", AgentRunController(), environment)
+        assertEquals("started", restarted.sendFromUser("conv", "sub_1", "continue").getString("delivery"))
+        assertTrue(nextTurn().history.any { it.content == "remembered fact" })
+        runner.replies.put(answer("done"))
+    }
+
+    @Test
+    fun closingWhileSendWaitsForTurnEndDoesNotReopenTheAgent() {
+        manager.spawn(environment, "inspect", "", null, "")
+        nextTurn()
+        val sealed = CountDownLatch(1)
+        val finish = CountDownLatch(1)
+        runner.replies.put { turn ->
+            turn.controller.pollSteeringOrSeal()
+            sealed.countDown()
+            assertTrue(finish.await(5, TimeUnit.SECONDS))
+            answer("done")(turn)
+        }
+        assertTrue(sealed.await(5, TimeUnit.SECONDS))
+        val result = java.util.concurrent.atomic.AtomicReference<org.json.JSONObject>()
+        val sender = Thread { result.set(manager.send(environment, "sub_1", "more")) }.apply { start() }
+        val deadline = System.currentTimeMillis() + 5_000
+        while (sender.state != Thread.State.TIMED_WAITING && System.currentTimeMillis() < deadline) Thread.sleep(1)
+        assertEquals(Thread.State.TIMED_WAITING, sender.state)
+        manager.close("conv", "sub_1")
+        finish.countDown()
+        sender.join(5_000)
+        assertFalse(sender.isAlive)
+        assertEquals("SUBAGENT_CLOSED", result.get().getString("code"))
+        assertEquals("closed", manager.snapshot("conv").single().status)
+        assertNull(runner.turns.poll(100, TimeUnit.MILLISECONDS))
     }
 
     @Test

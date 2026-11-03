@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.runtime
 
 import android.content.Context
+import androidx.room.withTransaction
 import io.github.mangi.eta.agent.model.AgentContextSnapshot
 import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
@@ -116,10 +117,19 @@ internal object AgentRunCheckpointStore {
             EtaDatabase.get(context.applicationContext).runtimeRunDao().inFlightTranscript(runId)
         }?.let(AgentConversationCodec::decodeTranscript).orEmpty()
 
-    fun saveTranscript(context: Context, runId: String, transcript: List<AgentModelClient.ConversationMessage>) {
-        runBlocking(Dispatchers.IO) {
-            EtaDatabase.get(context.applicationContext).runtimeRunDao()
-                .updateTranscript(runId, AgentConversationCodec.encodeTranscriptForStorage(transcript))
+    fun saveTranscript(
+        context: Context,
+        runId: String,
+        transcript: List<AgentModelClient.ConversationMessage>,
+        consumedNoticeIds: List<Long> = emptyList(),
+    ): Boolean = runBlocking(Dispatchers.IO) {
+        val database = EtaDatabase.get(context.applicationContext)
+        database.withTransaction {
+            val dao = database.runtimeRunDao()
+            if (!dao.hasInFlightRun(runId)) return@withTransaction false
+            dao.updateTranscript(runId, AgentConversationCodec.encodeTranscriptForStorage(transcript))
+            if (consumedNoticeIds.isNotEmpty()) database.subagentDao().markMailDelivered(consumedNoticeIds, runId)
+            true
         }
     }
 

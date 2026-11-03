@@ -6,7 +6,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -321,22 +320,23 @@ class AgentRuntimeSessionTest {
     @Test
     fun commitCallbackFailureCannotLeaveSessionWithoutTerminalResult() {
         val results = mutableListOf<AgentRuntimeWire.RunResult>()
-        val session = AgentRuntimeSession(runId = "run-1", resultSink = results::add)
-
-        assertThrows(IllegalStateException::class.java) {
-            session.complete(
-                result = AgentRuntimeWire.RunResult(
-                    runId = "run-1",
-                    ok = false,
-                    content = "",
-                    error = "persistence failed",
-                ),
-                beforePublish = { error("disk full") },
-            )
-        }
+        val terminal = mutableListOf<AgentRuntimeWire.RunResult>()
+        val session = AgentRuntimeSession(runId = "run-1", resultSink = results::add,
+            beforeTerminalPublish = terminal::add)
+        val transcript = listOf(io.github.mangi.eta.agent.model.AgentModelClient.ConversationMessage("assistant", "done"))
+        assertTrue(session.complete(
+            result = AgentRuntimeWire.RunResult(runId = "run-1", ok = true, content = "done", transcript = transcript),
+            beforePublish = { error("disk full") },
+        ))
 
         assertTrue(session.isTerminal)
         assertEquals(1, results.size)
+        assertFalse(results.single().ok)
+        assertEquals("disk full", results.single().error)
+        assertEquals("RUNTIME_PERSISTENCE_FAILED", results.single().errorCode)
+        assertEquals(transcript, results.single().transcript)
+        assertEquals(results, terminal)
+        assertEquals(results.single(), session.terminalResult)
         assertFalse(session.cancel("late"))
     }
 }

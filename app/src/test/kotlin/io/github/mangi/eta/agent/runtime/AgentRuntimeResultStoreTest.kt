@@ -1,11 +1,14 @@
 package io.github.mangi.eta.agent.runtime
 
 import io.github.mangi.eta.data.db.EtaDatabase
+import io.github.mangi.eta.data.db.ConversationSubagentMailEntity
 import android.content.Context
 import io.github.mangi.eta.agent.model.AgentModelClient
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
+import kotlinx.coroutines.runBlocking
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -94,6 +97,43 @@ class AgentRuntimeResultStoreTest {
 
         assertFalse(AgentRuntimeResultStore.add(context, completedRun))
         assertTrue(AgentRuntimeResultStore.list(context).none { it.result.runId == runId })
+        val archive = AgentRunArchiveStore.ArchivedRun(completedRun.handoff, emptyList(), completedRun.result, completedRun.createdAt)
+        assertTrue(AgentRuntimeResultStore.add(context, completedRun, archive))
+        assertTrue(AgentRuntimeResultStore.list(context).none { it.result.runId == runId })
+        assertEquals(completedRun.result.content, AgentRunArchiveStore.list(context).single().result.content)
+    }
+
+    @Test
+    fun notificationCommitFailureRollsBackOutboxAndArchiveTogether() = runBlocking {
+        val database = EtaDatabase.get(context)
+        val mailId = database.subagentDao().insertMail(ConversationSubagentMailEntity(
+            conversationId = "atomic", agentId = "sub_1", turn = 1, status = "completed",
+            payload = "completed work", createdAt = 1L, deliveredRunId = null,
+        ))
+        val runId = "atomic-${System.nanoTime()}"
+        val handoff = AgentRuntimeWire.EntryHandoff(runId, AgentRuntimeWire.PC_MCP_HANDOFF_SOURCE, "{}")
+        val result = AgentRuntimeWire.RunResult(runId, true, "done",
+            transcript = listOf(AgentModelClient.ConversationMessage("user", "completed work")))
+        val completed = AgentRuntimeWire.CompletedRun(handoff, result, 1L)
+        val archive = AgentRunArchiveStore.ArchivedRun(handoff, emptyList(), result, 1L)
+        database.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER reject_notice_commit BEFORE UPDATE OF delivered_run_id ON conversation_subagent_mail " +
+                "WHEN NEW.id = $mailId BEGIN SELECT RAISE(ABORT, 'notice commit blocked'); END",
+        )
+        try {
+            assertThrows(Exception::class.java) {
+                AgentRuntimeResultStore.add(context, completed, archive, listOf(mailId))
+            }
+            assertTrue(AgentRuntimeResultStore.list(context).isEmpty())
+            assertTrue(AgentRunArchiveStore.list(context).isEmpty())
+            assertEquals(mailId, database.subagentDao().undeliveredMail("atomic").single().id)
+        } finally {
+            database.openHelper.writableDatabase.execSQL("DROP TRIGGER reject_notice_commit")
+        }
+        assertTrue(AgentRuntimeResultStore.add(context, completed, archive, listOf(mailId)))
+        assertEquals(runId, AgentRuntimeResultStore.list(context).single().result.runId)
+        assertEquals(runId, AgentRunArchiveStore.list(context).single().result.runId)
+        assertTrue(database.subagentDao().undeliveredMail("atomic").isEmpty())
     }
 
     @Test

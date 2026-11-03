@@ -5,6 +5,8 @@ import io.github.mangi.eta.data.db.ConversationContextCheckpointEntity
 import io.github.mangi.eta.data.db.ConversationEntity
 import io.github.mangi.eta.data.db.ConversationMessageEntity
 import io.github.mangi.eta.data.db.ConversationStateEntity
+import io.github.mangi.eta.data.db.ConversationSubagentEntity
+import io.github.mangi.eta.agent.runtime.AgentRuntimeProcessIdentity
 import io.github.mangi.eta.data.db.EtaDatabase
 import io.github.mangi.eta.data.db.ModelUsageRecordEntity
 import io.github.mangi.eta.data.model.ModelSource
@@ -54,6 +56,29 @@ class EtaBackupRepositoryTest {
         }
         ProviderRepository.init(context)
         AgentMemoryRepository.init(context)
+    }
+
+    @Test
+    fun restoringRunningSubagentKeepsItsHistoryAndCreatesAQuietInterruptionNotice() = runBlocking {
+        val agent = ConversationSubagentEntity(
+            id = "restored|sub_1", conversationId = "restored", agentId = "sub_1", name = "worker",
+            task = "unfinished task", status = "running", turn = 2, rounds = 4, lastResult = "previous result",
+            lastError = "", transcriptJson = "[]", modelSessionId = "restored:sub:sub_1",
+            ownerInstanceId = AgentRuntimeProcessIdentity.id, createdRunId = "old-run", lastRunId = "old-run",
+            createdAt = 1, updatedAt = 2,
+        )
+        val document = EtaBackupDocument(exportedAt = 3,
+            conversations = listOf(ConversationEntity("restored", "restored", false, createdAt = 1, updatedAt = 2)),
+            subagents = listOf(agent),
+        )
+        EtaBackupRepository.import(context, ByteArrayInputStream(Json.encodeToString(document).toByteArray()))
+        val dao = EtaDatabase.get(context).subagentDao()
+        val restored = dao.agents("restored").single()
+        assertEquals("interrupted", restored.status)
+        assertEquals(agent.transcriptJson, restored.transcriptJson)
+        assertEquals(agent.lastResult, restored.lastResult)
+        assertEquals("interrupted", dao.undeliveredMail("restored").single().status)
+        assertEquals(0, dao.wakeableMailCount("restored"))
     }
 
     @Test

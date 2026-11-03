@@ -71,15 +71,15 @@ internal interface ModelUsageDao {
 
     @Query(
         "SELECT * FROM model_usage_records WHERE created_at >= :from AND created_at < :to " +
-            "ORDER BY created_at DESC, id DESC LIMIT :limit"
+            "ORDER BY created_at DESC, id DESC"
     )
-    suspend fun between(from: Long, to: Long, limit: Int): List<ModelUsageRecordEntity>
+    suspend fun between(from: Long, to: Long): List<ModelUsageRecordEntity>
 
     @Query(
         "SELECT * FROM model_usage_records WHERE created_at >= :from AND created_at < :to " +
-            "ORDER BY created_at DESC, id DESC LIMIT :limit"
+            "ORDER BY created_at DESC, id DESC"
     )
-    fun betweenFlow(from: Long, to: Long, limit: Int): Flow<List<ModelUsageRecordEntity>>
+    fun betweenFlow(from: Long, to: Long): Flow<List<ModelUsageRecordEntity>>
 
     @Query("SELECT * FROM model_usage_records WHERE session_id = :sessionId ORDER BY id")
     fun forSessionFlow(sessionId: String): Flow<List<ModelUsageRecordEntity>>

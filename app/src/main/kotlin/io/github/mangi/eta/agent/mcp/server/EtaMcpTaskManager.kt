@@ -202,7 +202,17 @@ internal class EtaMcpTaskManager(
         }
         launch("eta-mcp-task") {
             val result = runCatching {
-                runner.run(task.id, conversationKey, prompt, model?.id, effort) { event -> onEvent(task, event) }
+                if (task.lock.withLock { task.stopRequested }) {
+                    AgentRuntimeWire.RunResult(task.id, ok = false, content = "", error = STOPPED_ERROR)
+                } else {
+                    runner.run(task.id, conversationKey, prompt, model?.id, effort) { event ->
+                        onEvent(task, event)
+                        if (event is AgentEvent.RunStarted && task.lock.withLock { task.stopRequested }) {
+                            // 准备期间的取消可能早于 Runtime 登记；收到开始事件后补交，避免阻塞事件线程。
+                            launch("eta-mcp-stop") { sendCancellation(task) }
+                        }
+                    }
+                }
             }.getOrElse { throwable ->
                 AgentRuntimeWire.RunResult(task.id, ok = false, content = "", error = throwable.message ?: "任务启动失败")
             }
@@ -286,7 +296,7 @@ internal class EtaMcpTaskManager(
     private fun finish(task: Task, result: AgentRuntimeWire.RunResult) = task.lock.withLock {
         task.status = when {
             result.ok -> Status.COMPLETED
-            task.stopRequested || result.error == STOPPED_ERROR -> Status.STOPPED
+            (task.stopRequested && task.errorCode != CANCEL_FAILED) || result.error == STOPPED_ERROR -> Status.STOPPED
             else -> Status.FAILED
         }
         task.result = result.content.takeIf { result.ok }
@@ -302,8 +312,9 @@ internal class EtaMcpTaskManager(
     /** 等到任务需要处理（结束或待回答）或超时，返回当前快照。 */
     private fun await(task: Task, waitMs: Long, answeredQuestionId: String? = null): JSONObject = task.lock.withLock {
         var remaining = TimeUnit.MILLISECONDS.toNanos(waitMs)
-        fun pending() = task.status == Status.RUNNING ||
-            (answeredQuestionId != null && task.status == Status.WAITING && task.questionId == answeredQuestionId)
+        fun pending() = task.errorCode != CANCEL_FAILED &&
+            (task.status == Status.RUNNING ||
+                (answeredQuestionId != null && task.status == Status.WAITING && task.questionId == answeredQuestionId))
         while (pending() && remaining > 0) {
             remaining = try {
                 task.changed.awaitNanos(remaining)
@@ -363,12 +374,16 @@ internal class EtaMcpTaskManager(
     private fun stop(task: Task): JSONObject {
         val alreadyFinished = task.lock.withLock {
             task.stopRequested = true
+            if (!task.status.terminal && task.errorCode == CANCEL_FAILED) {
+                task.error = null
+                task.errorCode = null
+            }
             task.status.terminal
         }
-        if (!alreadyFinished) runner.cancel(task.id)
+        if (!alreadyFinished) sendCancellation(task)
         return task.lock.withLock {
             var remaining = TimeUnit.MILLISECONDS.toNanos(STOP_WAIT_MS)
-            while (!task.status.terminal && remaining > 0) {
+            while (!task.status.terminal && task.errorCode != CANCEL_FAILED && remaining > 0) {
                 remaining = try {
                     task.changed.awaitNanos(remaining)
                 } catch (_: InterruptedException) {
@@ -380,9 +395,22 @@ internal class EtaMcpTaskManager(
         }
     }
 
+    private fun sendCancellation(task: Task) {
+        try {
+            runner.cancel(task.id)
+        } catch (failure: Exception) {
+            task.lock.withLock {
+                task.error = failure.message ?: failure.javaClass.simpleName
+                task.errorCode = CANCEL_FAILED
+                task.changed.signalAll()
+            }
+        }
+    }
+
     private fun snapshot(task: Task): JSONObject = task.lock.withLock {
+        val cancelFailed = task.errorCode == CANCEL_FAILED
         JSONObject()
-            .put("ok", true)
+            .put("ok", !cancelFailed)
             .put("task_id", task.id)
             .put("conversation_id", task.conversationKey)
             .put("status", task.status.wire)
@@ -403,7 +431,7 @@ internal class EtaMcpTaskManager(
                 task.error?.let { put("error", it) }
                 // 与 start 同步拒绝时的 code 同名，电脑端不必按中文说明判断原因。
                 task.errorCode?.let { put("code", it) }
-                put("hint", hintFor(task.status))
+                put("hint", if (cancelFailed) "停止请求发送失败，当前任务状态为 ${task.status.wire}" else hintFor(task.status))
             }
     }
 
@@ -570,6 +598,7 @@ internal class EtaMcpTaskManager(
         private const val OFF_EFFORT = "off"
         private const val STOP_WAIT_MS = 5_000L
         private const val STOPPED_ERROR = "已停止"
+        private const val CANCEL_FAILED = "CANCEL_FAILED"
         private val CONVERSATION_ID = Regex("[A-Za-z0-9_-]{1,64}")
     }
 }

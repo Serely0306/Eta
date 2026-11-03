@@ -70,18 +70,25 @@ internal class EtaMcpProtocol(
         @Volatile var lastUsedAt: Long,
         @Volatile var clientName: String? = null,
     ) {
-        /** 同一会话的工具调用串行执行；关闭只取状态锁，能打断正在执行的调用。 */
+        /** 同一会话的设备工具串行执行；任务查询与控制使用 TaskManager 自己的锁。 */
         private val callLock = Any()
         private val stateLock = Any()
         private var tools: EtaMcpToolHost.Session? = null
         private var closed = false
 
-        fun <T> withTools(host: EtaMcpToolHost, block: (EtaMcpToolHost.Session) -> T): T = synchronized(callLock) {
-            val session = synchronized(stateLock) {
-                check(!closed) { "session closed" }
-                tools ?: host.openSession("mcp:$id").also { tools = it }
+        fun <T> withTools(
+            host: EtaMcpToolHost,
+            serialize: Boolean,
+            block: (EtaMcpToolHost.Session) -> T,
+        ): T {
+            val call = {
+                val session = synchronized(stateLock) {
+                    check(!closed) { "session closed" }
+                    tools ?: host.openSession("mcp:$id").also { tools = it }
+                }
+                block(session)
             }
-            block(session)
+            return if (serialize) synchronized(callLock, call) else call()
         }
 
         fun close() {
@@ -283,8 +290,10 @@ internal class EtaMcpProtocol(
                 .put("placeholders", JSONArray(failure.placeholders))
             return toolResult(listOf(textContent(error.toString())), isError = true)
         }
-        val outcome = session.withTools(toolHost) { tools -> tools.call(name, arguments) }
-        val text = if (options.redactOutput) redactor.redactText(outcome.text) else outcome.text
+        val outcome = session.withTools(toolHost, serialize = name !in EtaMcpTaskManager.TOOL_NAMES) { tools ->
+            tools.call(name, arguments)
+        }
+        val text = if (options.redactOutput) redactor.redactText(outcome.text, name) else outcome.text
         val content = mutableListOf(textContent(text))
         if (options.allowImages) {
             outcome.images.forEach { image ->

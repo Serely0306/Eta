@@ -38,7 +38,6 @@ internal interface SubagentStore {
     fun interruptStale(ownerInstanceId: String, now: Long): List<ConversationSubagentSummary>
     fun addMail(mail: ConversationSubagentMailEntity)
     fun undeliveredMail(conversationId: String): List<ConversationSubagentMailEntity>
-    fun markDelivered(ids: List<Long>, runId: String?)
     fun deleteConversation(conversationId: String)
     fun conversationsWithUndeliveredMail(): List<String>
 }
@@ -51,9 +50,6 @@ internal class RoomSubagentStore(context: Context) : SubagentStore {
     override fun interruptStale(ownerInstanceId: String, now: Long) = io { dao.interruptStale(ownerInstanceId, now) }
     override fun addMail(mail: ConversationSubagentMailEntity) { io { dao.insertMail(mail) } }
     override fun undeliveredMail(conversationId: String) = io { dao.undeliveredMail(conversationId) }
-    override fun markDelivered(ids: List<Long>, runId: String?) {
-        if (ids.isNotEmpty()) io { dao.markMailDelivered(ids, runId) }
-    }
     override fun deleteConversation(conversationId: String) = io { dao.deleteConversation(conversationId) }
     override fun conversationsWithUndeliveredMail() = io { dao.conversationsWithUndeliveredMail() }
 
@@ -141,6 +137,7 @@ internal class AgentSubagentManager(
         var controller: AgentRunController? = null
         /** 最近一次派出或发消息时的执行环境；排队消息开下一回合时沿用。 */
         var environment: SubagentEnvironment? = null
+        var worker: Thread? = null
         var turnStartedAt = 0L
         /** 本回合的消息在 [history] 中的起点，用于统计本回合轮数与最新进展。 */
         var turnStartIndex = 0
@@ -148,7 +145,9 @@ internal class AgentSubagentManager(
         val number: Int get() = row.agentId.removePrefix(ID_PREFIX).toIntOrNull() ?: 0
     }
 
-    private class ParentRun(val runId: String, val controller: AgentRunController)
+    private class ParentRun(val runId: String, val controller: AgentRunController) {
+        val queuedMailIds = mutableSetOf<Long>()
+    }
 
     private class ConversationState {
         val agents = LinkedHashMap<String, LiveAgent>()
@@ -171,31 +170,35 @@ internal class AgentSubagentManager(
 
     fun conversationsWithUndeliveredMail(): List<String> = store.conversationsWithUndeliveredMail()
 
-    /** 备份恢复后库已整体替换：停掉运行中的子 Agent，丢弃缓存，之后按新库重新加载。 */
+    /** Stop old workers before replacing the database; discard cached rows before reading restored data. */
     fun forgetAll() {
-        lock.withLock {
+        val workers = lock.withLock {
             conversations.values.forEach { state -> state.agents.values.forEach { it.controller?.cancel() } }
+            val active = conversations.values.flatMap { state -> state.agents.values.mapNotNull { it.worker } }
             conversations.clear()
+            staleInterrupted = false
+            active
         }
+        workers.forEach { it.join() }
         revisionState.update { it + 1 }
     }
 
-    fun attachParent(conversationId: String, runId: String, controller: AgentRunController) {
+    fun attachParent(conversationId: String, runId: String, controller: AgentRunController, environment: SubagentEnvironment? = null) {
         lock.withLock {
             val state = state(conversationId)
+            if (environment != null) state.agents.values.forEach { it.environment = environment }
             state.parent = ParentRun(runId, controller)
             deliverLocked(conversationId, state)
         }
     }
 
-    /** 主 run 结束：没来得及交给模型的通知恢复为未投递，留给下一个 run 或自动唤醒。 */
+    /** Pending notices remain undelivered until their transcript commits. */
     fun detachParent(conversationId: String, runId: String) {
         val wake = lock.withLock {
             val state = conversations[conversationId] ?: return
             val parent = state.parent?.takeIf { it.runId == runId } ?: return
             state.parent = null
-            val leftover = parent.controller.pollNotices().flatMap { it.mailIds }
-            store.markDelivered(leftover, null)
+            parent.controller.pollNotices()
             store.undeliveredMail(conversationId).any { it.status != STATUS_INTERRUPTED }
         }
         if (wake) wakeListener?.invoke(conversationId)
@@ -276,6 +279,7 @@ internal class AgentSubagentManager(
                     else failure("SUBAGENT_BUSY", "子 Agent ${agent.row.agentId} 正在收尾，稍后再试")
                 }
             }
+            if (agent.row.status == STATUS_CLOSED) return failure("SUBAGENT_CLOSED", "子 Agent ${agent.row.agentId} 已关闭，不能再发消息")
             limitError(state)?.let { return it }
             startTurnLocked(environment, agent, message)
             JSONObject().put("ok", true).put("agent_id", agent.row.agentId).put("delivery", "started")
@@ -285,11 +289,20 @@ internal class AgentSubagentManager(
         .put("delivery", "queued").put("message", "已送达，它会在下一次请求模型前看到；如果已写完本回合结论，会作为下一回合的开头")
 
     /** 不阻塞的状态查询：运行中的附进度摘要；还没交给主 Agent 的结论在这里给出全文，之后不再另发通知。 */
-    fun list(environment: SubagentEnvironment, targets: List<String>): JSONObject = lock.withLock {
+    fun list(
+        environment: SubagentEnvironment,
+        targets: List<String>,
+        onPendingMail: (List<Long>) -> Unit = {},
+    ): JSONObject = lock.withLock {
         val state = state(environment.conversationId)
         val agents = if (targets.isEmpty()) state.agents.values.toList() else targets.map { findLocked(state, it) ?: return notFound(it) }
-        val pending = store.undeliveredMail(environment.conversationId).filter { mail -> agents.any { it.row.agentId == mail.agentId } }
-        store.markDelivered(pending.map { it.id }, environment.runId)
+        val parent = state.parent?.takeIf { it.runId == environment.runId }
+        val pending = store.undeliveredMail(environment.conversationId).filter { mail ->
+            agents.any { it.row.agentId == mail.agentId } && mail.id !in parent?.queuedMailIds.orEmpty()
+        }
+        val ids = pending.map { it.id }
+        parent?.queuedMailIds?.addAll(ids)
+        onPendingMail(ids)
         val pendingByAgent = pending.groupBy { it.agentId }
         JSONObject().put("ok", true).put("agents", JSONArray(agents.map { describe(it, pendingByAgent[it.row.agentId].orEmpty()) }))
     }
@@ -336,6 +349,7 @@ internal class AgentSubagentManager(
                 else failure("SUBAGENT_BUSY", "子 Agent ${agent.row.agentId} 正在收尾，稍后再试")
             }
         }
+        if (agent.row.status == STATUS_CLOSED) return failure("SUBAGENT_CLOSED", "子 Agent ${agent.row.agentId} 已关闭，不能再发消息")
         val environment = agent.environment
             ?: return failure("SUBAGENT_ENVIRONMENT_UNAVAILABLE", "Eta 重启后这个会话还没运行过，先在主对话里发一句再试")
         limitError(state)?.let { return it }
@@ -365,7 +379,7 @@ internal class AgentSubagentManager(
         val number = agent.number
         val modelSessionId = agent.row.modelSessionId
         val leaseId = "subagent:${environment.conversationId}:$agentId"
-        thread(name = "agent-subagent-$agentId", isDaemon = true) {
+        agent.worker = thread(name = "agent-subagent-$agentId", isDaemon = true) {
             val release = leases.acquire(leaseId) { controller.cancel() }
             val result = try {
                 ModelUsageScope.run(environment.usageContext?.copy(subagentIndex = number)) {
@@ -412,10 +426,11 @@ internal class AgentSubagentManager(
         // 封口后才到的消息：本回合照常结束交出结论，再用它们开下一回合。
         val leftovers = controller.drainSteering()
         agent.controller = null
+        agent.worker = null
         agent.history = result.history
         val status = when {
             agent.row.status == STATUS_CLOSED -> STATUS_CLOSED
-            result.cancelled -> STATUS_INTERRUPTED
+            result.cancelled || controller.isCancelled -> STATUS_INTERRUPTED
             result.ok -> STATUS_COMPLETED
             else -> STATUS_FAILED
         }
@@ -495,9 +510,9 @@ internal class AgentSubagentManager(
     }
 
     private fun deliverLocked(conversationId: String, state: ConversationState) {
-        val mails = store.undeliveredMail(conversationId)
-        if (mails.isEmpty()) return
         val parent = state.parent
+        val mails = store.undeliveredMail(conversationId).filter { it.id !in parent?.queuedMailIds.orEmpty() }
+        if (mails.isEmpty()) return
         val hasSubagentMail = mails.any { !isCommandMail(it) }
         val notice = AgentRunController.Notice(
             modelText = mails.joinToString("\n\n") { mail ->
@@ -509,7 +524,7 @@ internal class AgentSubagentManager(
             mailIds = mails.map { it.id },
         )
         if (parent != null && parent.controller.deliverNotice(notice)) {
-            store.markDelivered(notice.mailIds, parent.runId)
+            parent.queuedMailIds.addAll(notice.mailIds)
         } else if (parent == null && mails.any { it.status != STATUS_INTERRUPTED }) {
             // 没有进行中的主 run：解锁后再唤醒，避免监听方回调进来时死锁。只有中断通知时不唤醒，下一次 run 再交。
             thread(name = "agent-subagent-wake", isDaemon = true) { wakeListener?.invoke(conversationId) }

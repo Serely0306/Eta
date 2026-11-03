@@ -101,6 +101,9 @@ internal class AgentModelFailure(
                 error.optString("status"),
                 error.optJSONObject("metadata")?.optString("error_type").orEmpty(),
             )
+            if (codes.any { it == "content_filter" || it == "content_policy_violation" }) {
+                return AgentModelFailure("MODEL_CONTENT_FILTER", false, message)
+            }
             val nonRetryable = codes.any { code ->
                 code in nonRetryableStreamCodes || code.toIntOrNull()?.let { it in 400..499 && !isRetryableStatus(it) } == true
             }

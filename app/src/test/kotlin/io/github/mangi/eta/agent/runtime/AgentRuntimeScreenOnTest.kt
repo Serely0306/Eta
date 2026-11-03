@@ -2,8 +2,13 @@ package io.github.mangi.eta.agent.runtime
 
 import android.app.Application
 import android.os.Looper
+import android.os.Handler
+import android.os.Message
+import android.os.Messenger
+import android.content.Intent
 import androidx.compose.ui.platform.ComposeView
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentUserAnswer
 import io.github.mangi.eta.agent.overlay.AgentOverlayPhase
 import io.github.mangi.eta.agent.overlay.AgentOverlayState
 import androidx.compose.runtime.MutableState
@@ -20,6 +25,40 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], application = Application::class)
 class AgentRuntimeScreenOnTest {
+    @Test
+    fun questionRpcAcknowledgesAcceptanceAndRejectsASecondAnswer() {
+        val serviceController = Robolectric.buildService(AgentRuntimeService::class.java).create()
+        try {
+            val service = serviceController.get()
+            val run = service.registerRun("question-run", ownsGui = false)
+            val waiter = Thread { run.session.controller.awaitUserAnswer("q", 5_000) }.apply { start() }
+            val deadline = System.currentTimeMillis() + 5_000
+            while (run.session.controller.pendingQuestion == null && System.currentTimeMillis() < deadline) Thread.sleep(1)
+            assertEquals("q", run.session.controller.pendingQuestion)
+            val accepted = mutableListOf<Boolean>()
+            val reply = Messenger(object : Handler(Looper.getMainLooper()) {
+                override fun handleMessage(msg: Message) {
+                    assertEquals(AgentRuntimeWire.MSG_ANSWER_QUESTION_RESPONSE, msg.what)
+                    accepted += AgentRuntimeWire.steerAccepted(msg.data)
+                }
+            })
+            val serviceMessenger = Messenger(service.onBind(Intent(AgentRuntimeWire.ACTION_BIND)))
+            repeat(2) {
+                serviceMessenger.send(Message.obtain(null, AgentRuntimeWire.MSG_ANSWER_QUESTION).apply {
+                    sendingUid = android.os.Process.myUid()
+                    replyTo = reply
+                    data = AgentRuntimeWire.answerQuestionBundle(run.runId, "q", AgentUserAnswer.Text("answer"))
+                })
+                shadowOf(Looper.getMainLooper()).idle()
+            }
+            waiter.join(5_000)
+            assertFalse(waiter.isAlive)
+            assertEquals(listOf(true, false), accepted)
+        } finally {
+            serviceController.destroy()
+        }
+    }
+
     @Test
     fun pauseResumeAndCancellationUpdateBothAppAndGuiWindowState() {
         val serviceController = Robolectric.buildService(AgentRuntimeService::class.java).create()

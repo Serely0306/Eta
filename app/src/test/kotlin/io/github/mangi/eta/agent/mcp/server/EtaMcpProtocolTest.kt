@@ -4,6 +4,9 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.net.InetAddress
 import java.net.Socket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -224,6 +227,48 @@ class EtaMcpProtocolTest {
         val batch = request("POST", "[]".toByteArray(), contentType = "application/json")
         assertEquals(400, protocol.handle(batch).status)
         assertEquals(415, protocol.handle(request("POST", ping().toString().toByteArray(), contentType = "text/plain")).status)
+    }
+
+    @Test
+    fun taskStopCanRunWhileTheSameSessionWaitsForStatus() {
+        val waiting = CountDownLatch(1)
+        val stopped = CountDownLatch(1)
+        val responses = LinkedBlockingQueue<McpHttpResponse>()
+        val taskHost = object : EtaMcpToolHost {
+            override fun listTools() = listOf(EtaMcpTaskManager.STATUS, EtaMcpTaskManager.STOP).map {
+                EtaMcpTool(it, it, JSONObject().put("type", "object"))
+            }
+
+            override fun openSession(sessionKey: String) = object : EtaMcpToolHost.Session {
+                override fun call(name: String, arguments: JSONObject): EtaMcpToolOutcome {
+                    if (name == EtaMcpTaskManager.STATUS) {
+                        waiting.countDown()
+                        return EtaMcpToolOutcome(JSONObject().put("stopped_during_wait", stopped.await(3, TimeUnit.SECONDS)).toString())
+                    }
+                    stopped.countDown()
+                    return EtaMcpToolOutcome("""{"ok":true}""")
+                }
+
+                override fun close() = Unit
+            }
+        }
+        val taskProtocol = EtaMcpProtocol(taskHost, token = { TOKEN }, serverVersion = "test")
+        val waiter = Thread {
+            responses.put(taskProtocol.handle(post(call(EtaMcpTaskManager.STATUS))))
+        }
+        try {
+            waiter.start()
+            assertTrue(waiting.await(3, TimeUnit.SECONDS))
+            assertEquals(200, taskProtocol.handle(post(call(EtaMcpTaskManager.STOP))).status)
+            val response = responses.poll(5, TimeUnit.SECONDS)
+            assertNotNull(response)
+            val text = body(checkNotNull(response)).getJSONObject("result").getJSONArray("content").getJSONObject(0).getString("text")
+            assertTrue(JSONObject(text).getBoolean("stopped_during_wait"))
+        } finally {
+            stopped.countDown()
+            waiter.join(5_000)
+            taskProtocol.close()
+        }
     }
 
     @Test

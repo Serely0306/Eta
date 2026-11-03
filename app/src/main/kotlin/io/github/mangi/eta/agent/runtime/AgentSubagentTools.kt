@@ -18,6 +18,7 @@ internal class AgentSubagentTools(
         val arguments = runCatching { JSONObject(call.argumentsJson.ifBlank { "{}" }) }.getOrElse {
             return result(invalid("参数不是有效的 JSON"))
         }
+        var consumedNoticeIds = emptyList<Long>()
         val response = when (call.name) {
             SPAWN -> {
                 val task = arguments.optString("task").trim()
@@ -36,7 +37,7 @@ internal class AgentSubagentTools(
                 if (target.isEmpty() || message.isEmpty()) return result(invalid("需要 agent_id 与 message"))
                 manager.send(environment, target, message.take(MAX_TASK_CHARS))
             }
-            LIST -> manager.list(environment, ids(arguments))
+            LIST -> manager.list(environment, ids(arguments)) { consumedNoticeIds = it }
             STOP -> {
                 val target = arguments.optString("agent_id").trim()
                 if (target.isEmpty()) return result(invalid("缺少 agent_id"))
@@ -44,7 +45,7 @@ internal class AgentSubagentTools(
             }
             else -> invalid("未知的子 Agent 工具")
         }
-        return result(response)
+        return AgentModelClient.ToolResult(response.toString(), consumedNoticeIds = consumedNoticeIds)
     }
 
     private fun ids(arguments: JSONObject): List<String> {

@@ -1821,4 +1821,6 @@
   <string name="chat_queue_remove">移除排队消息</string>
   <string name="chat_queue_images_only">[%1$d 张图片]</string>
   <string name="chat_queue_files_only">[%1$d 个文件]</string>
+  <string name="usage_load_more">加载更多记录</string>
+  <string name="question_answer_rejected">问题已结束，此回答未被接收。</string>
 </resources>

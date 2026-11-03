@@ -1001,6 +1001,7 @@ internal class AgentAppState(
                         messages = if (loadEarlier) page.messages + state.messages else page.messages,
                         messageStartIndex = page.startIndex,
                         hasEarlierMessages = page.hasEarlierMessages,
+                        storedToolRows = AgentConversationStore.toolRows(appContext, conversationId),
                     ))
                     window = window.copy(roleplayOriginalContents = AgentConversationStore.loadRoleplayMessageContents(
                         appContext, conversationId, RoleplayConversationReducer.requiredOriginalContentIds(window),
@@ -1014,6 +1015,7 @@ internal class AgentAppState(
                         messages = window.messages,
                         messageStartIndex = window.messageStartIndex,
                         hasEarlierMessages = window.hasEarlierMessages,
+                        storedToolRows = window.storedToolRows,
                         roleplayOriginalContents = window.roleplayOriginalContents,
                     ), updateTimestamp = false)
                 }
@@ -1054,10 +1056,10 @@ internal class AgentAppState(
                         appContext, conversationId,
                         RoleplayConversationReducer.requiredOriginalContentIds(latest.withEarlierPage(page)),
                     )
-                    // 读原文期间又有新的流式内容，以最新状态为准再插入一次。
+                    conversationPersistence.prependEarlierMessages(conversationId, page.messages, startIndex, page.startIndex)
+                    // 等待存储锁期间也可能有新事件，取得锁之后再读取当前状态。
                     val current = conversationsById[conversationId]?.takeIf { it.canPrependEarlierPage(startIndex) }
                         ?: return@withLock
-                    conversationPersistence.prependEarlierMessages(conversationId, page.messages, startIndex, page.startIndex)
                     updateConversation(conversationId, current.withEarlierPage(page).copy(
                         roleplayOriginalContents = current.roleplayOriginalContents + originals,
                     ), updateTimestamp = false)
@@ -1178,7 +1180,17 @@ internal class AgentAppState(
         }
         // 电脑端会话的模型历史另存一份，随会话删除。
         if (conversationId.startsWith(ExternalArchiveIds.EXTERNAL_PREFIX)) {
-            scope.launch(Dispatchers.IO) { EtaMcpConversationHistories.deleteForConversation(appContext, conversationId) }
+            scope.launch {
+                try {
+                    withContext(Dispatchers.IO) {
+                        EtaMcpConversationHistories.deleteForConversation(appContext, conversationId)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    Toast.makeText(appContext, failure.message ?: failure.javaClass.simpleName, Toast.LENGTH_LONG).show()
+                }
+            }
         }
         // 会话里的子 Agent（AG-19）与它们的通知随会话删除，运行中的先停。
         scope.launch(Dispatchers.IO) {
@@ -2085,7 +2097,19 @@ internal class AgentAppState(
         val runId = runStore.activeRunId(conversationId) ?: return false
         if (isReplyRewrite(runId) || runStore.isStopRequested(runId)) return false
         conversationStateForRun(runId).pendingQuestion?.takeIf { it.runId == runId }?.let { pending ->
-            answerQuestion(pending.questionId, AgentUserAnswer.text(prompt))
+            scope.launch {
+                try {
+                    val accepted = withContext(Dispatchers.IO) {
+                        AgentRuntimeClient(appContext, AndroidAgentLogger)
+                            .answerQuestion(runId, pending.questionId, AgentUserAnswer.text(prompt))
+                    }
+                    if (!accepted) queueRejectedSteer(conversationId, prompt)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    queueRejectedSteer(conversationId, prompt, failure.message ?: failure.javaClass.simpleName)
+                }
+            }
             return true
         }
         scope.launch(Dispatchers.IO) {
@@ -2095,9 +2119,17 @@ internal class AgentAppState(
         return true
     }
 
-    /** 追加被拒绝的文字放到队尾，不动用户此时的草稿；回复已经结束时直接发出。 */
-    private fun queueRejectedSteer(conversationId: String, prompt: String) {
+    /** 明确拒绝时排队；传输失败则恢复草稿，让用户决定是否重发。 */
+    private fun queueRejectedSteer(conversationId: String, prompt: String, error: String? = null) {
         val state = conversationsById[conversationId] ?: return
+        if (error != null) {
+            updateConversation(conversationId, state.copy(
+                input = listOf(prompt, state.input).filter(String::isNotBlank).joinToString("\n"),
+                inputSyncVersion = state.inputSyncVersion + 1,
+            ), updateTimestamp = false)
+            Toast.makeText(appContext, error, Toast.LENGTH_LONG).show()
+            return
+        }
         val queued = state.copy(queuedMessages = state.queuedMessages + QueuedMessageUi(
             id = "queue-${UUID.randomUUID()}",
             content = prompt,
@@ -2136,9 +2168,15 @@ internal class AgentAppState(
     }
 
     private fun requestCancelRun(runId: String, byUser: Boolean = false) {
-        if (!runStore.requestStop(runId, byUser)) return
-        scope.launch(Dispatchers.IO) {
-            AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
+        runStore.requestStop(runId, byUser)
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Toast.makeText(appContext, failure.message ?: failure.javaClass.simpleName, Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -2177,9 +2215,7 @@ internal class AgentAppState(
         persistSupplement: Boolean = true,
     ) {
         if (isReplyRewrite(runId)) {
-            if (event is AgentEvent.RunStarted && runStore.isStopRequested(runId)) scope.launch(Dispatchers.IO) {
-                AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
-            }
+            if (event is AgentEvent.RunStarted && runStore.isStopRequested(runId)) requestCancelRun(runId)
             return
         }
         when (event) {
@@ -2197,9 +2233,7 @@ internal class AgentAppState(
                 if (conversationStateForRun(runId).pendingQuestion?.questionId == event.questionId) {
                     setPendingQuestion(runId, null)
                 }
-            is AgentEvent.RunStarted -> if (runStore.isStopRequested(runId)) scope.launch(Dispatchers.IO) {
-                AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
-            }
+            is AgentEvent.RunStarted -> if (runStore.isStopRequested(runId)) requestCancelRun(runId)
             // 流式增量只刷新消息，不推进会话时间戳，也不重算侧栏摘要；其余可见变化两者都更新。
             is AgentEvent.AssistantBlockDelta -> updateMessages(runId, updateTimestamp = false) { messages ->
                 runMessageProjector.applyEvent(runId, event, messages)
@@ -2218,8 +2252,19 @@ internal class AgentAppState(
     /** 选项、跳过与输入框文字都交给 Runtime 裁决；面板随 UserQuestionResolved 事件收起。 */
     fun answerQuestion(questionId: String, answer: AgentUserAnswer) {
         val pending = homeState.pendingQuestion?.takeIf { it.questionId == questionId } ?: return
-        scope.launch(Dispatchers.IO) {
-            AgentRuntimeClient(appContext, AndroidAgentLogger).answerQuestion(pending.runId, questionId, answer)
+        scope.launch {
+            try {
+                val accepted = withContext(Dispatchers.IO) {
+                    AgentRuntimeClient(appContext, AndroidAgentLogger).answerQuestion(pending.runId, questionId, answer)
+                }
+                if (!accepted) {
+                    Toast.makeText(appContext, R.string.question_answer_rejected, Toast.LENGTH_LONG).show()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Toast.makeText(appContext, failure.message ?: failure.javaClass.simpleName, Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -2600,19 +2645,23 @@ internal class AgentAppState(
      */
     fun handleSubagentPanelAction(conversationId: String, action: SubagentPanelAction) {
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                val manager = AgentSubagentManager.get(appContext)
-                runCatching {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val manager = AgentSubagentManager.get(appContext)
                     when (action) {
                         is SubagentPanelAction.Send -> manager.sendFromUser(conversationId, action.agentId, action.text)
                         is SubagentPanelAction.Stop -> manager.stop(conversationId, action.agentId)
                         is SubagentPanelAction.Close -> manager.close(conversationId, action.agentId)
                     }
-                }.getOrNull()
-            }
-            if (result?.optBoolean("ok") != true) {
-                val message = result?.optString("message").orEmpty().ifBlank { appContext.getString(R.string.background_tasks_action_failed) }
-                Toast.makeText(appContext, message, Toast.LENGTH_SHORT).show()
+                }
+                if (!result.optBoolean("ok")) {
+                    val message = result.optString("message").ifBlank { appContext.getString(R.string.background_tasks_action_failed) }
+                    Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                Toast.makeText(appContext, failure.message ?: failure.javaClass.simpleName, Toast.LENGTH_LONG).show()
             }
         }
     }

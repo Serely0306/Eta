@@ -50,7 +50,13 @@ internal object AgentAutomationRunner {
         val leaseId = "automation:$runId"
         // 闹钟与通知回调里立即申请前台服务：系统只在触发后的短暂窗口内允许后台启动。
         val held = AgentExecutionService.acquire(appContext, leaseId, allowBoundFallback = RootAccess.isGranted) {
-            AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
+            thread(name = "eta-automation-stop") {
+                runCatching { AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId) }
+                    .onFailure { failure ->
+                        notifyResult(appContext, automation, ok = false,
+                            summary = failure.message ?: failure.javaClass.simpleName)
+                    }
+            }
         }
         if (!held && !RootAccess.isGranted) {
             running.remove(id)

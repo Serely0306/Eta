@@ -53,8 +53,8 @@ internal fun AgentHomeScreen(
             )
         } else {
             val journal = state.journal.ifEmpty { state.history }
-            val toolDetails = remember(journal, state.messages, state.isStreaming) {
-                ToolCallDetailSource(journal, state.messages, state.isStreaming)
+            val toolDetails = remember(journal, state.messages, state.isStreaming, state.storedToolRows) {
+                ToolCallDetailSource(journal, state.messages, state.isStreaming, state.storedToolRows)
             }
             val browser = remember(conversationKey) {
                 BrowserSessionRegistry.get(conversationKey ?: BrowserSessionRegistry.MANUAL_SESSION_KEY)

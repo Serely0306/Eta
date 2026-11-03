@@ -117,6 +117,7 @@ internal object AgentModelClient {
         onTranscript: (List<ConversationMessage>) -> Unit = {},
         /** 主模型失败后按顺序换用的备用模型；配置不完整的备用模型直接跳过。 */
         fallback: ModelFallbackPolicy = ModelFallbackPolicy.NONE,
+        providerFor: (ModelConfig) -> AgentProviderClient = ProviderClientFactory::getClient,
         onEvent: (AgentEvent) -> Unit = {}
     ): ModelResponse.Text {
         config.validate()
@@ -151,7 +152,8 @@ internal object AgentModelClient {
         if (compactOnly) messages.remove(messages.length() - 1)
         val transcript = JSONArray()
         // 旧 history 中的无效消息可能在组装时被跳过，系统边界不能由 history 条数倒推。
-        val systemCount = AgentPromptBuilder.buildSystemMessages(
+        var activeConfig = config
+        var systemCount = AgentPromptBuilder.buildSystemMessages(
             config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext,
             disabledTools = initialDisabledTools,
             executionContext = executionContext,
@@ -159,17 +161,17 @@ internal object AgentModelClient {
         fun toolsFor(capabilities: AgentToolCapabilities, disabledTools: Set<String>): JSONArray {
             if (rewriteReply) return JSONArray()
             val tools = AgentToolCatalog.build(
-                terminalTools = config.terminalTools,
-                browserTools = config.browserTools,
-                deviceDirectTools = config.deviceDirectTools,
-                deviceSensitiveReadTools = config.deviceSensitiveReadTools,
-                deviceSensitiveActionTools = config.deviceSensitiveActionTools,
+                terminalTools = activeConfig.terminalTools,
+                browserTools = activeConfig.browserTools,
+                deviceDirectTools = activeConfig.deviceDirectTools,
+                deviceSensitiveReadTools = activeConfig.deviceSensitiveReadTools,
+                deviceSensitiveActionTools = activeConfig.deviceSensitiveActionTools,
                 skillGitHubDiscovery = true,
                 skillGitHubInstall = true,
                 memoryTools = memoryContext.enabled,
                 memoryWritable = roleplayContext == null,
                 capabilities = capabilities,
-                localWebSearch = !config.usesHostedWebSearch,
+                localWebSearch = !activeConfig.usesHostedWebSearch,
             )
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
@@ -203,7 +205,7 @@ internal object AgentModelClient {
             val disabledTools = if (rewriteReply) emptySet() else disabledToolsProvider()
             if (capabilities.rootAvailable != promptRootAvailable || disabledTools != promptDisabledTools) {
                 val systemMessages = AgentPromptBuilder.buildSystemMessages(
-                    config, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
+                    activeConfig, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
                     disabledTools = disabledTools,
                     executionContext = executionContext,
                 )
@@ -257,6 +259,25 @@ internal object AgentModelClient {
             initialSupplementIndex = initialSupplementIndex,
             fallback = usableFallback,
             toolsForRound = ::toolsForRound,
+            providerFor = providerFor,
+            onModelChanged = { replacement ->
+                activeConfig = replacement
+                val capabilities = capabilitiesProvider()
+                val disabledTools = disabledToolsProvider()
+                val systemMessages = AgentPromptBuilder.buildSystemMessages(
+                    replacement, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
+                    disabledTools = disabledTools, executionContext = executionContext,
+                )
+                val historyMessages = (systemCount until messages.length()).map(messages::getJSONObject)
+                while (messages.length() > 0) messages.remove(messages.length() - 1)
+                for (index in 0 until systemMessages.length()) messages.put(systemMessages.getJSONObject(index))
+                historyMessages.forEach(messages::put)
+                systemCount = systemMessages.length()
+                promptRootAvailable = capabilities.rootAvailable
+                promptDisabledTools = disabledTools
+                publishedTools = toolsFor(capabilities, disabledTools)
+                systemCount
+            },
         )
         val result = try {
             if (compactOnly) loop.compactOnly() else loop.run()
@@ -413,6 +434,8 @@ internal object AgentModelClient {
          * 最终 assistant 自己组织的答复不受此标记影响。
          */
         val sensitive: Boolean = false,
+        /** Notifications consumed by this result; committed only with its durable transcript. */
+        val consumedNoticeIds: List<Long> = emptyList(),
     )
 
     /** 图片引用：入口侧可为本地 URI/路径，进入模型协议前必须解析为远程 URL 或 data URL。 */

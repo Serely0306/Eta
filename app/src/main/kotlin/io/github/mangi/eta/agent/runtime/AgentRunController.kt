@@ -34,6 +34,7 @@ internal class AgentRunController(
     private val cancelledSteering = mutableListOf<Steering>()
     /** 子 Agent 的完成通知；与用户补充分开，进入模型时标明是系统通知，界面显示为系统提示。 */
     private val notices = ArrayDeque<Notice>()
+    private val consumedNoticeIds = linkedSetOf<Long>()
     private var acceptingSteering = true
     @Volatile
     private var paused = false
@@ -137,6 +138,12 @@ internal class AgentRunController(
     fun pollNotices(): List<Notice> = lock.withLock {
         notices.toList().also { notices.clear() }
     }
+
+    fun consumeNotices(ids: List<Long>) = lock.withLock { consumedNoticeIds.addAll(ids) }
+
+    fun noticesAwaitingCommit(): List<Long> = lock.withLock { consumedNoticeIds.toList() }
+
+    fun commitNotices(ids: List<Long>) = lock.withLock { consumedNoticeIds.removeAll(ids.toSet()) }
 
     val hasPendingNotices: Boolean
         get() = lock.withLock { notices.isNotEmpty() }

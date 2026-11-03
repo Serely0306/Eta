@@ -43,6 +43,10 @@ internal class AgentRuntimeSession(
         if (state == State.RUNNING) latestContext = snapshot
     }
     private var state = State.RUNNING
+    private var publishedTerminalResult: AgentRuntimeWire.RunResult? = null
+
+    val terminalResult: AgentRuntimeWire.RunResult?
+        get() = lock.withLock { publishedTerminalResult }
     private val replayEvents = mutableListOf<AgentEvent>()
     private val searchSuggestionsBudget = SearchSuggestionsBudget()
     private val subscribers = mutableListOf<Subscriber>()
@@ -136,7 +140,7 @@ internal class AgentRuntimeSession(
     /**
      * 先原子竞争 COMMITTING，再完成提交前副作用和结果发布。取消与替换不能越过提交胜者，
      * 因而不会出现“客户端收到取消、outbox 却留下成功结果”的分裂状态；耗时 I/O 也不持有锁。
-     * [beforePublish] 必须自行吸收非致命持久化异常。
+     * A persistence failure is published as the terminal failure, preserving the produced transcript.
      */
     fun complete(
         result: AgentRuntimeWire.RunResult,
@@ -148,18 +152,23 @@ internal class AgentRuntimeSession(
             state = State.COMMITTING
         }
         val commitFailure = runCatching(beforePublish).exceptionOrNull()
+        val publishedResult = if (commitFailure == null) result else result.copy(
+            ok = false,
+            error = commitFailure.message ?: commitFailure.javaClass.simpleName,
+            errorCode = "RUNTIME_PERSISTENCE_FAILED",
+        )
         lock.withLock {
+            publishedTerminalResult = publishedResult
             state = State.TERMINAL
         }
         // 客户端收到结果即可续发；释放会话占用不能晚于结果，也不能持锁回调宿主。
-        beforeTerminalPublish(result)
+        beforeTerminalPublish(publishedResult)
         lock.withLock {
-            subscribers.forEach { it.resultSink(result) }
+            subscribers.forEach { it.resultSink(publishedResult) }
             subscribers.clear()
             replayEvents.clear()
             searchSuggestionsBudget.clear()
         }
-        commitFailure?.let { throw it }
         return true
     }
 
@@ -175,7 +184,7 @@ internal class AgentRuntimeSession(
                 contextSnapshot = latestContext,
                 transcript = AgentToolBatchRecovery.completeInterrupted(latestTranscript),
                 operation = operation,
-            )
+            ).also { publishedTerminalResult = it }
         }
         controller.cancel()
         beforeTerminalPublish(result)

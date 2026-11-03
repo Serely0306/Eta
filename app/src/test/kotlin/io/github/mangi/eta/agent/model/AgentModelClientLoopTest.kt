@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.agent.runtime.AgentEvent
 import io.github.mangi.eta.agent.runtime.AgentRunController
+import io.github.mangi.eta.agent.runtime.AgentTokenUsage
 import io.github.mangi.eta.agent.tool.AgentToolCapabilities
 import io.github.mangi.eta.agent.tool.AgentToolToggles
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
@@ -947,6 +948,59 @@ class AgentModelClientLoopTest {
         assertTrue(backup.requests.single().toString().contains("12:00"))
         val rounds = events.filterIsInstance<AgentEvent.RoundStarted>().map { it.round }
         assertEquals(rounds.distinct(), rounds)
+    }
+
+    @Test
+    fun fallbackUpdatesSearchPromptAndCompactionModelAndWindow() {
+        var primaryCalls = 0
+        var chatCalls = 0
+        var compactionCalls = 0
+        val primaryConfig = modelConfig().copy(browserTools = true, contextWindow = 10_000,
+            openAiEndpointMode = OpenAiEndpointMode.RESPONSES, hostedWebSearchEnabled = true)
+        val backupConfig = primaryConfig.copy(providerId = "backup", model = "backup-model",
+            hostedWebSearchEnabled = false, contextWindow = 1_000)
+        val primary = object : AgentProviderClient by ScriptedProvider(emptyList()) {
+            override fun complete(request: ProviderRequest, runController: AgentRunController,
+                onEvent: (ProviderEvent) -> Unit): ProviderResponse {
+                primaryCalls++
+                assertFalse("web_search" in request.tools.toolNames())
+                if (primaryCalls == 1) {
+                    onEvent(ProviderEvent.Usage(AgentTokenUsage(inputTokens = 950)))
+                    return ProviderResponse(assistant(finishReason = "tool_calls",
+                        toolCalls = listOf(toolCall("context", "get_current_context", "{}"))))
+                }
+                throw AgentModelFailure("HTTP_401", false, "primary unavailable")
+            }
+        }
+        val backup = object : AgentProviderClient by ScriptedProvider(emptyList()) {
+            override fun complete(request: ProviderRequest, runController: AgentRunController,
+                onEvent: (ProviderEvent) -> Unit): ProviderResponse {
+                assertEquals("backup-model", request.config.model)
+                if (request.purpose == ProviderRequestPurpose.COMPACTION) {
+                    compactionCalls++
+                    return ProviderResponse(assistant(content = "old work completed", finishReason = "stop"))
+                }
+                chatCalls++
+                assertTrue("web_search" in request.tools.toolNames())
+                assertTrue(request.messages.toString().contains("backup-model"))
+                assertFalse(request.messages.toString().contains("Provider 托管的"))
+                assertEquals(1, compactionCalls)
+                assertTrue(request.messages.toString().contains("old work completed"))
+                onEvent(ProviderEvent.Usage(AgentTokenUsage(inputTokens = 50)))
+                return ProviderResponse(assistant(content = "done", finishReason = "stop"))
+            }
+        }
+        val result = AgentModelClient.complete(
+            config = primaryConfig, prompt = "continue", provider = primary,
+            history = listOf(AgentModelClient.ConversationMessage("user", "old question"),
+                AgentModelClient.ConversationMessage("assistant", "old details ".repeat(300))),
+            toolExecutor = AgentModelClient.ToolExecutor { AgentModelClient.ToolResult("ok") },
+            fallback = ModelFallbackPolicy(listOf(backupConfig)), providerFor = { backup },
+        )
+        assertEquals("done", result.content)
+        assertEquals(2, primaryCalls)
+        assertEquals(1, chatCalls)
+        assertEquals(1, compactionCalls)
     }
 
     @Test

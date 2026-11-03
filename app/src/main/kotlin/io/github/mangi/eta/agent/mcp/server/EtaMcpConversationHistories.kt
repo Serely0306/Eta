@@ -6,6 +6,7 @@ import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.runtime.AgentRuntimeWire
 import io.github.mangi.eta.agent.runtime.ExternalArchiveIds
 import java.io.File
+import java.nio.file.Files
 
 /**
  * 电脑端委托任务的会话历史。以前只在内存里保留最近 8 个会话，进程重启或被挤出后同一
@@ -39,6 +40,12 @@ internal class EtaMcpConversationHistories(private val directory: File) {
         }
     }
 
+    fun deleteForConversation(conversationId: String) = synchronized(this) {
+        val filename = "$conversationId.json"
+        Files.deleteIfExists(File(directory, filename).toPath())
+        cache.keys.removeAll { fileFor(directory, it).name == filename }
+    }
+
     private fun remember(conversationKey: String, history: List<AgentModelClient.ConversationMessage>) {
         cache.remove(conversationKey)
         cache[conversationKey] = history
@@ -48,12 +55,15 @@ internal class EtaMcpConversationHistories(private val directory: File) {
     companion object {
         private const val DIRECTORY = "mcp_histories"
         private const val CACHE_SIZE = 8
+        private var shared: EtaMcpConversationHistories? = null
 
-        fun forContext(context: Context) = EtaMcpConversationHistories(File(context.applicationContext.filesDir, DIRECTORY))
+        @Synchronized
+        fun forContext(context: Context): EtaMcpConversationHistories =
+            shared ?: EtaMcpConversationHistories(File(context.applicationContext.filesDir, DIRECTORY)).also { shared = it }
 
         /** 侧栏删除“电脑端”会话时调用；不是电脑端会话或没有历史文件时什么也不做。 */
         fun deleteForConversation(context: Context, conversationId: String) {
-            File(File(context.applicationContext.filesDir, DIRECTORY), "$conversationId.json").delete()
+            forContext(context).deleteForConversation(conversationId)
         }
 
         internal fun fileFor(directory: File, conversationKey: String): File = File(

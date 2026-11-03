@@ -42,8 +42,8 @@ internal object ModelUsageLedger {
     }
 
     /** 时间范围内的记录，最新的在前；随账本写入实时更新。 */
-    fun recordsFlow(from: Long, to: Long, limit: Int = MAX_REPORT_ROWS): Flow<List<ModelUsageRecordEntity>> =
-        appContext?.let { EtaDatabase.get(it).modelUsageDao().betweenFlow(from, to, limit) } ?: flowOf(emptyList())
+    fun recordsFlow(from: Long, to: Long): Flow<List<ModelUsageRecordEntity>> =
+        appContext?.let { EtaDatabase.get(it).modelUsageDao().betweenFlow(from, to) } ?: flowOf(emptyList())
 
     /** 一个模型会话（聊天为会话 id）的全部记录，含压缩与子 Agent 的请求。 */
     fun sessionRecordsFlow(sessionId: String): Flow<List<ModelUsageRecordEntity>> =
@@ -83,7 +83,6 @@ internal object ModelUsageLedger {
         if (field.any { it == ',' || it == '"' || it == '\n' }) "\"${field.replace("\"", "\"\"")}\"" else field
     }
 
-    private const val MAX_REPORT_ROWS = 20_000
     private const val EXPORT_PAGE_SIZE = 500
     private const val CSV_HEADER = "time,source,run_id,purpose,subagent_index,provider,model,endpoint,reasoning_effort," +
         "status,has_usage,input_tokens,cached_tokens,cache_write_tokens,output_tokens,reasoning_tokens,duration_ms,cost_usd"

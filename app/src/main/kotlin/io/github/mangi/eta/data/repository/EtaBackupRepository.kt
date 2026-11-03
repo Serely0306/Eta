@@ -31,6 +31,7 @@ import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import java.io.InputStream
 import java.io.OutputStream
+import org.json.JSONObject
 
 /** Eta 用户数据备份；旧备份没有角色字段时保留设备上的角色库。 */
 @Serializable
@@ -192,6 +193,8 @@ internal object EtaBackupRepository {
                 val credentialIds = document.providers.mapTo(linkedSetOf()) { it.provider.id }
                 // 显式检查原任务取消，使 Room 提交到凭据清理之间不留下被取消打断的空隙。
                 withContext(NonCancellable) {
+                    val subagentManager = AgentSubagentManager.get(appContext)
+                    subagentManager.forgetAll()
                     var memoryWriteStarted = false
                     try {
                         database.withTransaction {
@@ -238,13 +241,35 @@ internal object EtaBackupRepository {
                             val subagentDao = database.subagentDao()
                             subagentDao.deleteAllAgents()
                             subagentDao.deleteAllMail()
+                            val interruptedSubagents = mutableListOf<ConversationSubagentEntity>()
+                            val restoredAt = System.currentTimeMillis()
                             staged.subagents {
                                 cancellation.ensureActive()
-                                subagentDao.upsertAgent(it)
+                                val restored = if (it.status == AgentSubagentManager.STATUS_RUNNING) {
+                                    it.copy(status = AgentSubagentManager.STATUS_INTERRUPTED, updatedAt = restoredAt,
+                                        lastError = "备份已恢复，原来的子 Agent 回合已中断")
+                                        .also(interruptedSubagents::add)
+                                } else it
+                                subagentDao.upsertAgent(restored)
                             }
                             staged.subagentMail {
                                 cancellation.ensureActive()
                                 subagentDao.restoreMail(it)
+                            }
+                            interruptedSubagents.forEach { agent ->
+                                subagentDao.insertMail(ConversationSubagentMailEntity(
+                                    conversationId = agent.conversationId,
+                                    agentId = agent.agentId,
+                                    turn = agent.turn,
+                                    status = AgentSubagentManager.STATUS_INTERRUPTED,
+                                    payload = JSONObject()
+                                        .put("agent_id", agent.agentId).put("name", agent.name)
+                                        .put("turn", agent.turn).put("status", AgentSubagentManager.STATUS_INTERRUPTED)
+                                        .put("error", "备份已恢复，原来的子 Agent 回合已中断；已保留过程，可重新发消息继续")
+                                        .toString(),
+                                    createdAt = restoredAt,
+                                    deliveredRunId = null,
+                                ))
                             }
                             phase = "restore_roleplay"
                             document.roleplay?.let { roleplay ->
@@ -274,7 +299,7 @@ internal object EtaBackupRepository {
                         throw failure
                     }
                     onCommitted()
-                    runCatching { AgentSubagentManager.get(appContext).forgetAll() }
+                    subagentManager.forgetAll()
                     try {
                         phase = "clear_provider_credentials"
                         credentialIds.forEach(forgetCredentials)

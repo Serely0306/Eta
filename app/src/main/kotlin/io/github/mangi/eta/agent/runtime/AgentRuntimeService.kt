@@ -18,6 +18,7 @@ import android.os.Looper
 import android.os.Message
 import android.os.Messenger
 import android.os.Process
+import android.os.RemoteException
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
@@ -274,11 +275,18 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                 AgentRuntimeWire.MSG_ANSWER_QUESTION -> {
                     val data = msg.data ?: return
                     val answer = AgentRuntimeWire.answerFromBundle(data) ?: return
-                    answerQuestion(
+                    val accepted = answerQuestion(
                         runId = AgentRuntimeWire.runIdFromBundle(data),
                         questionId = AgentRuntimeWire.questionIdFromBundle(data),
                         answer = answer,
                     )
+                    try {
+                        msg.replyTo?.send(Message.obtain(null, AgentRuntimeWire.MSG_ANSWER_QUESTION_RESPONSE).apply {
+                            this.data = AgentRuntimeWire.steerResponseBundle(AgentRuntimeWire.runIdFromBundle(data), accepted)
+                        })
+                    } catch (failure: RemoteException) {
+                        AndroidAgentLogger.error("Agent runtime question reply failed: ${failure.safeLogType()}")
+                    }
                 }
 
                 AgentRuntimeWire.MSG_ACK_RESULT -> {
@@ -477,10 +485,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         )
         dispatchResultIo {
             run.session.complete(result) {
-                runCatching { persistRunArtifacts(run.snapshotRequest(), result, emptyList()) }
-                    .onFailure { throwable ->
-                        AndroidAgentLogger.error("Agent runtime preparation result persistence failed: type=${throwable.safeLogType()}")
-                    }
+                persistRunArtifacts(run.snapshotRequest(), result, emptyList())
             }
         }
     }
@@ -585,15 +590,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         request: AgentRuntimeWire.RunRequest,
         result: AgentRuntimeWire.RunResult,
         events: List<AgentEvent>,
-    ) {
-        // outbox 是终态与在途 checkpoint 之间的提交点；失败时保留 checkpoint 供下次恢复。
-        persistCompletedRun(request, result)
-        runCatching { persistArchivedRun(request, result, events) }
-            .onFailure { throwable ->
-                AndroidAgentLogger.error(
-                    "Agent runtime archive persistence failed: type=${throwable.safeLogType()}"
-                )
-            }
+        consumedNoticeIds: List<Long> = emptyList(),
+    ): Boolean {
+        val handoff = request.handoff ?: return false
+        return AgentRuntimeResultStore.add(
+            this,
+            AgentRuntimeWire.CompletedRun(handoff, result, System.currentTimeMillis()),
+            archivedRun(request, result, events),
+            consumedNoticeIds,
+        )
     }
 
     private fun postTerminalOverlay(
@@ -796,28 +801,13 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         }
     }
 
-    private fun persistCompletedRun(
-        request: AgentRuntimeWire.RunRequest,
-        result: AgentRuntimeWire.RunResult
-    ) {
-        val handoff = request.handoff ?: return
-        AgentRuntimeResultStore.add(
-            this,
-            AgentRuntimeWire.CompletedRun(
-                handoff = handoff,
-                result = result,
-                createdAt = System.currentTimeMillis()
-            )
-        )
-    }
-
-    private fun persistArchivedRun(
+    private fun archivedRun(
         request: AgentRuntimeWire.RunRequest,
         result: AgentRuntimeWire.RunResult,
         events: List<AgentEvent>
-    ) {
-        val handoff = request.handoff ?: return
-        AgentExternalArchivePayload.from(handoff.payload) ?: return
+    ): AgentRunArchiveStore.ArchivedRun? {
+        val handoff = request.handoff ?: return null
+        AgentExternalArchivePayload.from(handoff.payload) ?: return null
         val userImagePreviews = if (
             handoff.source == AgentRuntimeWire.ETA_VOICE_HANDOFF_SOURCE
         ) {
@@ -831,15 +821,12 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         } else {
             emptyList()
         }
-        AgentRunArchiveStore.add(
-            this,
-            AgentRunArchiveStore.ArchivedRun(
-                handoff = handoff,
-                events = events,
-                result = result,
-                createdAt = System.currentTimeMillis(),
-                userImagePreviews = userImagePreviews,
-            )
+        return AgentRunArchiveStore.ArchivedRun(
+            handoff = handoff,
+            events = events,
+            result = result,
+            createdAt = System.currentTimeMillis(),
+            userImagePreviews = userImagePreviews,
         )
     }
 
@@ -957,12 +944,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     /** 回答由 Runtime 控制器裁决唯一性；问题结束后的迟到回答被忽略，界面以 UserQuestionResolved 收口。 */
-    private fun answerQuestion(runId: String, questionId: String, answer: AgentUserAnswer) {
-        val session = runs.get(runId)?.session ?: return
-        if (!session.controller.answerQuestion(questionId, answer)) {
-            AndroidAgentLogger.debug { "Agent runtime ignored stale question answer" }
-        }
-    }
+    private fun answerQuestion(runId: String, questionId: String, answer: AgentUserAnswer): Boolean =
+        runs.get(runId)?.session?.controller?.answerQuestion(questionId, answer) ?: false
 
     /** App 内发起且主界面可见时由会话面板承接问题；系统入口或用户在其他应用时用胶囊。 */
     private fun needsCapsuleQuestion(run: RuntimeRunRegistry.Run): Boolean =

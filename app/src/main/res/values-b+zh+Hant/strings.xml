@@ -1750,4 +1750,6 @@
   <string name="chat_queue_remove">移除排隊訊息</string>
   <string name="chat_queue_images_only">[%1$d 張圖片]</string>
   <string name="chat_queue_files_only">[%1$d 個檔案]</string>
+  <string name="usage_load_more">載入更多記錄</string>
+  <string name="question_answer_rejected">問題已結束，此回答未被接收。</string>
 </resources>

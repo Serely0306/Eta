@@ -1,6 +1,7 @@
 package io.github.mangi.eta.agent.runtime
 
 import android.content.Context
+import androidx.room.withTransaction
 import io.github.mangi.eta.agent.model.AgentContextSnapshot
 import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentModelClient
@@ -18,17 +19,31 @@ internal object AgentRuntimeResultStore {
     private val recentlyAcknowledgedRunIds = LinkedHashMap<String, Long>()
 
     /**
-     * 返回 false 表示同一 run 已先收到 ACK，不应在 ACK 之后重新写回待交付队列。
+     * An ACK prevents rewriting the outbox, but an external archive may still be committed.
+     * Result, archive and consumed notification IDs share the same transaction.
      */
-    fun add(context: Context, completedRun: AgentRuntimeWire.CompletedRun): Boolean {
+    fun add(
+        context: Context,
+        completedRun: AgentRuntimeWire.CompletedRun,
+        archivedRun: AgentRunArchiveStore.ArchivedRun? = null,
+        consumedNoticeIds: List<Long> = emptyList(),
+    ): Boolean {
         val appContext = context.applicationContext
         val entity = completedRun.toEntity()
         synchronized(deliveryLock) {
             pruneAcknowledgements(System.currentTimeMillis())
-            if (recentlyAcknowledgedRunIds.containsKey(entity.runId)) return false
+            val writeOutbox = !recentlyAcknowledgedRunIds.containsKey(entity.runId)
+            if (!writeOutbox && archivedRun == null) return false
             runBlocking(Dispatchers.IO) {
-                val dao = EtaDatabase.get(appContext).runtimeRunDao()
-                dao.upsertRuntimeResult(entity)
+                val database = EtaDatabase.get(appContext)
+                database.withTransaction {
+                    val dao = database.runtimeRunDao()
+                    if (writeOutbox) dao.upsertRuntimeResult(entity)
+                    if (archivedRun != null) AgentRunArchiveStore.add(dao, archivedRun)
+                    if (consumedNoticeIds.isNotEmpty()) {
+                        database.subagentDao().markMailDelivered(consumedNoticeIds, entity.runId)
+                    }
+                }
             }
             return true
         }

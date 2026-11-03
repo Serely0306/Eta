@@ -40,6 +40,12 @@ class AgentModelFallbackTest {
         assertFalse(policy.shouldFallBack(AgentModelFailure("MODEL_CONTENT_FILTER", false, "blocked")))
         assertTrue(policy.copy(onContentFilter = true).shouldFallBack(AgentModelFailure("MODEL_CONTENT_FILTER", false, "blocked")))
         assertFalse(policy.shouldFallBack(IllegalStateException("bug")))
+        for (code in listOf("content_filter", "content_policy_violation")) {
+            val failure = AgentModelFailure.stream(JSONObject().put("code", code), "blocked")
+            assertFalse(failure.retryable)
+            assertFalse(policy.shouldFallBack(failure))
+            assertTrue(policy.copy(onContentFilter = true).shouldFallBack(failure))
+        }
     }
 
     @Test
@@ -63,9 +69,11 @@ class AgentModelFallbackTest {
         val assistant = messages.getJSONObject(1)
         AnthropicEphemeralState.attachContentBlocks(assistant, JSONArray().put(JSONObject().put("type", "thinking")))
         ResponsesEphemeralState.attachOutputItems(assistant, JSONArray().put(JSONObject().put("type", "reasoning")))
+        GeminiEphemeralState.attachSteps(assistant, JSONArray().put(JSONObject().put("type", "function_call")))
         ModelFallbackPolicy.stripProviderState(messages)
         assertNull(AnthropicEphemeralState.contentBlocks(assistant))
         assertNull(ResponsesEphemeralState.outputItems(assistant))
+        assertNull(GeminiEphemeralState.steps(assistant))
         assertEquals("c1", AgentConversationCodec.parseToolCalls(assistant).single().id)
     }
 }

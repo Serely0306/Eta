@@ -31,7 +31,7 @@ internal class EtaMcpRedactor(private val capacity: Int = DEFAULT_CAPACITY) {
 
     /** JSON 文本只处理字符串值（以及整体像号码的数字值），结构保持不变；其余按纯文本处理。 */
     @Synchronized
-    fun redactText(text: String): String {
+    fun redactText(text: String, toolName: String? = null): String {
         val trimmed = text.trimStart()
         if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
             val parsed = runCatching {
@@ -41,6 +41,14 @@ internal class EtaMcpRedactor(private val capacity: Int = DEFAULT_CAPACITY) {
             }.getOrNull()
             if (parsed is JSONObject || parsed is JSONArray) {
                 var changed = false
+                if (toolName == "read_sms_code" && parsed is JSONObject && parsed.optBoolean("ok")) {
+                    val items = parsed.getJSONArray("items")
+                    for (index in 0 until items.length()) {
+                        val item = items.getJSONObject(index)
+                        item.put("code", placeholderFor(Kind.OTP, item.getString("code")))
+                        changed = true
+                    }
+                }
                 val redacted = mapStrings(parsed) { value ->
                     redactPlain(value).also { if (it != value) changed = true }
                 }

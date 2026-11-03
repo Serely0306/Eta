@@ -36,6 +36,7 @@ internal data class ModelFallbackPolicy(
                 val message = messages.optJSONObject(index) ?: continue
                 AnthropicEphemeralState.strip(message)
                 ResponsesEphemeralState.strip(message)
+                GeminiEphemeralState.strip(message)
             }
         }
 

@@ -6,11 +6,11 @@ import org.json.JSONArray
 
 /** 管理可替换的模型上下文；持久快照先提交，运行 transcript 始终追加。 */
 internal class AgentContextSession(
-    private val config: AgentModelClient.ModelConfig,
+    private var config: AgentModelClient.ModelConfig,
     private val messages: JSONArray,
-    private val systemCount: Int,
+    private var systemCount: Int,
     private val operationId: String,
-    private val provider: AgentProviderClient,
+    private var provider: AgentProviderClient,
     private val runController: AgentRunController,
     private val sensitiveIds: () -> Set<String>,
     private val onEvent: (AgentEvent) -> Unit,
@@ -19,7 +19,7 @@ internal class AgentContextSession(
     private val roleplay: Boolean = false,
     private val modelRetry: AgentModelRetry = AgentModelRetry(),
 ) {
-    private val contextWindow = config.knownContextWindow
+    private val contextWindow: Int? get() = config.knownContextWindow
     private var inputTokens: Int? = null
     private var compacted = false
     private var consumedSupplementCount = 0
@@ -30,6 +30,12 @@ internal class AgentContextSession(
     private var committedSnapshot: AgentContextSnapshot? = null
 
     fun snapshot(): AgentContextSnapshot? = committedSnapshot
+
+    fun switchModel(config: AgentModelClient.ModelConfig, provider: AgentProviderClient, systemCount: Int) {
+        this.config = config
+        this.provider = provider
+        this.systemCount = systemCount
+    }
 
     fun observeInputTokens(tokens: Int?) {
         inputTokens = tokens?.takeIf { it >= 0 }
@@ -62,14 +68,15 @@ internal class AgentContextSession(
 
     fun compact(force: Boolean = false, final: Boolean = false) {
         val before = inputTokens
+        val window = contextWindow
         if (SignedToolContext.hasPendingResponse(messages)) {
             if (force) {
                 throw SignedToolContext.compactionFailure(messages)
             }
             return
         }
-        if (!force && (!config.autoCompactionEnabled || contextWindow == null || before == null ||
-                before < contextWindow * TRIGGER_RATIO)
+        if (!force && (!config.autoCompactionEnabled || window == null || before == null ||
+                before < window * TRIGGER_RATIO)
         ) {
             try {
                 publishSnapshot()

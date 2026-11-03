@@ -337,7 +337,7 @@ private fun AutomationEditor(
             trigger = built,
             enabled = initial?.enabled ?: true,
             createdAt = initial?.createdAt ?: System.currentTimeMillis(),
-            lastRunAt = initial?.lastRunAt,
+            lastRunAt = if (built is AutomationTrigger.Once && built != initial?.trigger) null else initial?.lastRunAt,
             lastStatus = initial?.lastStatus,
             lastSummary = initial?.lastSummary,
             modelId = modelId,

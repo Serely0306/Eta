@@ -513,6 +513,9 @@ internal fun AgentConversationMessages(
     // 请求已发出、还没有可见输出时，列表底部一行“思考中 · Xs”（AG-28）；不进消息流、不落库。
     val showWaitingRow = isStreaming && !assistantOverlay && isWaitingForModel(visibleMessages)
     val waitingKey = visibleMessages.lastOrNull()?.let { "${it.id}:${(it as? ToolActivityMessageUi)?.status}" }
+    val waitingStartedAt = if (showWaitingRow && waitingKey != null) {
+        ModelWaitClock.startOf(waitingKey, SystemClock.elapsedRealtime())
+    } else null
     val activeWorkProcessKey = if (isStreaming) {
         (timelineEntries.lastOrNull() as? AgentTimelineEntry.WorkProcess)?.key
     } else {
@@ -839,8 +842,10 @@ internal fun AgentConversationMessages(
                     }
                 }
             }
-            if (showWaitingRow) {
-                item(key = ChatModelWaitingKey) { ModelWaitingRow(thinkingEnabled = thinkingEnabled, sinceKey = waitingKey) }
+            if (waitingStartedAt != null) {
+                item(key = ChatModelWaitingKey) {
+                    ModelWaitingRow(thinkingEnabled = thinkingEnabled, startedAt = waitingStartedAt)
+                }
             }
             item(key = ChatBottomSentinelKey) {
                 Spacer(
@@ -1236,13 +1241,11 @@ internal object ModelWaitClock {
 
 /** “思考中 · 12 秒”：从这一段等待开始计时，每秒刷新；出现输出后整行消失。 */
 @Composable
-private fun ModelWaitingRow(thinkingEnabled: Boolean, sinceKey: String?) {
-    val startedAt = remember(sinceKey) {
-        val now = SystemClock.elapsedRealtime()
-        sinceKey?.let { ModelWaitClock.startOf(it, now) } ?: now
+private fun ModelWaitingRow(thinkingEnabled: Boolean, startedAt: Long) {
+    var seconds by remember(startedAt) {
+        mutableIntStateOf(((SystemClock.elapsedRealtime() - startedAt) / 1000).toInt())
     }
-    var seconds by remember(sinceKey) { mutableIntStateOf(0) }
-    LaunchedEffect(sinceKey) {
+    LaunchedEffect(startedAt) {
         while (true) {
             seconds = ((SystemClock.elapsedRealtime() - startedAt) / 1000).toInt()
             delay(1_000)

@@ -62,7 +62,8 @@ internal class AgentRuntimeRunExecutor(
         AgentRuntimeWire.RunRequest,
         AgentRuntimeWire.RunResult,
         List<AgentEvent>,
-    ) -> Unit,
+        List<Long>,
+    ) -> Boolean,
 ) {
     data class Outcome(
         val result: AgentRuntimeWire.RunResult,
@@ -327,25 +328,25 @@ internal class AgentRuntimeRunExecutor(
                 runId = request.runId,
                 sessionId = request.effectiveModelSessionId,
             )
-            val subagents = AgentSubagentTools(
-                manager = subagentManager,
-                environment = SubagentEnvironment(
-                    runId = request.runId,
-                    conversationId = subagentConversation,
-                    parentSessionId = request.effectiveModelSessionId,
-                    config = request.config,
-                    capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
-                    additionalTools = mcpTools,
-                    disabledTools = disabledTools,
-                    newExecutor = { ownerId ->
-                        RoutingToolExecutor(local = newLocalTools(ownerId), mcp = McpToolExecutor(mcpSnapshot))
-                    },
-                    fallback = fallbackPolicy,
-                    executionContext = mainLocalTools.terminalExecutionContext,
-                    usageContext = usageContext,
-                ),
+            val subagentEnvironment = SubagentEnvironment(
+                runId = request.runId,
+                conversationId = subagentConversation,
+                parentSessionId = request.effectiveModelSessionId,
+                config = request.config,
+                capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
+                additionalTools = mcpTools,
+                disabledTools = disabledTools,
+                newExecutor = { ownerId ->
+                    RoutingToolExecutor(local = newLocalTools(ownerId), mcp = McpToolExecutor(mcpSnapshot))
+                },
+                fallback = fallbackPolicy,
+                executionContext = mainLocalTools.terminalExecutionContext,
+                usageContext = usageContext,
             )
-            if (receivesSubagentNotices) subagentManager.attachParent(subagentConversation, request.runId, runController)
+            val subagents = AgentSubagentTools(subagentManager, subagentEnvironment)
+            if (receivesSubagentNotices) {
+                subagentManager.attachParent(subagentConversation, request.runId, runController, subagentEnvironment)
+            }
             // 提问在工具内阻塞等待；问题与结论作为独立事件推给 App、胶囊和恢复日志。
             fun askUser(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
                 val question = AgentUserQuestion.parse(call.argumentsJson)
@@ -431,7 +432,10 @@ internal class AgentRuntimeRunExecutor(
                         session.updateContext(committed)
                     },
                     onTranscript = { transcript ->
-                        AgentRunCheckpointStore.saveTranscript(appContext, request.runId, transcript)
+                        val noticeIds = runController.noticesAwaitingCommit()
+                        if (AgentRunCheckpointStore.saveTranscript(appContext, request.runId, transcript, noticeIds)) {
+                            runController.commitNotices(noticeIds)
+                        }
                         session.updateTranscript(transcript)
                     },
                     capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
@@ -519,57 +523,53 @@ internal class AgentRuntimeRunExecutor(
                 rewriteTargetMessageId = request.rewriteTargetMessageId,
             )
         } finally {
-            if (receivesSubagentNotices) runCatching { subagentManager.detachParent(subagentConversation, request.runId) }
             runCatching { toolsBinding?.close() }
             runCatching { toolExecutor?.close() }
             runCatching { guiRun?.close() }
             runCatching { browserBinding?.close() }
         }
 
-        if (cancelled && session.isTerminal) {
-            runCatching {
-                persistArtifacts(snapshotRequest(request), result, archivedEvents.orEmpty())
-            }.onFailure { throwable ->
-                AndroidAgentLogger.error(
-                    "Agent runtime cancelled result persistence failed: " +
-                        "type=${throwable.safeLogType()}"
-                )
+        fun persistResult(completedRequest: AgentRuntimeWire.RunRequest) {
+            val noticeIds = runController.noticesAwaitingCommit()
+            val persisted = persistArtifacts(completedRequest, result, archivedEvents.orEmpty(), noticeIds)
+            if (persisted) {
+                runController.commitNotices(noticeIds)
             }
-            return Outcome(
-                result = result,
-                entrySurfaceGuard = entrySurfaceGuard,
-                shouldUpdateHost = true,
-            )
         }
 
-        val completedRequest = runCatching { snapshotRequest(request) }
-            .getOrElse { throwable ->
-                AndroidAgentLogger.error(
-                    "Agent runtime request snapshot failed: type=${throwable.safeLogType()}"
+        try {
+            if (cancelled && session.isTerminal) {
+                val persistenceFailure = runCatching {
+                    persistResult(snapshotRequest(request))
+                }.exceptionOrNull()
+                return Outcome(
+                    result = if (persistenceFailure == null) result else result.copy(
+                        ok = false,
+                        error = persistenceFailure.message ?: persistenceFailure.javaClass.simpleName,
+                        errorCode = "RUNTIME_PERSISTENCE_FAILED",
+                    ),
+                    entrySurfaceGuard = entrySurfaceGuard,
+                    shouldUpdateHost = true,
                 )
-                request
             }
-        val committed = session.complete(result) {
-            runCatching { checkpointRecorder?.seal() }
-                .onFailure { throwable ->
-                    AndroidAgentLogger.error(
-                        "Agent runtime checkpoint seal failed: type=${throwable.safeLogType()}"
-                    )
-                }
-            runCatching { persistArtifacts(completedRequest, result, archivedEvents.orEmpty()) }
-                .onFailure { throwable ->
-                    AndroidAgentLogger.error(
-                        "Agent runtime artifact persistence failed: type=${throwable.safeLogType()}"
-                    )
-                }
+
+            var completedRequest = request
+            val committed = session.complete(result) {
+                completedRequest = snapshotRequest(request)
+                checkpointRecorder?.seal()
+                persistResult(completedRequest)
+            }
+            val publishedResult = session.terminalResult ?: result
+            return Outcome(
+                result = publishedResult,
+                entrySurfaceGuard = entrySurfaceGuard,
+                completedRequest = completedRequest.takeIf { committed },
+                response = response.takeIf { committed && publishedResult.ok },
+                shouldUpdateHost = committed,
+            )
+        } finally {
+            if (receivesSubagentNotices) subagentManager.detachParent(subagentConversation, request.runId)
         }
-        return Outcome(
-            result = result,
-            entrySurfaceGuard = entrySurfaceGuard,
-            completedRequest = completedRequest.takeIf { committed },
-            response = response.takeIf { committed },
-            shouldUpdateHost = committed,
-        )
     }
 
     private fun acceptEvent(

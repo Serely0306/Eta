@@ -33,14 +33,17 @@ class EtaMcpConversationHistoriesTest {
     }
 
     @Test
-    fun fileIsNamedAfterTheSidebarConversationSoDeletingItCanRemoveTheHistory() {
+    fun deletingSidebarConversationAlsoRemovesCachedHistory() {
         val directory = folder.newFolder("mcp_histories")
-        EtaMcpConversationHistories(directory).save("pc-2", listOf(ConversationMessage(role = "user", content = "x")))
+        val histories = EtaMcpConversationHistories(directory)
+        histories.save("pc-2", listOf(ConversationMessage(role = "user", content = "x")))
         val conversationId = ExternalArchiveIds.conversationId(AgentRuntimeWire.PC_MCP_HANDOFF_SOURCE, "pc-2")
         val file = EtaMcpConversationHistories.fileFor(directory, "pc-2")
         assertEquals("$conversationId.json", file.name)
         assertTrue(conversationId.startsWith("archive-pc_mcp-"))
-        assertTrue(file.delete())
+        histories.deleteForConversation(conversationId)
         assertFalse(file.exists())
+        assertTrue(histories.load("pc-2").isEmpty())
+        assertTrue(EtaMcpConversationHistories(directory).load("pc-2").isEmpty())
     }
 }

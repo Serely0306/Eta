@@ -89,6 +89,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.DropdownItem
@@ -108,7 +109,13 @@ internal fun UsageScreen(onNavigate: (AppRoute) -> Unit, onBack: () -> Unit) {
     var selectedBucket by remember(range) { mutableStateOf(-1) }
     var editingQuotaProvider by remember { mutableStateOf<ProviderSetting?>(null) }
     val zone = remember { ZoneId.systemDefault() }
-    val now = remember(range) { System.currentTimeMillis() }
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            now = System.currentTimeMillis()
+        }
+    }
     val bounds = remember(range, now) { UsageReports.bounds(range, now, zone) }
     val records by remember(bounds) { ModelUsageLedger.recordsFlow(bounds.first, bounds.second) }
         .collectAsState(initial = emptyList())
@@ -120,10 +127,11 @@ internal fun UsageScreen(onNavigate: (AppRoute) -> Unit, onBack: () -> Unit) {
     val quotaStart = remember(pricing, now) {
         pricing.quotas.minOfOrNull { UsageReports.quotaPeriodStart(it.period, now, zone) } ?: now
     }
-    val quotaRecords by remember(quotaStart) { ModelUsageLedger.recordsFlow(quotaStart, now + 1) }
+    val quotaRecords by remember(quotaStart) { ModelUsageLedger.recordsFlow(quotaStart, Long.MAX_VALUE) }
         .collectAsState(initial = emptyList())
-    val quotaUsages = remember(quotaRecords, pricing, resolver) {
-        pricing.quotas.map { UsageReports.quotaUsage(it, quotaRecords, now, zone, resolver::cost) }
+    val quotaUsages = remember(quotaRecords, pricing, resolver, now) {
+        val asOf = System.currentTimeMillis()
+        pricing.quotas.map { UsageReports.quotaUsage(it, quotaRecords, asOf, zone, resolver::cost) }
     }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -582,9 +590,15 @@ internal fun UsageLogsScreen(onBack: () -> Unit) {
     var range by rememberSaveable { mutableStateOf(UsageRange.TODAY) }
     var expanded by remember { mutableStateOf(setOf<Long>()) }
     val zone = remember { ZoneId.systemDefault() }
-    val now = remember(range) { System.currentTimeMillis() }
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000L)
+            now = System.currentTimeMillis()
+        }
+    }
     val bounds = remember(range, now) { UsageReports.bounds(range, now, zone) }
-    val records by remember(bounds) { ModelUsageLedger.recordsFlow(bounds.first, bounds.second, LOG_ROWS) }
+    val records by remember(bounds) { ModelUsageLedger.recordsFlow(bounds.first, bounds.second) }
         .collectAsState(initial = emptyList())
     val pricing by remember { SettingsDataStore.usagePricingFlow() }.collectAsState(initial = UsagePricingSettings())
     val resolver = remember(pricing) { UsagePriceResolver(pricing) }
@@ -609,6 +623,7 @@ internal fun UsageLogsScreen(onBack: () -> Unit) {
         }
     }
     val filteredCost = remember(filtered, resolver) { filtered.sumOf { resolver.cost(it) ?: 0.0 } }
+    var visibleRows by remember(range, activeProvider, activePurpose) { mutableStateOf(LOG_ROWS) }
     MiuixScaffoldPage(title = stringResource(R.string.usage_logs), onBack = onBack) {
         item(key = "range") { RangeSelector(range = range, onSelect = { range = it }) }
         if (records.isNotEmpty()) {
@@ -644,7 +659,7 @@ internal fun UsageLogsScreen(onBack: () -> Unit) {
                 }
             }
         }
-        filtered.forEach { record ->
+        filtered.take(visibleRows).forEach { record ->
             item(key = "record-${record.id}") {
                 val open = record.id in expanded
                 val cost = resolver.cost(record)
@@ -670,6 +685,15 @@ internal fun UsageLogsScreen(onBack: () -> Unit) {
                         },
                     )
                 }
+            }
+        }
+        if (filtered.size > visibleRows) {
+            item(key = "load-more") {
+                LinkButton(
+                    text = stringResource(R.string.usage_load_more),
+                    onClick = { visibleRows += LOG_ROWS },
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
             }
         }
     }

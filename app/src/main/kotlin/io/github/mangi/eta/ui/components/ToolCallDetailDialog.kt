@@ -77,12 +77,16 @@ internal class ToolCallDetailSource(
     private val messages: List<AgentChatMessageUi>,
     /** 本轮的工具结果要等 run 结束才写入记录；运行中改从检查点读取已完成的工具。 */
     val runInProgress: Boolean,
+    private val storedToolRows: List<ToolActivityMessageUi> = emptyList(),
 ) {
-    fun find(message: ToolActivityMessageUi): ToolCallDetail? = ToolCallDetails.find(journal, messages, message)
+    fun find(message: ToolActivityMessageUi): ToolCallDetail? = ToolCallDetails.find(journal, messages, message, storedToolRows)
 
     /** 检查点只含这个 run 的记录，同一调用 id 的序号也只在这个 run 的工具行里数。 */
     fun findInRun(runId: String, transcript: List<AgentModelClient.ConversationMessage>, message: ToolActivityMessageUi): ToolCallDetail? =
-        ToolCallDetails.find(transcript, messages.filter { it.id.startsWith("$runId-tool-") }, message)
+        ToolCallDetails.find(
+            transcript, messages.filter { it.id.startsWith("$runId-tool-") }, message,
+            storedToolRows.filter { it.id.startsWith("$runId-tool-") },
+        )
 }
 
 internal val LocalToolCallDetailSource = compositionLocalOf<ToolCallDetailSource?>(referentialEqualityPolicy()) { null }
@@ -105,7 +109,7 @@ internal fun rememberToolCallDetail(message: ToolActivityMessageUi): ToolCallDet
         repeat(CHECKPOINT_READ_ATTEMPTS) {
             val transcript = AgentRunCheckpointStore.transcript(context, runId)
             live = latestSource?.findInRun(runId, transcript, latestMessage)
-            if (live != null) return@LaunchedEffect
+            if (live?.result != null || live?.sensitive == true) return@LaunchedEffect
             delay(CHECKPOINT_RETRY_MS)
         }
     }

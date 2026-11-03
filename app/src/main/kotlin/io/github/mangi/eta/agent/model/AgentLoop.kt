@@ -36,6 +36,7 @@ internal class AgentLoop(
     initialSupplementIndex: Int = 0,
     private val fallback: ModelFallbackPolicy = ModelFallbackPolicy.NONE,
     private val providerFor: (AgentModelClient.ModelConfig) -> AgentProviderClient = ProviderClientFactory::getClient,
+    private val onModelChanged: (AgentModelClient.ModelConfig) -> Int = { systemCount },
 ) {
     data class Result(
         val content: String,
@@ -49,6 +50,7 @@ internal class AgentLoop(
     )
 
     private var availableToolNames = emptySet<String>()
+    private var activeTools = tools
     private val accumulatedReasoning = StringBuilder()
     private val sensitiveToolCallIds = linkedSetOf<String>()
     private var pendingToolImageMessage: JSONObject? = null
@@ -60,7 +62,7 @@ internal class AgentLoop(
     )
     private var supplementIndex = initialSupplementIndex
     private var noticeIndex = 0
-    /** 当前对话请求使用的模型；回退后本次 run 的剩余回合保持在新模型上。上下文压缩仍用主模型。 */
+    /** Requests, compaction and model-dependent prompts share the active fallback model. */
     private var activeConfig = config
     private var activeProvider = provider
     private var nextFallbackIndex = 0
@@ -107,6 +109,7 @@ internal class AgentLoop(
                 JSONArray()
             }
             precedingTools = roundTools
+            activeTools = roundTools
             availableToolNames = (0 until roundTools.length()).mapNotNullTo(mutableSetOf()) { index ->
                 roundTools.optJSONObject(index)?.optJSONObject("function")?.optString("name")
             }
@@ -121,7 +124,7 @@ internal class AgentLoop(
                     )
                     modelRetry.complete(
                         initialRound = startRound,
-                        request = ProviderRequest(roundConfig, requestMessages, roundTools, sessionId, purpose),
+                        request = ProviderRequest(roundConfig, requestMessages, activeTools, sessionId, purpose),
                         provider = roundProvider,
                         controller = runController,
                         onEvent = { event ->
@@ -158,6 +161,7 @@ internal class AgentLoop(
                 discardPendingToolImageMessage()
             }
             context.observeInputTokens(roundInputTokens)
+            precedingTools = activeTools
             round = completedRound.round
             val providerResponse = completedRound.response
 
@@ -211,6 +215,7 @@ internal class AgentLoop(
                         )
                     }
                     appendMessage(AgentConversationCodec.toolResultMessage(outcome.call, outcome.result))
+                    runController.consumeNotices(outcome.result.consumedNoticeIds)
                     publishTranscript()
                     outcome
                 }
@@ -290,6 +295,12 @@ internal class AgentLoop(
             )
             activeConfig = prepared
             activeProvider = providerFor(prepared)
+            context.switchModel(prepared, activeProvider, onModelChanged(prepared))
+            activeTools = toolsForRound?.invoke() ?: tools
+            availableToolNames = (0 until activeTools.length()).mapNotNullTo(mutableSetOf()) { index ->
+                activeTools.optJSONObject(index)?.optJSONObject("function")?.optString("name")
+            }
+            context.compact()
             return true
         }
         return false
@@ -355,6 +366,7 @@ internal class AgentLoop(
             AgentConversationCodec.userTextMessage(notices.joinToString("\n\n") { it.modelText })
                 .put("_eta_message_id", "notice-$operationId-subagent-${++noticeIndex}")
         )
+        runController.consumeNotices(notices.flatMap { it.mailIds })
         context.userAppended()
         notices.forEach { onEvent(AgentEvent.SubagentNotified(it.display)) }
         return true

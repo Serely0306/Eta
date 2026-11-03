@@ -39,6 +39,20 @@ class EtaMcpRedactorTest {
     }
 
     @Test
+    fun smsCodeResultMasksItsCodeFieldWithoutMaskingOrdinaryNumbers() {
+        val raw = """{"ok":true,"items":[{"code":"482913","sender":"106900","timestamp_ms":1760600000000}]}"""
+        assertEquals(raw, redactor.redactText(raw))
+        val result = JSONObject(redactor.redactText(raw, "read_sms_code"))
+        val item = result.getJSONArray("items").getJSONObject(0)
+        assertEquals("[OTP_1]", item.getString("code"))
+        assertEquals("106900", item.getString("sender"))
+        assertEquals(1760600000000L, item.getLong("timestamp_ms"))
+        assertEquals("482913", redactor.restoreArguments(JSONObject().put("text", item.getString("code"))).getString("text"))
+        val failure = """{"ok":false,"code":"ROOT_REQUIRED"}"""
+        assertEquals(failure, redactor.redactText(failure, "read_sms_code"))
+    }
+
+    @Test
     fun leavesTimestampsIdentifiersAndInvalidNumbersAlone() {
         val text = "ts=1760600000000 id=a13812345678 hex=4111111111111111ab card=4111111111111112 id2=110105194912310021x"
         assertEquals(text, redactor.redactText(text))

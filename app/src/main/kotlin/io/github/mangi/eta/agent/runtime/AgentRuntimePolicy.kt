@@ -21,6 +21,7 @@ internal object AgentRuntimePolicy {
         val autoCompaction: Boolean = Prefs.Keys.BOOLEAN_DEFAULTS.getValue(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
         /** 用户单独关闭的工具名，尚未展开依赖。 */
         val disabledTools: Set<String> = emptySet(),
+        val subagentOnRequest: Boolean = false,
     )
 
     fun permissions(preferences: SharedPreferences?): Permissions =
@@ -35,6 +36,7 @@ internal object AgentRuntimePolicy {
             thinking = preferences.allowed(Prefs.Keys.AGENT_THINKING_ENABLED),
             autoCompaction = preferences.allowed(Prefs.Keys.AGENT_AUTO_COMPACTION_ENABLED),
             disabledTools = Prefs.disabledTools(preferences),
+            subagentOnRequest = preferences.allowed(Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST),
         )
 
     fun constrain(
@@ -55,6 +57,7 @@ internal object AgentRuntimePolicy {
             thinkingEnabled = thinkingEnabled,
             reasoningEffort = effectiveEffort,
             autoCompactionEnabled = config.autoCompactionEnabled && permissions.autoCompaction,
+            subagentOnRequest = permissions.subagentOnRequest,
         )
         if (thinkingEnabled) return constrained
         return constrained.copy(

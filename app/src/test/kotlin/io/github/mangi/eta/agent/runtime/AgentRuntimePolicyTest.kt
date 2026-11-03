@@ -16,6 +16,18 @@ import org.junit.Test
 
 class AgentRuntimePolicyTest {
     @Test
+    fun subagentStrategyUsesTheCurrentLocalSettingAfterRequestDecoding() {
+        for (onRequest in listOf(false, true)) {
+            val preferences = booleanPreferences { key, default ->
+                if (key == Prefs.Keys.AGENT_SUBAGENT_ON_REQUEST) onRequest else default
+            }
+            val config = modelConfig(false, false, false).copy(subagentOnRequest = !onRequest)
+            assertEquals(onRequest, AgentRuntimePolicy.constrain(config,
+                AgentRuntimePolicy.permissions(preferences)).subagentOnRequest)
+        }
+    }
+
+    @Test
     fun unavailablePreferencesFailClosed() {
         assertEquals(
             AgentRuntimePolicy.Permissions(

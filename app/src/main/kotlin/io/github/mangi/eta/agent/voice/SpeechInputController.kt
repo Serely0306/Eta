@@ -74,6 +74,8 @@ internal class SpeechInputController(
                 autoSubmit = endpointSilenceMs > 0
                 refineTranscript = config.refineTranscript
                 if (config.asr == AsrProvider.SYSTEM) {
+                    beforeCapture()
+                    capturing = true
                     startSystem(session, endpointSilenceMs)
                     awaitCancellation()
                 } else {
@@ -185,6 +187,7 @@ internal class SpeechInputController(
             onPartial = { text -> update { it.copy(preview = text) } },
             onResult = { text ->
                 if (generation == session) {
+                    releaseCapture()
                     if (autoSubmit || finishRequested) deliver(session, text)
                     else {
                         pendingSystemResult = text
@@ -194,7 +197,10 @@ internal class SpeechInputController(
                 }
             },
             onError = { issue ->
-                if (generation == session) { lease?.close(); lease = null }
+                if (generation == session) {
+                    releaseCapture()
+                    lease?.close(); lease = null
+                }
                 update { SpeechInputState(error = context.getString(speechIssueMessage(issue)), systemIssue = issue,
                     downloadAvailable = issue.kind == EtaSpeechIssueKind.DOWNLOAD_AVAILABLE) }
             },
@@ -230,8 +236,8 @@ internal class SpeechInputController(
         refineTranscript = false
         pendingSystemResult = null
         recorder?.cancel(); recorder = null
-        releaseCapture()
         system?.cancel(); system = null
+        releaseCapture()
         job?.cancel(); job = null
         delivery?.cancel(); delivery = null
         lease?.close(); lease = null

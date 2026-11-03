@@ -267,6 +267,14 @@ internal object AgentConversationStore {
                 modelId = conversation.modelId,
                 messageStartIndex = page.startIndex,
                 hasEarlierMessages = page.hasEarlierMessages,
+                storedToolRows = dao.toolRowRefs(conversationId, TYPE_TOOL).map { row ->
+                    ToolActivityMessageUi(
+                        id = row.id,
+                        toolName = row.toolName.orEmpty(),
+                        status = ToolActivityStatusUi.Unknown,
+                        argumentsSummary = "",
+                    )
+                },
             )
             RoleplayConversationReducer.decorate(state.copy(roleplayOriginalContents =
                 loadRoleplayMessageContents(dao, conversationId, RoleplayConversationReducer.requiredOriginalContentIds(state))))
@@ -366,6 +374,7 @@ internal object AgentConversationStore {
         conversationCharacterName = state.roleplay?.characterName ?: state.conversationCharacterName,
         conversationCharacterAvatarPath = state.roleplay?.avatarPath ?: state.conversationCharacterAvatarPath,
         roleplayOriginalContents = emptyMap(),
+        storedToolRows = emptyList(),
     )
 
     private suspend fun loadCharacterSummary(dao: ConversationDao, conversationId: String): Pair<String?, String?>? {
