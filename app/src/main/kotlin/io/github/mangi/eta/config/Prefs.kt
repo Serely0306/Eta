@@ -54,6 +54,8 @@ internal object Prefs {
         const val AGENT_SUBAGENT_AUTO_WAKE = "agent_subagent_auto_wake"
         /** 模型请求失败后的重试次数（AG-26），全局一个设置，主 Agent、子 Agent、压缩共用。 */
         const val AGENT_MODEL_RETRY_LIMIT = "agent_model_retry_limit"
+        const val AGENT_MODEL_RETRY_INITIAL_SECONDS = "agent_model_retry_initial_seconds"
+        const val AGENT_MODEL_RETRY_MAX_SECONDS = "agent_model_retry_max_seconds"
         const val DEFAULT_MODEL_RETRY_LIMIT = 5
         const val MAX_MODEL_RETRY_LIMIT = 10
         const val AGENT_RUNTIME_CONFIG_JSON = "agent_runtime_config_json"
@@ -190,6 +192,18 @@ internal object Prefs {
 
     fun setModelRetryLimit(limit: Int) {
         localAgent?.edit()?.putInt(Keys.AGENT_MODEL_RETRY_LIMIT, limit.coerceIn(0, Keys.MAX_MODEL_RETRY_LIMIT))?.apply()
+    }
+
+    fun modelRetryInitialSeconds(): Int = localAgent?.getInt(Keys.AGENT_MODEL_RETRY_INITIAL_SECONDS, 1) ?: 1
+
+    fun modelRetryMaxSeconds(): Int = localAgent?.getInt(Keys.AGENT_MODEL_RETRY_MAX_SECONDS, 30) ?: 30
+
+    fun setModelRetryInitialSeconds(seconds: Int) {
+        localAgent?.edit()?.putInt(Keys.AGENT_MODEL_RETRY_INITIAL_SECONDS, seconds)?.apply()
+    }
+
+    fun setModelRetryMaxSeconds(seconds: Int) {
+        localAgent?.edit()?.putInt(Keys.AGENT_MODEL_RETRY_MAX_SECONDS, seconds)?.apply()
     }
 
     /** 同进程的 Runtime 读取内存中的最新值，下一轮模型请求即生效；落盘异步进行。 */

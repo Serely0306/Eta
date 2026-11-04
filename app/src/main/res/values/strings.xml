@@ -1084,6 +1084,9 @@
   <string name="settings_model_retry_limit">Retries on request failure</string>
   <string name="settings_model_retry_limit_summary">Network drops, rate limits and server errors are retried with the reason shown; applies to the main agent, sub-agents and compaction</string>
   <string name="settings_model_retry_off">Off</string>
+  <string name="settings_model_retry_initial_wait">Initial wait</string>
+  <string name="settings_model_retry_max_wait">Maximum wait</string>
+  <string name="settings_model_retry_seconds">%1$d seconds</string>
   <string name="settings_model_retry_times">%1$d times</string>
   <string name="settings_vendor_assistant_model_summary">Model used when XiaoAi or Breeno requests are taken over</string>
   <string name="settings_vendor_assistant_model_follow_default">Follow default model</string>

@@ -412,6 +412,28 @@ private fun SettingsPageContent(
                             EtaPreferenceIcon(icon = Icons.Rounded.Refresh, tint = EtaPreferenceColors.Blue)
                         },
                     )
+                    val delayOptions = listOf(1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120)
+                    val delayItems = delayOptions.map { DropdownItem(text = stringResource(R.string.settings_model_retry_seconds, it)) }
+                    var initialSeconds by remember { mutableIntStateOf(Prefs.modelRetryInitialSeconds()) }
+                    var maximumSeconds by remember { mutableIntStateOf(Prefs.modelRetryMaxSeconds()) }
+                    EtaPreferenceDivider()
+                    EtaDropdownPreference(
+                        title = stringResource(R.string.settings_model_retry_initial_wait),
+                        items = delayItems, selectedIndex = delayOptions.indexOf(initialSeconds),
+                        onSelectedIndexChange = { index ->
+                            initialSeconds = delayOptions[index]
+                            Prefs.setModelRetryInitialSeconds(initialSeconds)
+                        },
+                    )
+                    EtaPreferenceDivider()
+                    EtaDropdownPreference(
+                        title = stringResource(R.string.settings_model_retry_max_wait),
+                        items = delayItems, selectedIndex = delayOptions.indexOf(maximumSeconds),
+                        onSelectedIndexChange = { index ->
+                            maximumSeconds = delayOptions[index]
+                            Prefs.setModelRetryMaxSeconds(maximumSeconds)
+                        },
+                    )
                 }
             }
 

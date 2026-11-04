@@ -1070,6 +1070,9 @@
   <string name="settings_model_retry_limit">请求失败重试次数</string>
   <string name="settings_model_retry_limit_summary">断线、限流、服务端错误时自动重试并显示原因；主 Agent、子 Agent 与上下文压缩共用</string>
   <string name="settings_model_retry_off">不重试</string>
+  <string name="settings_model_retry_initial_wait">首次等待</string>
+  <string name="settings_model_retry_max_wait">最长等待</string>
+  <string name="settings_model_retry_seconds">%1$d 秒</string>
   <string name="settings_model_retry_times">%1$d 次</string>
   <string name="settings_vendor_assistant_model_summary">接管小爱或小布请求时使用的模型</string>
   <string name="settings_vendor_assistant_model_follow_default">跟随默认模型</string>

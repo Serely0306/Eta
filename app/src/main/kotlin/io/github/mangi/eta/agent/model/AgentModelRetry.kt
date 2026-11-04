@@ -51,7 +51,7 @@ internal class AgentModelRetry(
                 val limit = maxRetries()
                 if (retries >= limit) throw exhausted(classified, limit)
                 retries += 1
-                val delayMs = delayMs(retries, classified.retryAfterMs, jitter())
+                val delayMs = delayMs(retries, classified.retryAfterMs, jitter(), Prefs.modelRetryInitialSeconds(), Prefs.modelRetryMaxSeconds())
                 onEvent(
                     AgentEvent.ModelRetryScheduled(
                         round, retries, limit, delayMs.toInt(), classified.code, reasonText(classified),
@@ -87,7 +87,7 @@ internal class AgentModelRetry(
                 val limit = maxRetries()
                 if (retries >= limit) throw exhausted(classified, limit)
                 retries += 1
-                val delayMs = delayMs(retries, classified.retryAfterMs, jitter())
+                val delayMs = delayMs(retries, classified.retryAfterMs, jitter(), Prefs.modelRetryInitialSeconds(), Prefs.modelRetryMaxSeconds())
                 onRetry(retries, limit, delayMs, classified)
                 waitBeforeRetry(controller, delayMs)
             }
@@ -95,17 +95,16 @@ internal class AgentModelRetry(
     }
 
     companion object {
-        private const val BASE_DELAY_MS = 1_000L
-        private const val MAX_DELAY_MS = 30_000L
-        private const val MAX_RETRY_AFTER_MS = 60_000L
         private const val JITTER_RATIO = 0.2
         private const val MAX_REASON_CHARS = 120
 
-        /** 第 [retry] 次重试前的等待：服务商指定的优先（最多 60 秒），否则 1、2、4、8… 秒加抖动，最多 30 秒。 */
-        fun delayMs(retry: Int, retryAfterMs: Long?, jitter: Double): Long {
-            retryAfterMs?.let { return it.coerceIn(0, MAX_RETRY_AFTER_MS) }
-            val base = (BASE_DELAY_MS shl (retry - 1).coerceIn(0, 15)).coerceAtMost(MAX_DELAY_MS)
-            return (base * (1 + jitter)).toLong().coerceIn(0, MAX_DELAY_MS)
+        fun delayMs(retry: Int, retryAfterMs: Long?, jitter: Double, initialSeconds: Int = 1, maxSeconds: Int = 30): Long {
+            val initialMs = initialSeconds * 1_000L
+            val maximumMs = maxOf(initialSeconds, maxSeconds) * 1_000L
+            retryAfterMs?.let { return it.coerceIn(0, maxOf(60_000L, maximumMs)) }
+            if (initialMs == maximumMs) return initialMs
+            val base = (initialMs shl (retry - 1).coerceIn(0, 15)).coerceAtMost(maximumMs)
+            return (base * (1 + jitter)).toLong().coerceIn(0, maximumMs)
         }
 
         /** 显示给用户的原因：分类后的说明压成一行，最多 120 字。 */

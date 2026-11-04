@@ -145,6 +145,12 @@ class AgentModelRetryTest {
 
     @Test
     fun delaysAreCapped() {
+        assertEquals(5_000L, AgentModelRetry.delayMs(1, null, 0.0, 5, 20))
+        assertEquals(10_000L, AgentModelRetry.delayMs(2, null, 0.0, 5, 20))
+        assertEquals(20_000L, AgentModelRetry.delayMs(5, null, 0.2, 5, 20))
+        assertEquals(5_000L, AgentModelRetry.delayMs(10, null, 0.2, 5, 5))
+        assertEquals(10_000L, AgentModelRetry.delayMs(10, null, -0.2, 10, 5))
+        assertEquals(120_000L, AgentModelRetry.delayMs(1, 200_000L, 0.0, 1, 120))
         assertEquals(1_200L, AgentModelRetry.delayMs(1, null, 0.2))
         assertEquals(30_000L, AgentModelRetry.delayMs(10, null, 0.0))
         assertEquals(60_000L, AgentModelRetry.delayMs(1, 90_000L, 0.0))
