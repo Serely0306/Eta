@@ -251,7 +251,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | E8 `M` | 主 Agent `terminal_job` start 一个约 5 秒、输出几行的命令后直接结束回答 | 命令结束后会话自动开始新一轮（工具页“自动继续”为开时）：对话里出现“后台命令 <说明>（job_…） 完成（退出码 0）”的通知卡片，模型收到 `<background_command_notification>`，带状态、退出码与日志末尾；通知栏不再弹“后台命令已完成”（子 Agent 或电脑端直调启动的命令仍弹） |
 | E9 `M` | 主 run 运行中后台命令完成；另测命令被 `stop`、命令超时、退出码非 0；再让子 Agent 启动一个后台命令 | 运行中完成的在下一次模型请求前插入；被停止的显示“已停止”，不唤醒，下一次 run 再交；超时与非 0 退出码显示“超时”“失败（退出码 N）”并会唤醒；子 Agent 启动的命令只发系统通知，不交给主 Agent |
 | E7 `R` | 终端页打开控制台，运行 vim 与 htop，切横屏、弹出软键盘 | 全屏界面正常绘制，网格随尺寸变化；键条的 Ctrl、方向键可用 |
-| E10 `R` | 前台终端 stdout、stderr 合计输出超过 8000 字符，分别测试一次性命令和持久会话 | 一次性命令返回首尾预览、`[stderr]` 分隔、`output_file` 与 `total_chars`，输出文件保留两路全文且不超过 32 MiB；过期文件删除失败时结果仍返回并带 warning；全文写入失败时工具错误包含 `exit_code` 和已有预览 |
+| E10 `R` | 前台终端 stdout、stderr 合计输出超过 8000 字符，分别测试一次性命令和持久会话；一次性命令另测输出超过 32 MiB | 一次性命令返回首尾预览、`[stderr]` 分隔、`output_file` 与 `total_chars`，输出文件保留两路全文且不超过 32 MiB；超限时 `output_truncated` 为 true；过期文件删除失败时结果仍返回并带 warning；全文写入失败时工具错误包含 `exit_code` 和已有预览 |
 | E11 `R` | 点主对话后台命令通知，查看已完成和仍在运行的命令；展开日志并停止运行中的命令；点 `terminal_job` 的 start/list/read/stop 工具卡 | 仅 start 打开实时弹窗；list/read/stop 保留普通参数与结果详情。通知弹窗状态已本地化，显示退出码、用时和最多 64 KiB 日志；原始参数与结果可展开，任务记录已清理时直接显示原始结果；list 不重复携带 command，read 保留 command；停止复用现有路径，失败原因可见；工具说明写明自动回报和自动记录，无需 wait 或自行重定向 |
 | E12 `R` | 在持续写入的目录列第一页和续页，再用 grep_files/glob_files 续查；搜索期间向正在读取的文件追加匹配行 | 列表最多额外重试两次，持续变化返回 `complete=false` 和 `stop_reason`；`complete` 唯一表示完整性，`truncated`/`next_cursor` 表示后续页，计数标明变化或跳过项；跨块追加的匹配仍找到且同一文件只计一次变化；读写身份等真正错误仍上报 |
 

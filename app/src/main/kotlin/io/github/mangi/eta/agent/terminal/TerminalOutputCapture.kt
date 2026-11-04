@@ -262,7 +262,7 @@ internal class TerminalOutputCapture(
         fun tailText(maxChars: Int, metadataBytes: Int = 0): String {
             val bytes = tail.toByteArray()
             val prefix = if (totalBytes <= bytes.size) metadataBytes.coerceAtMost(bytes.size) else 0
-            return decodeWindow(bytes.drop(prefix).toByteArray(), totalBytes > bytes.size(), false).takeLast(maxChars)
+            return decodeWindow(bytes.drop(prefix).toByteArray(), totalBytes > bytes.size, false).takeLast(maxChars)
         }
 
         fun stopInitial() {
