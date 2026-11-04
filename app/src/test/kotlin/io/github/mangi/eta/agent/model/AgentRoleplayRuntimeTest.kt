@@ -52,7 +52,9 @@ class AgentRoleplayRuntimeTest {
         }
         val response = AgentModelClient.complete(
             config = config(), prompt = "同行", roleplayContext = context,
-            memoryContext = AgentMemoryContextBuilder.empty(null),
+            memoryContext = AgentMemoryContextBuilder.empty(
+                AgentMemoryContextBuilder.roleplayCoreBudgetChars(null),
+            ),
             additionalTools = JSONArray().also(CharacterMemoryTools::appendSchemas),
             provider = provider, toolExecutor = { error("本次不应执行工具") },
             sessionId = "conversation", operationId = "run-one",

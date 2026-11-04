@@ -48,6 +48,20 @@ class CharacterMemoryRepositoryTest {
     }
 
     @Test
+    fun storyMemoryCanGrowPastTheRealMemorySoftLimit() {
+        val context = context()
+        val full = CharacterMemoryRepository.replaceAll(context, "character-a", "a".repeat(20_000))
+
+        val appended = CharacterMemoryRepository.mutate(
+            context,
+            "character-a",
+            AgentMemoryMutation.Append(full.revision, "b"),
+        ) as AgentMemoryWriteResult.Success
+
+        assertEquals(20_001, appended.snapshot.content.length)
+    }
+
+    @Test
     fun disabledMemoryRejectsCharacterWritesBeforeOpeningTheStore() {
         val context = context()
         var enabled = true

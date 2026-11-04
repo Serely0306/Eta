@@ -59,6 +59,7 @@ internal class AgentMemoryException(
 /** 单一 MEMORY.md 的有界、原子文件存储。 */
 internal class AgentMemoryStore(
     rootDir: File,
+    private val softLimitChars: Int? = null,
 ) {
     private val memoryDir = File(rootDir, DIRECTORY_NAME)
     private val atomicFile = AtomicFile(File(memoryDir, FILE_NAME))
@@ -92,11 +93,11 @@ internal class AgentMemoryStore(
             is AgentMemoryMutation.Append -> append(current, mutation.content)
             is AgentMemoryMutation.Clear -> ""
         }
-        if (updated.length > 20_000 &&
+        if (softLimitChars != null && updated.length > softLimitChars &&
             (mutation is AgentMemoryMutation.Append || updated.length > current.content.length)) {
             throw AgentMemoryException(
                 code = "MEMORY_FULL",
-                message = "记忆超过 20000 字符；请先用 replace_range 合并或删除旧内容",
+                message = "记忆超过 $softLimitChars 字符；请先用 replace_range 合并或删除旧内容",
             )
         }
         writeLocked(updated)
@@ -299,6 +300,7 @@ internal class AgentMemoryStore(
 
     companion object {
         const val MAX_FILE_BYTES = 1024 * 1024
+        const val REAL_MEMORY_SOFT_LIMIT_CHARS = 20_000
         const val DEFAULT_READ_CHARS = 4_000
         const val MAX_READ_CHARS = 32_000
         const val MIN_READ_CHARS = 1
@@ -321,7 +323,10 @@ internal object AgentMemoryRepository {
 
     fun init(context: Context) {
         if (!::store.isInitialized) {
-            store = AgentMemoryStore(context.applicationContext.filesDir)
+            store = AgentMemoryStore(
+                context.applicationContext.filesDir,
+                AgentMemoryStore.REAL_MEMORY_SOFT_LIMIT_CHARS,
+            )
         }
     }
 

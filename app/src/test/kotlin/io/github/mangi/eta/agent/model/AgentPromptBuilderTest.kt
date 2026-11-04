@@ -225,7 +225,7 @@ class AgentPromptBuilderTest {
                 coreContent = "# 核心记忆\n用户以前偏好中文",
                 coreTruncated = false,
                 headingIndex = "# 核心记忆\n# 项目",
-                coreBudgetChars = 8_000,
+                coreBudgetChars = 4_000,
             ),
         )
 

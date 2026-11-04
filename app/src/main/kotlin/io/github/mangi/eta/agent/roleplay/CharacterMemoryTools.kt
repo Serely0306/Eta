@@ -87,8 +87,14 @@ internal class CharacterMemoryTools(
                 } else {
                     "Atomically update this character's persistent story memory with fictional events, relationships, and scene continuity. Keep '# 核心记忆' concise and update stale facts instead of duplicating them. Never put story facts in real-world MEMORY.md or treat fictional actions as completed device operations. Use the revision from character_memory_get or the run-start character memory."
                 })
-                if (!read) function.getJSONObject("parameters").getJSONObject("properties")
-                    .getJSONObject("revision").put("description", "Exact SHA-256 revision from character_memory_get or the run-start character memory.")
+                val properties = function.getJSONObject("parameters").getJSONObject("properties")
+                if (read) {
+                    properties.getJSONObject("max_chars")
+                        .put("description", "Maximum returned characters; default 12000, maximum 32000.")
+                } else {
+                    properties.getJSONObject("revision")
+                        .put("description", "Exact SHA-256 revision from character_memory_get or the run-start character memory.")
+                }
                 tools.put(schema)
             }
         }

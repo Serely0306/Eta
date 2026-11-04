@@ -9,7 +9,6 @@ import io.github.mangi.eta.agent.memory.AgentMemoryContextBuilder
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.core.safeLogType
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
-import io.github.mangi.eta.data.repository.RuntimeConfigRepository
 import io.github.mangi.eta.ui.model.AgentMemoryUiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,8 +31,7 @@ internal class AgentMemoryStore(
             runCatching {
                 val snapshot = AgentMemoryRepository.snapshot()
                 val enabled = AgentMemoryRepository.isEnabled()
-                val contextWindow = RuntimeConfigRepository.currentRuntimeConfig()?.contextWindow
-                Triple(snapshot, enabled, AgentMemoryContextBuilder.coreBudgetChars(contextWindow))
+                Triple(snapshot, enabled, AgentMemoryContextBuilder.REAL_MEMORY_CORE_BUDGET_CHARS)
             }.fold(
                 onSuccess = { (snapshot, enabled, coreBudget) ->
                     withContext(Dispatchers.Main) {

@@ -26,21 +26,23 @@ internal data class AgentMemoryContext(
 }
 
 internal object AgentMemoryContextBuilder {
-    fun empty(contextWindow: Int?): AgentMemoryContext = build(
+    fun empty(injectedCoreBudgetChars: Int): AgentMemoryContext = build(
         snapshot = AgentMemorySnapshot(
             content = "",
             revision = EMPTY_SHA256,
             byteSize = 0,
             lineCount = 0,
         ),
-        contextWindow = contextWindow,
+        contextWindow = null,
+        injectedCoreBudgetChars = injectedCoreBudgetChars,
     )
 
     fun build(
         snapshot: AgentMemorySnapshot,
         contextWindow: Int?,
+        injectedCoreBudgetChars: Int = roleplayCoreBudgetChars(contextWindow),
     ): AgentMemoryContext {
-        val coreBudget = coreBudgetChars(contextWindow)
+        val coreBudget = injectedCoreBudgetChars
         val core = extractCore(snapshot.content)
         val headings = snapshot.content.lineSequence()
             .filter { line -> HEADING.matches(line.trimEnd()) }
@@ -57,7 +59,9 @@ internal object AgentMemoryContextBuilder {
         )
     }
 
-    fun coreBudgetChars(contextWindow: Int?): Int = 4_000
+    fun roleplayCoreBudgetChars(contextWindow: Int?): Int =
+        ((contextWindow ?: DEFAULT_CONTEXT_WINDOW) / TOKENS_PER_CONTEXT_CHAR)
+            .coerceIn(MIN_ROLEPLAY_CORE_BUDGET_CHARS, MAX_ROLEPLAY_CORE_BUDGET_CHARS)
 
     private fun extractCore(content: String): String {
         if (content.isEmpty()) return ""
@@ -74,6 +78,10 @@ internal object AgentMemoryContextBuilder {
     private const val CORE_HEADING = "# 核心记忆"
     /** 窗口未知时用于按比例分配记忆、世界书等注入预算的保守基准，不参与压缩判定。 */
     const val DEFAULT_CONTEXT_WINDOW = 128_000
+    const val REAL_MEMORY_CORE_BUDGET_CHARS = 4_000
+    private const val TOKENS_PER_CONTEXT_CHAR = 16
+    private const val MIN_ROLEPLAY_CORE_BUDGET_CHARS = 4_000
+    private const val MAX_ROLEPLAY_CORE_BUDGET_CHARS = 32_000
     private const val MAX_HEADING_INDEX_CHARS = 4_000
     private const val EMPTY_SHA256 =
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

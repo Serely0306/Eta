@@ -118,5 +118,8 @@ class AgentMemoryStoreTest {
         assertEquals(0, cleared.snapshot.lineCount)
     }
 
-    private fun store(): AgentMemoryStore = AgentMemoryStore(temporaryFolder.newFolder())
+    private fun store(): AgentMemoryStore = AgentMemoryStore(
+        temporaryFolder.newFolder(),
+        AgentMemoryStore.REAL_MEMORY_SOFT_LIMIT_CHARS,
+    )
 }

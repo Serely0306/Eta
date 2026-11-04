@@ -127,7 +127,9 @@ internal data class RoleplayRunContext(
                 userDescription = binding.userDescription,
                 contextWindow = contextWindow,
                 memory = if (memoryEnabled) AgentMemoryContextBuilder.build(
-                    CharacterMemoryRepository.snapshot(context, binding.characterId), contextWindow,
+                    snapshot = CharacterMemoryRepository.snapshot(context, binding.characterId),
+                    contextWindow = contextWindow,
+                    injectedCoreBudgetChars = AgentMemoryContextBuilder.roleplayCoreBudgetChars(contextWindow),
                 ) else AgentMemoryContext.DISABLED,
             )
         }

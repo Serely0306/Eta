@@ -152,13 +152,14 @@ internal class AgentRuntimeRunExecutor(
                         AgentMemoryContextBuilder.build(
                             snapshot = snapshot,
                             contextWindow = request.config.contextWindow,
+                            injectedCoreBudgetChars = AgentMemoryContextBuilder.REAL_MEMORY_CORE_BUDGET_CHARS,
                         )
                     }
                 }.getOrElse { throwable ->
                     AndroidAgentLogger.warnThrottled("agent_memory_context_failed") {
                         "Agent memory context unavailable: type=${throwable.safeLogType()}"
                     }
-                    AgentMemoryContextBuilder.empty(request.config.contextWindow)
+                    AgentMemoryContextBuilder.empty(AgentMemoryContextBuilder.REAL_MEMORY_CORE_BUDGET_CHARS)
                 }
             } else {
                 AgentMemoryContext.DISABLED

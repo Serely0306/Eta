@@ -53,6 +53,7 @@ import io.github.mangi.eta.core.AgentLogger
 import io.github.mangi.eta.core.HookSupport
 import io.github.mangi.eta.data.repository.AgentMemoryException
 import io.github.mangi.eta.data.repository.AgentMemoryMutation
+import io.github.mangi.eta.data.repository.AgentMemoryStore
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.repository.AgentMemoryWriteResult
 import io.github.mangi.eta.data.repository.LinuxEnvironmentSettingsRepository
@@ -383,7 +384,7 @@ internal class AgentLocalTools(
         val result = AgentMemoryRepository.read(
             query = args.optString("query").takeIf(String::isNotBlank),
             startLine = args.optInt("start_line", 1),
-            maxChars = args.optInt("max_chars", 4_000),
+            maxChars = args.optInt("max_chars", AgentMemoryStore.DEFAULT_READ_CHARS),
         )
         JSONObject()
             .put("ok", true)

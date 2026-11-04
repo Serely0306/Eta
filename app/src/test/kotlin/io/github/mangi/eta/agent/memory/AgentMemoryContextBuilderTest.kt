@@ -60,12 +60,12 @@ class AgentMemoryContextBuilderTest {
     }
 
     @Test
-    fun coreBudgetIsFixedRegardlessOfContextWindow() {
-        assertEquals(4_000, AgentMemoryContextBuilder.coreBudgetChars(null))
-        assertEquals(4_000, AgentMemoryContextBuilder.coreBudgetChars(128_000))
-        assertEquals(4_000, AgentMemoryContextBuilder.coreBudgetChars(256_000))
-        assertEquals(4_000, AgentMemoryContextBuilder.coreBudgetChars(1_000_000))
-        assertEquals(4_000, AgentMemoryContextBuilder.coreBudgetChars(16_000))
+    fun roleplayBudgetUsesContextWindowWithBounds() {
+        assertEquals(8_000, AgentMemoryContextBuilder.roleplayCoreBudgetChars(null))
+        assertEquals(8_000, AgentMemoryContextBuilder.roleplayCoreBudgetChars(128_000))
+        assertEquals(16_000, AgentMemoryContextBuilder.roleplayCoreBudgetChars(256_000))
+        assertEquals(32_000, AgentMemoryContextBuilder.roleplayCoreBudgetChars(1_000_000))
+        assertEquals(4_000, AgentMemoryContextBuilder.roleplayCoreBudgetChars(16_000))
     }
 
     @Test
@@ -83,11 +83,26 @@ class AgentMemoryContextBuilderTest {
     fun oversizedCoreIsTruncatedWithoutDroppingRevision() {
         val content = "# 核心记忆\n" + "a".repeat(10_000)
         val snapshot = snapshot(content)
-        val context = AgentMemoryContextBuilder.build(snapshot, null)
+        val context = AgentMemoryContextBuilder.build(
+            snapshot = snapshot,
+            contextWindow = null,
+            injectedCoreBudgetChars = AgentMemoryContextBuilder.REAL_MEMORY_CORE_BUDGET_CHARS,
+        )
 
         assertEquals(4_000, context.coreContent.length)
         assertTrue(context.coreTruncated)
         assertEquals(snapshot.revision, context.revision)
+    }
+
+    @Test
+    fun roleplayCoreInjectionKeepsTheWindowDerivedBudget() {
+        val context = AgentMemoryContextBuilder.build(
+            snapshot("# 核心记忆\n" + "a".repeat(20_000)),
+            256_000,
+        )
+
+        assertEquals(16_000, context.coreContent.length)
+        assertTrue(context.coreTruncated)
     }
 
     @Test
