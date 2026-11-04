@@ -84,7 +84,9 @@ class AgentFileOperationsTest {
         assertEquals(241, names.size)
         val oldTime = temporary.root.lastModified()
         Files.setLastModifiedTime(temporary.root.toPath(), FileTime.fromMillis(oldTime + 10_000))
-        assertEquals("STALE_CURSOR", JSONObject(operations.listDirectory("", offset = offset, expectedRevision = revision)).getString("code"))
+        val changed = JSONObject(operations.listDirectory("", offset = offset, expectedRevision = revision))
+        assertTrue(changed.getBoolean("ok"))
+        assertTrue(changed.getBoolean("revision_changed"))
     }
 
     @Test fun deepDirectoryResumesAfterOutputBudgetWithoutLosingOrRepeatingNames() {

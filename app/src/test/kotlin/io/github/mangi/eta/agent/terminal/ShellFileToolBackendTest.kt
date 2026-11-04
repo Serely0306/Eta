@@ -199,11 +199,15 @@ class ShellFileToolBackendTest {
             if ("find " in command) result()
             else result(metadata("directory", version = (++stats).toString()))
         }
-        assertFailure("STALE_CURSOR") { changing.list("/workspace", 0, 2) }
+        assertTrue(changing.list("/workspace", 0, 2).unstable)
+        assertEquals(6, stats)
         var calls = 0
-        val stale = newBackend { _, _, _ -> calls++; result(metadata("directory")) }
-        assertFailure("STALE_CURSOR") { stale.list("/workspace", 0, 2, "old-revision") }
-        assertEquals(1, calls)
+        val stale = newBackend { command, _, _ ->
+            calls++
+            if ("find " in command) result() else result(metadata("directory"))
+        }
+        assertTrue(stale.list("/workspace", 0, 2, "old-revision").revisionChanged)
+        assertEquals(3, calls)
     }
 
     @Test

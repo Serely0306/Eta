@@ -83,11 +83,9 @@ internal class ShellFileToolBackend(
 
     override fun list(path: String, offset: Int, limit: Int, expectedRevision: String?): FileToolDirectoryPage {
         if (offset < 0 || limit !in 1..200) fail("INVALID_ARGUMENT", "目录分页范围无效")
+        repeat(3) { attempt ->
         val before = stat(path)
         if (before.kind != FileToolKind.DIRECTORY) fail("NOT_DIRECTORY", "目标不是目录")
-        if (expectedRevision != null && expectedRevision != before.revision) {
-            fail("STALE_CURSOR", "目录已变化，请从第一页重新读取")
-        }
         val quoted = shellQuote(path)
         val result = run(
             "[ -r $quoted ] && [ -x $quoted ] || exit 43; " +
@@ -100,10 +98,16 @@ internal class ShellFileToolBackend(
         val names = decode(result.output).split('\u0000').filter(String::isNotEmpty)
         if (names.size > MAX_DIRECTORY_ENTRIES) fail("DIRECTORY_TOO_LARGE", "目录条目过多，请缩小范围")
         val sorted = names.sorted()
-        val selected = statPage(sorted.drop(offset).take(limit))
-        if (stat(path).revision != before.revision) fail("STALE_CURSOR", "目录读取期间已变化，请重新读取")
-        val next = (offset.toLong() + selected.size).coerceAtMost(sorted.size.toLong()).toInt()
-        return FileToolDirectoryPage(selected, next, next < sorted.size, before.revision)
+        val selectedPaths = sorted.drop(offset).take(limit)
+        val selected = statPage(selectedPaths)
+        val after = stat(path)
+        val unstable = after.revision != before.revision
+        if (unstable && attempt < 2) return@repeat
+        val next = (offset.toLong() + selectedPaths.size).coerceAtMost(sorted.size.toLong()).toInt()
+        return FileToolDirectoryPage(selected, next, next < sorted.size, after.revision, unstable,
+            expectedRevision != null && expectedRevision != after.revision)
+        }
+        error("Directory retry exhausted")
     }
 
     /** 一页条目的元数据共用一次命名空间；路径经 stdin 传入，避免撑满 exec 参数。 */
@@ -114,7 +118,8 @@ internal class ShellFileToolBackend(
             append(statScript("\"${'$'}1\""))
             append("\n}\n")
             paths.forEach { path ->
-                append("eta_file_stat ").append(shellQuote(path)).append(" || exit ${'$'}?\n")
+                append("if [ ! -e ").append(shellQuote(path)).append(" ] && [ ! -L ").append(shellQuote(path))
+                    .append(" ]; then printf 'missing\\n'; else eta_file_stat ").append(shellQuote(path)).append(" || exit ${'$'}?; fi\n")
                 append("printf '\\000'\n")
             }
         }
@@ -127,7 +132,9 @@ internal class ShellFileToolBackend(
         if (records.size != paths.size + 1 || records.last().isNotEmpty()) {
             fail("FILE_METADATA_INVALID", "目录条目元数据不完整，请重新读取")
         }
-        return paths.mapIndexed { index, path -> parseStat(path, records[index]) }
+        return paths.mapIndexedNotNull { index, path ->
+            if (records[index] == "missing\n") null else parseStat(path, records[index])
+        }
     }
 
     override fun write(

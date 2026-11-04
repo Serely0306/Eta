@@ -135,6 +135,7 @@ internal object AgentPromptBuilder {
         if (config.terminalTools) {
             messages.put(systemMessage(
                 "Eta 内置文件与终端工具。文件和命令共用本次运行的默认身份与工作区；已知路径可直接读取或写入，不必先查目录。" +
+                    "日志、缓存、/proc、dropbox 等易变目录直接用终端的 ls、find 浏览。" +
                     rootInstructions(rootAvailable) +
                     "普通命令调用 terminal，只需 command；持续 Shell 工作可 action=open 后用 session_id 复用，目录变化用会话内的 cd。" +
                     "先用 grep、head、tail 过滤，不要一次输出整份日志或 dumpsys；输出合计超过 8000 字符会保存全文文件，只返回首尾预览，需要细节时用 read_file 分页或 grep_files 搜索。" +

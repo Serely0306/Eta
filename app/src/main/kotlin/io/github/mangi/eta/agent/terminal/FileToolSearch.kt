@@ -40,9 +40,12 @@ internal class FileToolSearch(
             .put("include_hidden", includeHidden).put("case_sensitive", caseSensitive)
             .put("environment", backend.environment).put("identity", backend.identity).toString())
         val state = if (cursor.isNullOrBlank()) State(mutableListOf(Frame("", 0, rootStat.revision))) else decodeCursor(cursor, signature)
+        var revisionChanged = false
         state.frames.forEach { frame ->
-            if (backend.stat(join(root, frame.relative)).revision != frame.revision) {
-                throw FileToolException("STALE_CURSOR", "搜索目录已变化，请重新开始搜索")
+            val revision = backend.stat(join(root, frame.relative)).revision
+            if (revision != frame.revision) {
+                revisionChanged = true
+                frame.revision = revision
             }
         }
         val startedAt = nanoTime()
@@ -85,7 +88,12 @@ internal class FileToolSearch(
             val filePath = join(root, pending.relative)
             try {
                 val stat = backend.stat(filePath)
-                if (stat.revision != pending.revision) throw FileToolException("STALE_CURSOR", "搜索中的文件已变化，请重新开始搜索")
+                if (stat.revision != pending.revision) {
+                    state.changedFiles++
+                    pending.revision = stat.revision
+                    pending.tail = ""
+                    pending.lineMatched = false
+                }
                 val chunk = reader.read(stat, pending.offset, minOf(16_000, byteBudget))
                 if (chunk.text.isEmpty()) { state.pending = null; continue }
                 var position = 0
@@ -129,7 +137,10 @@ internal class FileToolSearch(
                     }
                     if (matches.length() >= maxResults) { stopReason = "result_limit"; paused = true; break }
                 }
-                if (backend.stat(filePath).revision != stat.revision) throw FileToolException("STALE_CURSOR", "搜索期间文件已变化，请重新开始搜索")
+                if (backend.stat(filePath).revision != stat.revision) {
+                    state.changedFiles++
+                    state.pending = null
+                }
                 if (pending.offset >= stat.sizeBytes) state.pending = null
                 if (paused) break
             } catch (error: FileToolException) {
@@ -152,8 +163,14 @@ internal class FileToolSearch(
         JSONObject().put("ok", true).put("tool", if (query == null) "glob_files" else "grep_files")
             .put("environment", backend.environment).put("identity", backend.identity).put("path", root)
             .put("matches", matches).put("count", matches.length()).put("truncated", hasMore)
-            .put("partial", hasMore || state.skipped > 0)
-            .put("complete", !hasMore && state.skipped == 0).put("stop_reason", stopReason)
+            .put("revision_changed", revisionChanged || state.revisionChanged).put("unstable", state.unstable)
+            .put("changed_files", state.changedFiles)
+            .apply {
+                if (revisionChanged || state.revisionChanged || state.unstable || state.changedFiles > 0)
+                    put("warning", "搜索范围持续变化，结果可能不完整，续查可能重复或遗漏")
+            }
+            .put("partial", hasMore || state.skipped > 0 || revisionChanged || state.revisionChanged || state.unstable || state.changedFiles > 0)
+            .put("complete", !hasMore && state.skipped == 0 && !revisionChanged && !state.revisionChanged && !state.unstable && state.changedFiles == 0).put("stop_reason", stopReason)
             .put("entries_scanned", MAX_ENTRIES - entryBudget).put("bytes_scanned", MAX_BYTES - byteBudget)
             .put("skipped_files", state.skipped - skippedBefore).put("total_skipped", state.skipped).put("skipped", skipped)
             .put("next_cursor", if (hasMore) encodeCursor(state, signature) else JSONObject.NULL)
@@ -188,6 +205,9 @@ internal class FileToolSearch(
                 state.frames.removeAt(state.frames.lastIndex)
                 continue
             }
+            state.unstable = state.unstable || page.page.unstable
+            state.revisionChanged = state.revisionChanged || page.page.revisionChanged
+            frame.revision = page.page.revision
             if (page.page.entries.isEmpty()) { state.frames.removeAt(state.frames.lastIndex); continue }
             val entry = page.page.entries[frame.offset - page.offset]
             frame.offset++
@@ -262,14 +282,14 @@ internal class FileToolSearch(
     }
     private fun safeSuffix(text: String, count: Int): String = if (count == 0) "" else safeSubstring(text, (text.length - count).coerceAtLeast(0), text.length)
     private fun FileToolException.isGlobalFailure(): Boolean = code in setOf(
-        "STALE_CURSOR", "FILE_CHANGED", "ROOT_REQUIRED", "CANCELLED", "TERMINAL_CLOSED",
+        "ROOT_REQUIRED", "CANCELLED", "TERMINAL_CLOSED",
         "LINUX_ENVIRONMENT_NOT_READY", "LINUX_ENVIRONMENT_REQUIRES_ROOT", "INVALID_IDENTITY",
         "FILE_TIMEOUT", "FILE_PROCESS_FAILED",
     )
 
-    private data class Frame(val relative: String, var offset: Int, val revision: String)
-    private data class Pending(val relative: String, var offset: Long, var line: Long, val revision: String, var tail: String = "", var lineMatched: Boolean = false)
-    private data class State(val frames: MutableList<Frame>, var pending: Pending? = null, var skipped: Int = 0)
+    private data class Frame(val relative: String, var offset: Int, var revision: String)
+    private data class Pending(val relative: String, var offset: Long, var line: Long, var revision: String, var tail: String = "", var lineMatched: Boolean = false)
+    private data class State(val frames: MutableList<Frame>, var pending: Pending? = null, var skipped: Int = 0, var unstable: Boolean = false, var revisionChanged: Boolean = false, var changedFiles: Int = 0)
     private data class NextFile(val file: Pending?, val visited: Int, val timeLimited: Boolean = false)
     private data class CachedPage(val offset: Int, val page: FileToolDirectoryPage)
 

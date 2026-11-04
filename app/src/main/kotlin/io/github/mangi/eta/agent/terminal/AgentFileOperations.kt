@@ -86,6 +86,11 @@ internal class AgentFileOperations(private val backend: FileToolBackend) {
         val page = backend.list(resolved, offset, limit.coerceAtMost(200), expectedRevision)
         val entries = JSONArray()
         val result = base("list_directory").put("path", resolved).put("revision", page.revision)
+            .put("unstable", page.unstable).put("revision_changed", page.revisionChanged)
+            .apply {
+                if (page.unstable) put("warning", "目录持续变化，结果可能不完整")
+                if (page.revisionChanged) put("revision_warning", "目录版本已变化，续页可能重复或遗漏")
+            }
             .put("entries", entries).put("offset", offset).put("next_offset", page.nextOffset)
             .put("truncated", false).put("has_more", false).put("stop_reason", "output_limit")
         // 先保留最长状态字段的空间，分页必须停在尚未发布的条目前，不能截断完整 JSON。

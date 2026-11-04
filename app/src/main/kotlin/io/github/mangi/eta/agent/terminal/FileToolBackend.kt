@@ -18,6 +18,8 @@ internal data class FileToolDirectoryPage(
     val nextOffset: Int,
     val hasMore: Boolean,
     val revision: String,
+    val unstable: Boolean = false,
+    val revisionChanged: Boolean = false,
 )
 
 internal data class FileToolWriteResult(

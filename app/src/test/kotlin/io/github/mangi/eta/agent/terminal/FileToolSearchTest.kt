@@ -88,14 +88,16 @@ class FileToolSearchTest {
         assertTrue(result.isNull("next_cursor"))
     }
 
-    @Test fun cursorRejectsChangedDirectoryAndDifferentQuery() {
+    @Test fun cursorContinuesChangedDirectoryButRejectsDifferentQuery() {
         temporary.newFile("a.txt").writeText("hit")
         temporary.newFile("b.txt").writeText("hit")
         val first = JSONObject(operations().grepFiles("", "hit", limit = 1))
         val cursor = first.getString("next_cursor")
         assertEquals("INVALID_CURSOR", JSONObject(operations().grepFiles("", "other", cursor = cursor)).getString("code"))
         Files.setLastModifiedTime(temporary.root.toPath(), FileTime.fromMillis(temporary.root.lastModified() + 10_000))
-        assertEquals("STALE_CURSOR", JSONObject(operations().grepFiles("", "hit", cursor = cursor)).getString("code"))
+        val changed = JSONObject(operations().grepFiles("", "hit", cursor = cursor))
+        assertTrue(changed.toString(), changed.getBoolean("ok"))
+        assertTrue(changed.getBoolean("revision_changed"))
     }
 
     @Test fun globalBackendFailureIsNotReportedAsSuccessfulPartialSearch() {
