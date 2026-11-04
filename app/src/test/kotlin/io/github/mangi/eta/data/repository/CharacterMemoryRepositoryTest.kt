@@ -58,7 +58,7 @@ class CharacterMemoryRepositoryTest {
             AgentMemoryMutation.Append(full.revision, "b"),
         ) as AgentMemoryWriteResult.Success
 
-        assertEquals(20_001, appended.snapshot.content.length)
+        assertEquals("a".repeat(20_000) + "\nb", appended.snapshot.content)
     }
 
     @Test
