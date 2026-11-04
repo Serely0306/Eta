@@ -142,6 +142,7 @@ internal class TerminalOutputCapture(
             stdout = if (preview == null) stdoutText else preview,
             stderr = if (preview == null) stderrText else "",
             totalChars = totalChars,
+            stderrChars = stderr.totalChars,
             outputFile = file,
             fileTruncated = fileTruncated,
             stdoutTruncated = stdoutChars > (if (stderr.totalChars == 0L) PREVIEW_CHARS else PREVIEW_HEAD_CHARS + STDOUT_TAIL_WITH_STDERR_CHARS) || fileTruncated,
@@ -307,6 +308,8 @@ internal class TerminalOutputCapture(
         val stdout: String,
         val stderr: String,
         val totalChars: Long,
+        /** 收到的 stderr 字符数；长输出时 stderr 并入 [stdout] 的预览，[stderr] 为空。 */
+        val stderrChars: Long,
         val outputFile: File?,
         val fileTruncated: Boolean,
         val stdoutTruncated: Boolean,

@@ -759,10 +759,12 @@ internal class RootShellTerminalController(
             onStderrChunk = capture::stderr,
         )
         val output = capture.finish(result.output.decodeToString())
+        // 进程没起来、超时等情况的原因由 runOneShotShell 写在 result.stderr，不经过 capture。
+        val stderr = if (result.exitCode < 0 && output.stderrChars == 0L) result.stderr.decodeToString() else output.stderr
         return ShellTextResult(
             exitCode = result.exitCode,
             output = output.stdout,
-            stderr = output.stderr,
+            stderr = stderr,
             totalChars = output.totalChars,
             outputFile = output.outputFile,
             outputTruncated = output.fileTruncated,

@@ -17,21 +17,24 @@ class RootShellTerminalControllerTest {
         val controller = RootShellTerminalController(NoopLogger, executionContext = TerminalExecutionContext(
             TerminalEnvironment.ALPINE, null, workspace.path,
         ))
-        val stdout = "a".repeat(10_000)
-        val stderr = "b".repeat(5_000)
+        // 每行 8 字符：首 2000 字是第 0–249 行，尾 4000 字是最后 500 行，stderr 尾 2000 字是最后 250 行。
+        val stdout = numberedLines('o', 0 until 2_000)
+        val stderr = numberedLines('e', 0 until 1_000)
         val result = JSONObject()
         with(controller) { result.putTerminalOutput(stdout, stderr) }
-        assertEquals(15_000, result.getInt("total_chars"))
-        assertEquals("[stdout]\n$stdout\n[stderr]\n$stderr", File(result.getString("output_file")).readText())
-        assertTrue(result.getString("stdout").startsWith("a".repeat(2_000)))
-        assertTrue(result.getString("stdout").contains("[stderr]"))
-        assertTrue(result.getString("stdout").endsWith("b".repeat(2_000)))
-        assertTrue(result.getString("stdout").contains("省略 7000 字符"))
+        assertEquals(24_000, result.getInt("total_chars"))
+        val file = result.getString("output_file")
+        assertEquals("[stdout]\n$stdout\n[stderr]\n$stderr", File(file).readText())
+        assertEquals(
+            numberedLines('o', 0 until 250) + "\n[省略 16000 字符，全文见 $file]\n" +
+                numberedLines('o', 1_500 until 2_000) + "\n[stderr]\n" + numberedLines('e', 750 until 1_000),
+            result.getString("stdout"),
+        )
         assertFalse(result.getBoolean("output_truncated"))
         assertEquals("", result.getString("stderr"))
         val merged = JSONObject()
         with(controller) { merged.putTerminalOutput(stdout, stderr, mergeStderr = true) }
-        assertEquals(15_000, merged.getInt("total_chars"))
+        assertEquals(24_000, merged.getInt("total_chars"))
         assertEquals("[stdout]\n$stdout\n[stderr]\n$stderr", File(merged.getString("output_file")).readText())
     }
 
@@ -45,23 +48,75 @@ class RootShellTerminalControllerTest {
         )
         try {
             val result = JSONObject(controller.executeTool("terminal", JSONObject()
-                .put("command", "printf '%010000d' 0; printf '%04000d' 0 >&2")
+                .put("command", "${awkLines('o', 2_000)}; ${awkLines('e', 1_000)} >&2")
                 .put("cwd", workspace.path)
                 .put("identity", "user")))
             assertTrue(result.toString(), result.getBoolean("ok"))
-            assertEquals(14_000, result.getInt("total_chars"))
+            assertEquals(24_000, result.getInt("total_chars"))
             assertFalse(result.getBoolean("output_truncated"))
-            assertTrue(result.getString("stdout").startsWith("0".repeat(2_000)))
-            assertTrue(result.getString("stdout").contains("[stderr]"))
-            assertTrue(result.getString("stdout").endsWith("0".repeat(2_000)))
+            val file = result.getString("output_file")
+            // stderr 不为空：stdout 首 2000、尾 4000，stderr 尾 2000，中间有 [stderr] 分隔行。
             assertEquals(
-                "[stdout]\n${"0".repeat(10_000)}\n[stderr]\n${"0".repeat(4_000)}",
-                File(result.getString("output_file")).readText(),
+                numberedLines('o', 0 until 250) + "\n[省略 16000 字符，全文见 $file]\n" +
+                    numberedLines('o', 1_500 until 2_000) + "\n[stderr]\n" + numberedLines('e', 750 until 1_000),
+                result.getString("stdout"),
+            )
+            assertEquals("", result.getString("stderr"))
+            assertEquals(
+                "[stdout]\n${numberedLines('o', 0 until 2_000)}\n[stderr]\n${numberedLines('e', 0 until 1_000)}",
+                File(file).readText(),
             )
         } finally {
             controller.closeAll()
         }
     }
+
+    @Test
+    fun oneShotLongStdoutWithoutStderrKeepsHeadAndTail() {
+        val workspace = temporaryFolder.newFolder()
+        val controller = RootShellTerminalController(
+            NoopLogger,
+            executionContext = TerminalExecutionContext(TerminalEnvironment.ALPINE, null, workspace.path),
+            rootAvailable = { false },
+        )
+        try {
+            val result = JSONObject(controller.executeTool("terminal", JSONObject()
+                .put("command", awkLines('o', 2_000))
+                .put("cwd", workspace.path)
+                .put("identity", "user")))
+            assertTrue(result.toString(), result.getBoolean("ok"))
+            assertEquals(16_000, result.getInt("total_chars"))
+            // stderr 为空：stdout 首 2000、尾 6000，没有 [stderr] 分隔行。
+            assertEquals(
+                numberedLines('o', 0 until 250) + "\n[省略 8000 字符，全文见 ${result.getString("output_file")}]\n" +
+                    numberedLines('o', 1_250 until 2_000),
+                result.getString("stdout"),
+            )
+        } finally {
+            controller.closeAll()
+        }
+    }
+
+    @Test
+    fun oneShotReportsWhyTheProcessDidNotStart() {
+        val controller = RootShellTerminalController(NoopLogger, rootAvailable = { false })
+        controller.closeAll()
+        val result = JSONObject(controller.executeTool("terminal", JSONObject()
+            .put("command", "printf never")
+            .put("cwd", temporaryFolder.root.path)
+            .put("identity", "user")))
+        assertFalse(result.toString(), result.getBoolean("ok"))
+        assertEquals(-3, result.getInt("exit_code"))
+        assertEquals("cancelled", result.getString("status"))
+        assertEquals("操作已取消", result.getString("stderr"))
+        assertEquals("", result.getString("stdout"))
+    }
+
+    private fun numberedLines(prefix: Char, range: IntRange): String =
+        range.joinToString("") { "$prefix${it.toString().padStart(6, '0')}\n" }
+
+    private fun awkLines(prefix: Char, count: Int): String =
+        "awk 'BEGIN { for (i=0;i<$count;i++) printf \"$prefix%06d\\n\", i }'"
 
 
     @get:Rule
