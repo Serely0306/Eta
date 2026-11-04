@@ -27,6 +27,10 @@ class RootShellTerminalControllerTest {
         assertTrue(result.getString("stdout").endsWith("b".repeat(6_000)))
         assertTrue(result.getString("stdout").contains("省略 7000 字符"))
         assertEquals("", result.getString("stderr"))
+        val merged = JSONObject()
+        with(controller) { merged.putTerminalOutput(stdout, stderr, mergeStderr = true) }
+        assertEquals(15_000, merged.getInt("total_chars"))
+        assertEquals("[stdout]\n$stdout\n[stderr]\n$stderr", File(merged.getString("output_file")).readText())
     }
 
 

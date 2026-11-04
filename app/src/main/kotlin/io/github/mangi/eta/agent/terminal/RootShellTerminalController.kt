@@ -394,11 +394,6 @@ internal class RootShellTerminalController(
         if (result.timedOut) {
             closeSession(session.id)
         }
-        val rawStdout = if (mergeStderr && result.stderr.isNotBlank()) {
-            result.stdout + "\n[stderr]\n" + result.stderr
-        } else {
-            result.stdout
-        }
         return JSONObject()
             .put("ok", result.exitCode == 0)
             .put("tool", "terminal")
@@ -411,7 +406,7 @@ internal class RootShellTerminalController(
             .put("status", when { result.timedOut -> "timed_out"; session.closed -> "cancelled"; result.exitCode == 0 -> "exited"; else -> "failed" })
             .put("exit_code", result.exitCode)
             .put("timed_out", result.timedOut)
-            .apply { putTerminalOutput(rawStdout, if (mergeStderr) "" else result.stderr) }
+            .apply { putTerminalOutput(result.stdout, result.stderr, mergeStderr) }
             .put("session_closed", result.timedOut || session.closed)
             .toString()
     }
@@ -472,12 +467,8 @@ internal class RootShellTerminalController(
                 if (status != null) {
                     val exitCode = status.exitCode
                     val cwd = status.cwd ?: session.cwd
-                    val cleanedStdout = stdoutDelta
-                        .lineSequence()
-                        .filterNot { SessionStatusProtocol.isStatusLine(it, marker) }
-                        .joinToString("\n")
-                        .trimEnd()
-                    val stderrDelta = session.stderr.text().drop(stderrStart).trimEnd()
+                    val cleanedStdout = stdoutDelta.substringBefore("\n$marker:")
+                    val stderrDelta = session.stderr.text().drop(stderrStart)
                     session.stdout.clear()
                     session.stderr.clear()
                     return SessionCommandResult(
@@ -541,11 +532,6 @@ internal class RootShellTerminalController(
             logger.warn(logMessage)
         }
         val observation = TerminalExecutionProbe.extract(result.output, probeMarker, normalizedIdentity, environment)
-        val rawStdout = if (mergeStderr && result.stderr.isNotBlank()) {
-            observation.text + "\n[stderr]\n" + result.stderr
-        } else {
-            observation.text
-        }
         return JSONObject()
             .put("ok", result.exitCode == 0)
             .put("tool", "terminal")
@@ -557,7 +543,7 @@ internal class RootShellTerminalController(
             .put("status", when { processSupervisor.isClosing -> "cancelled"; result.exitCode == -2 -> "timed_out"; result.exitCode == 0 -> "exited"; else -> "failed" })
             .put("exit_code", result.exitCode)
             .put("timed_out", result.exitCode == -2)
-            .apply { putTerminalOutput(rawStdout, if (mergeStderr) "" else result.stderr) }
+            .apply { putTerminalOutput(observation.text, result.stderr, mergeStderr) }
             .toString()
     }
 
@@ -726,8 +712,8 @@ internal class RootShellTerminalController(
         )
         return ShellTextResult(
             exitCode = result.exitCode,
-            output = result.output.decodeToString().trimEnd(),
-            stderr = result.stderr.decodeToString().trimEnd(),
+            output = result.output.decodeToString(),
+            stderr = result.stderr.decodeToString(),
             outputTruncated = result.outputTruncated,
             stderrTruncated = result.stderrTruncated,
         )
@@ -754,11 +740,12 @@ internal class RootShellTerminalController(
             maxStderrBytes = maxOutputBytes,
         )
 
-    internal fun JSONObject.putTerminalOutput(stdout: String, stderr: String) {
+    internal fun JSONObject.putTerminalOutput(stdout: String, stderr: String, mergeStderr: Boolean = false) {
         val totalChars = stdout.length + stderr.length
         put("total_chars", totalChars)
         if (totalChars <= 8_000) {
-            put("stdout", stdout).put("stderr", stderr).put("output_truncated", false)
+            val output = if (mergeStderr && stderr.isNotBlank()) stdout.trimEnd() + "\n[stderr]\n" + stderr.trimEnd() else stdout.trimEnd()
+            put("stdout", output).put("stderr", if (mergeStderr) "" else stderr.trimEnd()).put("output_truncated", false)
                 .put("stdout_truncated", false).put("stderr_truncated", false)
             return
         }
@@ -777,6 +764,7 @@ internal class RootShellTerminalController(
         val preview = combined.take(2_000) +
             "\n[省略 ${totalChars - 8_000} 字符，全文见 ${outputFile.path}]\n" + combined.takeLast(6_000)
         put("stdout", preview).put("stderr", "").put("output_file", outputFile.path)
+            .put("output_environment", "android")
             .put("output_truncated", true).put("stdout_truncated", true).put("stderr_truncated", stderr.isNotEmpty())
     }
 

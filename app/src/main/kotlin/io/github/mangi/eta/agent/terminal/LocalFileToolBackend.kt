@@ -63,39 +63,39 @@ internal class LocalFileToolBackend(
         if (offset > MAX_DIRECTORY_POSITION) throw FileToolException("DIRECTORY_LIMIT", "目录枚举位置超过当前限制")
         val directory = File(resolve(path)).toPath()
         repeat(3) { attempt ->
-        val before = metadata(directory)
-        if (before.kind != FileToolKind.DIRECTORY) throw FileToolException("NOT_DIRECTORY", "目标不是目录")
-        val entries = ArrayList<FileToolStat>(limit)
-        var position = 0
-        var hasMore = false
-        Files.newDirectoryStream(directory).use { stream ->
-            val iterator = stream.iterator()
-            while (iterator.hasNext()) {
-                checkInterrupted()
-                val entry = iterator.next()
-                if (position < offset) {
+            val before = metadata(directory)
+            if (before.kind != FileToolKind.DIRECTORY) throw FileToolException("NOT_DIRECTORY", "目标不是目录")
+            val entries = ArrayList<FileToolStat>(limit)
+            var position = 0
+            var hasMore = false
+            var missingEntry = false
+            Files.newDirectoryStream(directory).use { stream ->
+                val iterator = stream.iterator()
+                while (iterator.hasNext()) {
+                    checkInterrupted()
+                    val entry = iterator.next()
+                    if (position < offset) {
+                        position++
+                        continue
+                    }
+                    if (entries.size == limit) {
+                        hasMore = true
+                        break
+                    }
+                    try {
+                        entries += metadata(entry)
+                    } catch (_: NoSuchFileException) {
+                        missingEntry = true
+                    }
                     position++
-                    continue
                 }
-                if (entries.size == limit) {
-                    hasMore = true
-                    break
-                }
-                try {
-                    entries += metadata(entry)
-                } catch (_: NoSuchFileException) {
-                    position++
-                    continue
-                }
-                position++
             }
-        }
-        val after = metadata(directory)
-        val unstable = after.revision != before.revision
-        if (!unstable || attempt == 2) return FileToolDirectoryPage(
-            entries, position, hasMore, after.revision, unstable,
-            expectedRevision != null && expectedRevision != after.revision,
-        )
+            val after = metadata(directory)
+            val unstable = missingEntry || after.revision != before.revision
+            if (!unstable || attempt == 2) return FileToolDirectoryPage(
+                entries, position, hasMore, after.revision, unstable,
+                expectedRevision != null && expectedRevision != after.revision,
+            )
         }
         error("Directory retry exhausted")
     }

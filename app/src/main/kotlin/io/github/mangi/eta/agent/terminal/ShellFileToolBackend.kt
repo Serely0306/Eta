@@ -84,28 +84,28 @@ internal class ShellFileToolBackend(
     override fun list(path: String, offset: Int, limit: Int, expectedRevision: String?): FileToolDirectoryPage {
         if (offset < 0 || limit !in 1..200) fail("INVALID_ARGUMENT", "目录分页范围无效")
         repeat(3) { attempt ->
-        val before = stat(path)
-        if (before.kind != FileToolKind.DIRECTORY) fail("NOT_DIRECTORY", "目标不是目录")
-        val quoted = shellQuote(path)
-        val result = run(
-            "[ -r $quoted ] && [ -x $quoted ] || exit 43; " +
-                "find $quoted -mindepth 1 -maxdepth 1 -print0",
-            maxOutputBytes = MAX_DIRECTORY_BYTES,
-        )
-        if (result.output.isNotEmpty() && result.output.last() != 0.toByte()) {
-            fail("DIRECTORY_TOO_LARGE", "目录枚举超过预算，请缩小目录范围")
-        }
-        val names = decode(result.output).split('\u0000').filter(String::isNotEmpty)
-        if (names.size > MAX_DIRECTORY_ENTRIES) fail("DIRECTORY_TOO_LARGE", "目录条目过多，请缩小范围")
-        val sorted = names.sorted()
-        val selectedPaths = sorted.drop(offset).take(limit)
-        val selected = statPage(selectedPaths)
-        val after = stat(path)
-        val unstable = after.revision != before.revision
-        if (unstable && attempt < 2) return@repeat
-        val next = (offset.toLong() + selectedPaths.size).coerceAtMost(sorted.size.toLong()).toInt()
-        return FileToolDirectoryPage(selected, next, next < sorted.size, after.revision, unstable,
-            expectedRevision != null && expectedRevision != after.revision)
+            val before = stat(path)
+            if (before.kind != FileToolKind.DIRECTORY) fail("NOT_DIRECTORY", "目标不是目录")
+            val quoted = shellQuote(path)
+            val result = run(
+                "[ -r $quoted ] && [ -x $quoted ] || exit 43; " +
+                    "find $quoted -mindepth 1 -maxdepth 1 -print0",
+                maxOutputBytes = MAX_DIRECTORY_BYTES,
+            )
+            if (result.output.isNotEmpty() && result.output.last() != 0.toByte()) {
+                fail("DIRECTORY_TOO_LARGE", "目录枚举超过预算，请缩小目录范围")
+            }
+            val names = decode(result.output).split('\u0000').filter(String::isNotEmpty)
+            if (names.size > MAX_DIRECTORY_ENTRIES) fail("DIRECTORY_TOO_LARGE", "目录条目过多，请缩小范围")
+            val sorted = names.sorted()
+            val selectedPaths = sorted.drop(offset).take(limit)
+            val selected = statPage(selectedPaths)
+            val after = stat(path)
+            val unstable = selected.size != selectedPaths.size || after.revision != before.revision
+            if (unstable && attempt < 2) return@repeat
+            val next = (offset.toLong() + selectedPaths.size).coerceAtMost(sorted.size.toLong()).toInt()
+            return FileToolDirectoryPage(selected, next, next < sorted.size, after.revision, unstable,
+                expectedRevision != null && expectedRevision != after.revision)
         }
         error("Directory retry exhausted")
     }

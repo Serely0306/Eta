@@ -26,7 +26,7 @@ internal object AgentFileToolCatalog {
             .put("expected_revision", revision()), listOf("path", "old_text", "new_text")))
         tools.put(tool("stat_file", "查询已知文件或目录的规范路径、类型、大小及版本，不读取正文。", properties()
             .put("path", path()), listOf("path")))
-        tools.put(tool("list_directory", "分页列出直接子项，返回结构化条目与 next_offset。下一页使用相同路径、next_offset 和 expected_revision；has_more=false 才表示列举完成。", properties()
+        tools.put(tool("list_directory", "分页列出直接子项，返回结构化条目与 next_offset。下一页使用相同路径、next_offset 和 expected_revision；目录变化时仍尽力返回，并用 unstable 或 revision_changed 标明结果可能不完整、续页可能重复或遗漏。", properties()
             .put("path", path()).put("show_hidden", JSONObject().put("type", "boolean").put("default", false))
             .put("limit", integer("原始目录单页条目数，默认 80，隐藏项过滤后可能不足此数。", 1, 200))
             .put("offset", integer("目录枚举位置，默认 0；续页使用 next_offset。", 0))

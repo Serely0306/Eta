@@ -40,11 +40,10 @@ internal class FileToolSearch(
             .put("include_hidden", includeHidden).put("case_sensitive", caseSensitive)
             .put("environment", backend.environment).put("identity", backend.identity).toString())
         val state = if (cursor.isNullOrBlank()) State(mutableListOf(Frame("", 0, rootStat.revision))) else decodeCursor(cursor, signature)
-        var revisionChanged = false
         state.frames.forEach { frame ->
             val revision = backend.stat(join(root, frame.relative)).revision
             if (revision != frame.revision) {
-                revisionChanged = true
+                state.revisionChanged = true
                 frame.revision = revision
             }
         }
@@ -146,7 +145,8 @@ internal class FileToolSearch(
             } catch (error: FileToolException) {
                 backend.checkActive()
                 if (error.isGlobalFailure()) throw error
-                skip(state, skipped, pending.relative, error.code)
+                if (error.code == "FILE_CHANGED") state.changedFiles++
+                else skip(state, skipped, pending.relative, error.code)
                 state.pending = null
             } catch (_: IOException) {
                 backend.checkActive()
@@ -163,14 +163,14 @@ internal class FileToolSearch(
         JSONObject().put("ok", true).put("tool", if (query == null) "glob_files" else "grep_files")
             .put("environment", backend.environment).put("identity", backend.identity).put("path", root)
             .put("matches", matches).put("count", matches.length()).put("truncated", hasMore)
-            .put("revision_changed", revisionChanged || state.revisionChanged).put("unstable", state.unstable)
+            .put("revision_changed", state.revisionChanged).put("unstable", state.unstable)
             .put("changed_files", state.changedFiles)
             .apply {
-                if (revisionChanged || state.revisionChanged || state.unstable || state.changedFiles > 0)
+                if (state.revisionChanged || state.unstable || state.changedFiles > 0)
                     put("warning", "搜索范围持续变化，结果可能不完整，续查可能重复或遗漏")
             }
-            .put("partial", hasMore || state.skipped > 0 || revisionChanged || state.revisionChanged || state.unstable || state.changedFiles > 0)
-            .put("complete", !hasMore && state.skipped == 0 && !revisionChanged && !state.revisionChanged && !state.unstable && state.changedFiles == 0).put("stop_reason", stopReason)
+            .put("partial", hasMore || state.skipped > 0 || state.revisionChanged || state.unstable || state.changedFiles > 0)
+            .put("complete", !hasMore && state.skipped == 0 && !state.revisionChanged && !state.unstable && state.changedFiles == 0).put("stop_reason", stopReason)
             .put("entries_scanned", MAX_ENTRIES - entryBudget).put("bytes_scanned", MAX_BYTES - byteBudget)
             .put("skipped_files", state.skipped - skippedBefore).put("total_skipped", state.skipped).put("skipped", skipped)
             .put("next_cursor", if (hasMore) encodeCursor(state, signature) else JSONObject.NULL)
@@ -184,9 +184,10 @@ internal class FileToolSearch(
             if (visited > 0 && timeExpired()) return NextFile(null, visited, timeLimited = true)
             val frame = state.frames.last()
             val cached = pages[frame.relative]
-            if (cached != null && frame.offset == cached.offset + cached.page.entries.size && !cached.page.hasMore) {
+            if (cached != null && frame.offset == cached.offset + cached.page.entries.size) {
+                frame.offset = cached.page.nextOffset
                 pages.remove(frame.relative)
-                state.frames.removeAt(state.frames.lastIndex)
+                if (!cached.page.hasMore) state.frames.removeAt(state.frames.lastIndex)
                 continue
             }
             val page = try {
@@ -208,7 +209,11 @@ internal class FileToolSearch(
             state.unstable = state.unstable || page.page.unstable
             state.revisionChanged = state.revisionChanged || page.page.revisionChanged
             frame.revision = page.page.revision
-            if (page.page.entries.isEmpty()) { state.frames.removeAt(state.frames.lastIndex); continue }
+            if (page.page.entries.isEmpty()) {
+                if (!page.page.hasMore) state.frames.removeAt(state.frames.lastIndex)
+                else frame.offset = page.page.nextOffset
+                continue
+            }
             val entry = page.page.entries[frame.offset - page.offset]
             frame.offset++
             visited++
@@ -236,6 +241,7 @@ internal class FileToolSearch(
         val frames = JSONArray()
         state.frames.forEach { frames.put(JSONObject().put("path", it.relative).put("offset", it.offset).put("revision", it.revision)) }
         val json = JSONObject().put("version", 1).put("signature", signature).put("frames", frames).put("skipped", state.skipped)
+            .put("unstable", state.unstable).put("revision_changed", state.revisionChanged).put("changed_files", state.changedFiles)
         state.pending?.let { json.put("pending", JSONObject().put("path", it.relative).put("offset", it.offset).put("line", it.line)
             .put("revision", it.revision).put("tail", it.tail).put("matched", it.lineMatched)) }
         val encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(json.toString().toByteArray(Charsets.UTF_8))
@@ -261,7 +267,14 @@ internal class FileToolSearch(
                 it.getLong("line").also { line -> require(line > 0) }, it.getString("revision"),
                 it.getString("tail").also { tail -> require(tail.length <= 512) }, it.getBoolean("matched"))
         }
-        State(frames, pending, json.getInt("skipped").also { require(it >= 0) })
+        State(
+            frames = frames,
+            pending = pending,
+            skipped = json.getInt("skipped").also { require(it >= 0) },
+            unstable = json.optBoolean("unstable"),
+            revisionChanged = json.optBoolean("revision_changed"),
+            changedFiles = json.optInt("changed_files").also { require(it >= 0) },
+        )
     } catch (_: IllegalArgumentException) {
         throw FileToolException("INVALID_CURSOR", "搜索游标无效或不属于当前搜索条件")
     } catch (_: org.json.JSONException) {

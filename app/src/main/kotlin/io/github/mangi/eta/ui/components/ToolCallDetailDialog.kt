@@ -177,6 +177,15 @@ internal fun ToolCallDetailDialog(
 ) {
     val source = LocalToolCallDetailSource.current
     val detail = rememberToolCallDetail(message)
+    val jobId = remember(detail, message.toolName) {
+        if (message.toolName == "terminal_job") detail?.result?.let {
+            org.json.JSONObject(it).optString("job_id").takeIf(String::isNotBlank)
+        } else null
+    }
+    if (jobId != null) {
+        BackgroundCommandDialog(jobId, show, onDismissRequest, onDismissFinished)
+        return
+    }
     val terminal = remember(detail) {
         detail?.result?.takeIf { message.toolName in TERMINAL_TOOLS }?.let(ToolCallDetails::terminalOutput)
     }

@@ -114,6 +114,23 @@ class FileToolSearchTest {
         }
     }
 
+    @Test fun changingFileKeepsMatchesAndMarksIncompleteCoverage() {
+        val file = temporary.newFile("changing.txt").apply { writeText("needle\n") }
+        val local = LocalFileToolBackend(temporary.root)
+        val backend = object : FileToolBackend by local {
+            override fun readBytes(path: String, offset: Long, limit: Int): ByteArray {
+                val bytes = local.readBytes(path, offset, limit)
+                file.appendText("more\n")
+                return bytes
+            }
+        }
+        val result = JSONObject(AgentFileOperations(backend).grepFiles("", "needle"))
+        assertTrue(result.toString(), result.getBoolean("ok"))
+        assertEquals(1, result.getInt("count"))
+        assertEquals(1, result.getInt("changed_files"))
+        assertFalse(result.getBoolean("complete"))
+    }
+
     @Test fun globCursorCannotBeReusedForLiteralNullGrepQuery() {
         temporary.newFile("a.txt").writeText("null")
         temporary.newFile("b.txt").writeText("null")

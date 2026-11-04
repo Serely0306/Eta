@@ -200,7 +200,7 @@ internal fun BackgroundTaskNotice(message: SystemNoticeMessageUi, modifier: Modi
 }
 
 @Composable
-private fun BackgroundCommandDialog(jobId: String, show: Boolean, onDismiss: () -> Unit, onDismissFinished: () -> Unit) {
+internal fun BackgroundCommandDialog(jobId: String, show: Boolean, onDismiss: () -> Unit, onDismissFinished: () -> Unit) {
     val context = LocalContext.current
     val jobs = remember(context) { TerminalRuntime.backgroundJobs(context) }
     val scope = rememberCoroutineScope()

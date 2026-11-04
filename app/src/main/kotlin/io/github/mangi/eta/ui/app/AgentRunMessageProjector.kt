@@ -394,12 +394,11 @@ internal class AgentRunMessageProjector(
         messages: List<AgentChatMessageUi>,
     ): List<AgentChatMessageUi> {
         val thinkingId = thinkingMessageId(runId, round, index)
-        if (replacementContent == null) return messages
-        val segments = thinkingSegments.getOrPut(thinkingId) { linkedMapOf() }
-        segments[index] = replacementContent
+        replacementContent?.let { thinkingSegments.getOrPut(thinkingId) { linkedMapOf() }[index] = it }
+        val content = thinkingSegments[thinkingId]?.values?.joinToString("\n\n")
         return messages.map { message ->
             if (message is ThinkingMessageUi && message.id == thinkingId) {
-                message.copy(content = segments.values.joinToString("\n\n"))
+                message.finished(content ?: message.content)
             } else {
                 message
             }
