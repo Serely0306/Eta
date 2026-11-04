@@ -256,6 +256,7 @@ internal fun purposeLabel(purpose: String): String = stringResource(
         "compaction" -> R.string.usage_purpose_compaction
         "reply_rewrite" -> R.string.usage_purpose_reply_rewrite
         "transcript_refine" -> R.string.usage_purpose_transcript_refine
+        "web_extract" -> R.string.usage_purpose_web_extract
         UsageReports.PURPOSE_SUBAGENT -> R.string.usage_purpose_subagent
         else -> R.string.usage_purpose_chat
     },
@@ -1284,7 +1285,7 @@ private const val IMPORT_ROWS = 200
 private const val UNPRICED_LOOKBACK_MS = 30L * 24 * 60 * 60 * 1_000
 
 /** 用途筛选的显示顺序。 */
-private val PURPOSE_ORDER = listOf("chat", UsageReports.PURPOSE_SUBAGENT, "compaction", "reply_rewrite", "transcript_refine")
+private val PURPOSE_ORDER = listOf("chat", UsageReports.PURPOSE_SUBAGENT, "compaction", "reply_rewrite", "transcript_refine", "web_extract")
 private const val WARN_PERCENT = 80
 
 internal fun formatUsd(value: Double): String = when {

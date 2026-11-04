@@ -33,6 +33,17 @@ internal data class WebSearchResult(val title: String, val url: String, val snip
 @Immutable
 internal data class WebPageContent(val url: String, val title: String, val text: String, val hasMore: Boolean)
 
+@Immutable
+internal data class WebQuestionExtraction(
+    val url: String,
+    val title: String,
+    val question: String,
+    val answer: String,
+    val documentId: String,
+    val totalChars: Int,
+    val extractionModel: String,
+)
+
 /**
  * 工具详情从会话 journal 中按 tool_call_id 取完整内容，不另存副本。
  * 部分服务商的调用 id 会在不同回合重复，这时按出现顺序把消息列表中的第 n 次调用对应到 journal 中的第 n 次。
@@ -136,6 +147,20 @@ internal object ToolCallDetails {
             title = json.text("title"),
             text = json.text("text"),
             hasMore = json.optBoolean("has_more") || json.optBoolean("truncated"),
+        )
+    }
+
+    fun webQuestionExtraction(result: String?): WebQuestionExtraction? {
+        val json = result?.let(::jsonObject) ?: return null
+        if (!json.has("answer")) return null
+        return WebQuestionExtraction(
+            url = json.text("final_url"),
+            title = json.text("title"),
+            question = json.text("question"),
+            answer = json.text("answer"),
+            documentId = json.text("document_id"),
+            totalChars = json.optInt("total_chars"),
+            extractionModel = json.text("extraction_model"),
         )
     }
 

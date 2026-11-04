@@ -18,6 +18,7 @@ internal object AgentToolCatalog {
         memoryWritable: Boolean = true,
         capabilities: AgentToolCapabilities = AgentToolCapabilities(rootAvailable = true),
         localWebSearch: Boolean = true,
+        questionExtractionEnabled: Boolean = false,
     ): JSONArray =
         capabilities.project(JSONArray().also { tools ->
             AgentContextAppToolCatalog.appendTo(tools)
@@ -30,7 +31,11 @@ internal object AgentToolCatalog {
                 sensitiveActionTools = deviceSensitiveActionTools,
             )
             if (browserTools) {
-                AgentWebToolCatalog.appendTo(tools, includeSearch = localWebSearch)
+                AgentWebToolCatalog.appendTo(
+                    tools,
+                    includeSearch = localWebSearch,
+                    includeQuestion = questionExtractionEnabled,
+                )
                 AgentBrowserToolCatalog.appendTo(tools)
             }
             AgentSkillToolCatalog.appendTo(

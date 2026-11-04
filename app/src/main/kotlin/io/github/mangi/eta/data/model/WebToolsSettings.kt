@@ -67,6 +67,9 @@ internal data class WebToolsSettings(
     val deepSeek: DeepSeekWebConfig = DeepSeekWebConfig(),
     val customSearch: CustomWebSearchConfig = CustomWebSearchConfig(),
     val customFetch: CustomWebFetchConfig = CustomWebFetchConfig(),
+    val questionExtractionProviderId: String? = null,
+    val questionExtractionModelId: String? = null,
+    val questionExtractionEffort: ReasoningEffort? = null,
 )
 
 @Serializable

@@ -287,6 +287,20 @@ class AgentPromptBuilderTest {
         assertFalse(prompt(onRequest = false, disabled = setOf("spawn_agent")).contains("spawn_agent"))
     }
 
+    @Test
+    fun questionGuidanceFollowsTheExtractionModelSetting() {
+        fun browserText(questionExtractionEnabled: Boolean) = AgentPromptBuilder.buildSystemMessages(
+            config = modelConfig("", terminalTools = false, browserTools = true),
+            skillContext = SkillContext.EMPTY,
+            memoryContext = AgentMemoryContext.DISABLED,
+            rootAvailable = false,
+            questionExtractionEnabled = questionExtractionEnabled,
+        ).systemContents().single { it.contains("fetch_url") }
+
+        assertTrue(browserText(true).contains("给 fetch_url 带上 question"))
+        assertFalse(browserText(false).contains("question"))
+    }
+
     private fun modelConfig(
         systemPrompt: String,
         terminalTools: Boolean,

@@ -384,6 +384,11 @@ internal class AgentTraceFormatter {
                 else -> "$count 条结果"
             }
         }
+        if (json.has("answer")) {
+            val answerChars = json.optString("answer").length
+            val pageChars = json.firstNonNegativeInt("total_chars") ?: 0
+            return "按问题提取 · 回答 ${formatCharCount(answerChars)} · 原文 ${formatCharCount(pageChars)}"
+        }
         val chars = (json.opt("text") as? String)?.length
             ?: json.firstNonNegativeInt("returned_chars", "text_chars")
             ?: return "完成"

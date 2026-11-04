@@ -92,6 +92,7 @@
 | fork 审查运行核心修复：子 Agent 派出策略实际生效、通知随持久 transcript 提交、重启后用户直发恢复、关闭终态、备份恢复中断状态、回退后的模型上下文与搜索工具一致、过滤回退开关、ask_user 实际接收回执 | FIX-2026-11-03 | C7、J40–J45、K5、K12 | 未执行 |
 | 运行中能点模型与思考强度（AG-32）：两个选择器运行中不再锁定，改了提示“从下一条消息起使用”；运行在发送时已绑定模型，插话仍用原模型，停止后再发、排队消息、自动唤醒的新一轮用新选的 | `0b53cab9` | P10 | 未执行 |
 | 小爱语音提问单独开关（DEV-7）：“小爱语音提问交给 Eta”管唤醒词、长按电源键唤起小爱、锁屏三种语音入口，在“启用厂商助手自定义模型”开启时生效，默认开；`/agent` 前缀只约束打字提问 | DEV-7 提交 | G4、G5、G13 | 未执行 |
+| `fetch_url` 按问题提取（AG-39）：设置里选提取模型（默认不使用）后才有 `question` 参数和对应提示，整篇正文一次交给提取模型，用量记为“网页提取”，失败报 `WEB_EXTRACT_FAILED` 不退回全文 | 待回填 | V1–V5 | 未执行 |
 
 后续阶段的用例在实现时补充；虚拟屏执行实现时在 M 组追加。
 
@@ -566,6 +567,18 @@ Mock 服务按剧本对指定请求返回 HTTP 错误、带 `Retry-After` 的 42
 | U4 `R` | App 里让 Eta 做一段需要交接的界面操作，选“你来操作”；3 分钟内在同一会话再让它做一段类似的；另测选“我自己来”后再做一段 | 选“你来操作”后 3 分钟内不再问，直接操作（模型收到 `cooldown`，说明是用户刚同意）；超过 3 分钟后重新判断；选“我自己来”不进入冷却，下一段仍可能问 |
 | U5 `R` | 只要求 launch_app、open_uri、终端命令或结构化查询；再要求明确的一两步点击 | 前者不因这些工具触发交接，后者直接执行，不按登录、付款等固定类型判断 |
 | U6 `R` | 要求采集用户复现问题时的 logcat、抓包或录屏 | 先 terminal_job 开始采集，再问“已开始采集，请现在操作，完成后告诉我”；完成后停止并读取，用户操作期间有采集覆盖 |
+
+### V. 网页按问题提取（AG-39）
+
+V1、V2 用同一句要求：“只依据页面内容回答，数字、名称、版本、API 级别照页面原文写，页面里没有提到的项写‘页面未提及’。”标准答案见 AG-39 方案依据的三方对比。
+
+| ID | 场景 | 断言 |
+|---|---|---|
+| V1 `R` | “网页搜索与读取”里选一个提取模型（强度保持默认）；让 Eta 用 `fetch_url` 带问题读 https://developer.android.com/reference/android/speech/RecognizerIntent ，问题：“EXTRA_AUDIO_SOURCE 是什么、从哪个 API 级别开始提供？使用它时相关的其他 extra 有哪些（名字、类型、默认值）？如果不设置它或识别服务不支持，会怎样？它替代了哪个旧的 extra？” | 工具参数带 `question`；结果有 `answer`、`document_id`、`total_chars`、`extraction_model`，没有 `text`；回答与标准答案一致：API 33、`ParcelFileDescriptor` 且调用方负责关闭；`EXTRA_AUDIO_SOURCE_CHANNEL_COUNT` 默认 1、`EXTRA_AUDIO_SOURCE_ENCODING` 默认 `AudioFormat.ENCODING_PCM_16BIT`、`EXTRA_AUDIO_SOURCE_SAMPLING_RATE` 默认 16000；不设置时识别器自己打开麦克风；替代 `EXTRA_AUDIO_INJECT_SOURCE`（API 31 加入、33 弃用）。工具行显示“按问题提取 · 回答 N 字 · 原文 M 字”，详情显示问题和提取结果 |
+| V2 `R` | 同 V1 的设置，带问题读 https://en.wikipedia.org/wiki/Xiaomi_15 ，问题：“只看 Xiaomi 15 标准版（不含 Pro、Ultra、15S Pro、15T）：电池容量、有线/无线/反向充电功率、内存与存储组合、处理器型号、型号代码与开发代号分别是什么？” | 回答与标准答案一致：电池全球版 5240 mAh、中国版 5400 mAh；有线 90W、无线 50W，反向充电写“页面未提及”；内存标出信息框（12 GB / 16 GB）与正文（8、12 或 16 GB）不一致；存储 256 GB / 512 GB / 1 TB；Snapdragon 8 Elite；型号代码 24129PN74G、24129PN74I、24129PN74C，开发代号 dada |
+| V3 `R` | V1、V2 之后打开设置 › 用量统计 › 使用记录 | 用途筛选里有“网页提取”；选它后正好是 V1、V2 的两次提取请求，模型为所选提取模型，token 与费用照常记录 |
+| V4 `M` | 提取模型选“不使用”，Mock 发起一轮并派一个子 Agent；电脑端经 MCP 调 `tools/list`；再选一个模型重复 | “不使用”时 Mock 收到的 `fetch_url` 参数（主 Agent 与子 Agent）和 MCP 列出的 `fetch_url` 都没有 `question`，系统提示网页段没有“给 fetch_url 带上 question”；选了模型后三处都有 `question`，系统提示出现这句；没选模型时剧本强行带 `question` 返回 `WEB_EXTRACT_MODEL_UNAVAILABLE`，不抓取网页 |
+| V5 `M` | 提取模型指向 Mock 服务；Mock 对提取请求依次返回 HTTP 400（错误信息含 `extract-fixture-error`）、一个工具调用、`finish_reason=length` | 三次 `fetch_url` 都是 `ok=false`、`code=WEB_EXTRACT_FAILED`，第一次的 `message` 含 `extract-fixture-error`；结果里没有 `text`，不退回网页正文；网页只抓取一次；提取请求不带工具 |
 
 ## 执行方式
 

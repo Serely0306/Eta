@@ -17,6 +17,7 @@ import io.github.mangi.eta.config.Prefs
 import io.github.mangi.eta.core.AndroidAgentLogger
 import io.github.mangi.eta.data.repository.AgentMemoryRepository
 import io.github.mangi.eta.data.usage.ModelUsageLedger
+import io.github.mangi.eta.data.repository.WebToolsSettingsRepository
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -49,6 +50,9 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
             deviceSensitiveActionTools = permissions.deviceSensitiveActionTools,
             memoryTools = memoryEnabled(),
             capabilities = AgentToolCapabilities.capture(appContext),
+            questionExtractionEnabled = runBlocking {
+                WebToolsSettingsRepository.questionExtractionEnabled()
+            },
         )
         val allowImages = EtaMcpPrivacySettings.load().allowImages
         return buildList {
@@ -80,6 +84,7 @@ internal class EtaMcpDeviceToolHost(context: Context) : EtaMcpToolHost {
             context = appContext,
             logger = AndroidAgentLogger,
             browserRunId = sessionKey,
+            runController = controller,
             guiControl = guiControl,
             browserToolsEnabled = { permissions().browserTools },
             terminalToolsEnabled = { permissions().terminalTools },

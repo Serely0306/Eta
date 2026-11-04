@@ -27,6 +27,7 @@ import io.github.mangi.eta.agent.overlay.AgentOverlayClearance
 import io.github.mangi.eta.agent.overlay.GestureIndicator
 import io.github.mangi.eta.agent.runtime.AgentAppContext
 import io.github.mangi.eta.agent.runtime.AgentRunCancelledException
+import io.github.mangi.eta.agent.runtime.AgentRunController
 import io.github.mangi.eta.agent.runtime.GuiControlCoordinator
 import io.github.mangi.eta.agent.skill.SkillCompatibilityChecker
 import io.github.mangi.eta.agent.skill.SkillIndexService
@@ -73,6 +74,7 @@ internal class AgentLocalTools(
     private val browserToolsEnabled: () -> Boolean = {
         Prefs.isEnabled(Prefs.Keys.AGENT_BROWSER_TOOLS)
     },
+    private val runController: AgentRunController? = null,
     private val terminalToolsEnabled: () -> Boolean = {
         Prefs.isEnabled(Prefs.Keys.AGENT_TERMINAL_TOOLS)
     },
@@ -241,7 +243,7 @@ internal class AgentLocalTools(
                 "browser_use" -> browserUse(args, toolCall.id)
                 "web_search", "fetch_url" -> {
                     if (!browserToolsEnabled()) textResult(errorResult("BROWSER_TOOLS_DISABLED", "请先启用网页搜索、读取与浏览器工具"))
-                    else textResult(webTools.execute(toolCall.name, args))
+                    else textResult(webTools.execute(toolCall.name, args, runController ?: AgentRunController()))
                 }
                 "observe_screen" -> observeScreen(args, guiGeneration)
                 "release_gui" -> {

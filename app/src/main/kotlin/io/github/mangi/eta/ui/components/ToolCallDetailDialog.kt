@@ -273,6 +273,13 @@ private fun ToolResultSections(message: ToolActivityMessageUi, detail: ToolCallD
             }
         }
         "fetch_url" -> {
+            val extraction = remember(result) { ToolCallDetails.webQuestionExtraction(result) }
+            if (extraction != null) {
+                if (extraction.url.isNotBlank()) LinkCard(extraction.title, extraction.url, "")
+                DetailSection(stringResource(R.string.tool_detail_web_question), extraction.question, monospace = false)
+                DetailSection(stringResource(R.string.tool_detail_web_answer), extraction.answer, monospace = false)
+                return
+            }
             val page = remember(result) { ToolCallDetails.webPage(result) }
             if (page != null) {
                 LinkCard(page.title, page.url, "")

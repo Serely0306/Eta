@@ -105,6 +105,7 @@ internal object AgentModelClient {
         capabilitiesProvider: () -> AgentToolCapabilities = { AgentToolCapabilities(rootAvailable = false) },
         /** 已展开依赖的停用工具集合；每轮重新读取，变化时同步重建系统提示。 */
         disabledToolsProvider: () -> Set<String> = { emptySet() },
+        questionExtractionEnabled: Boolean = false,
         sessionId: String = java.util.UUID.randomUUID().toString(),
         compactOnly: Boolean = false,
         operationId: String = sessionId,
@@ -135,6 +136,7 @@ internal object AgentModelClient {
             roleplayContext = roleplayContext,
             disabledTools = initialDisabledTools,
             executionContext = executionContext,
+            questionExtractionEnabled = questionExtractionEnabled,
         )
         if (rewriteReply) {
             messages.put(messages.length() - 1, AgentConversationCodec.userTextMessage(
@@ -157,6 +159,7 @@ internal object AgentModelClient {
             config, skillContext, memoryContext, initialCapabilities.rootAvailable, roleplayContext,
             disabledTools = initialDisabledTools,
             executionContext = executionContext,
+            questionExtractionEnabled = questionExtractionEnabled,
         ).length()
         fun toolsFor(capabilities: AgentToolCapabilities, disabledTools: Set<String>): JSONArray {
             if (rewriteReply) return JSONArray()
@@ -172,6 +175,7 @@ internal object AgentModelClient {
                 memoryWritable = roleplayContext == null,
                 capabilities = capabilities,
                 localWebSearch = !activeConfig.usesHostedWebSearch,
+                questionExtractionEnabled = questionExtractionEnabled,
             )
             for (index in 0 until additionalTools.length()) {
                 tools.put(additionalTools.opt(index))
@@ -208,6 +212,7 @@ internal object AgentModelClient {
                     activeConfig, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
                     disabledTools = disabledTools,
                     executionContext = executionContext,
+                    questionExtractionEnabled = questionExtractionEnabled,
                 )
                 for (index in 0 until systemMessages.length()) {
                     messages.put(index, systemMessages.getJSONObject(index))
@@ -267,6 +272,7 @@ internal object AgentModelClient {
                 val systemMessages = AgentPromptBuilder.buildSystemMessages(
                     replacement, skillContext, memoryContext, capabilities.rootAvailable, roleplayContext,
                     disabledTools = disabledTools, executionContext = executionContext,
+                    questionExtractionEnabled = questionExtractionEnabled,
                 )
                 val historyMessages = (systemCount until messages.length()).map(messages::getJSONObject)
                 while (messages.length() > 0) messages.remove(messages.length() - 1)

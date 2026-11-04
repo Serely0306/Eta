@@ -7,8 +7,10 @@ import io.github.mangi.eta.agent.web.WebToolsRuntimeConfig
 import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.model.DeepSeekWebConfig
 import io.github.mangi.eta.data.model.ProviderSourceTypes
+import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.WebToolsCredentials
 import io.github.mangi.eta.data.model.WebToolsSettings
+import io.github.mangi.eta.data.model.ReasoningEffort
 import io.github.mangi.eta.data.provider.BuiltinProviders
 import io.github.mangi.eta.data.provider.ProviderSourceRegistry
 import java.security.KeyStore
@@ -33,6 +35,10 @@ internal object WebToolsSettingsRepository {
     suspend fun settings(): WebToolsSettings = SettingsDataStore.webToolsSettings()
 
     suspend fun save(settings: WebToolsSettings) = SettingsDataStore.setWebToolsSettings(settings)
+
+    suspend fun questionExtractionEnabled(): Boolean = withContext(Dispatchers.IO) {
+        resolveQuestionExtractionModel(settings()) != null
+    }
 
     suspend fun credentials(context: Context): WebToolsCredentials = withContext(Dispatchers.IO) {
         val encoded = context.applicationContext
@@ -94,6 +100,7 @@ internal object WebToolsSettingsRepository {
             configuredDeepSeekUrl.isNotEmpty() -> configuredDeepSeekUrl
             else -> DeepSeekWebConfig.DEFAULT_BASE_URL
         }
+        val extractionModel = resolveQuestionExtractionModel(settings)
         WebToolsRuntimeConfig(
             searchBackend = settings.searchBackend,
             fetchBackend = settings.fetchBackend,
@@ -103,8 +110,34 @@ internal object WebToolsSettingsRepository {
             customSearchApiKey = credentials.customSearchApiKey.trim(),
             customFetch = settings.customFetch,
             customFetchApiKey = credentials.customFetchApiKey.trim(),
+            questionExtractionModel = extractionModel,
         )
     }
+
+    private suspend fun resolveQuestionExtractionModel(settings: WebToolsSettings) =
+        settings.questionExtractionProviderId?.let { providerId ->
+            val provider = ProviderRepository.providerById(providerId)
+                ?.takeIf { it.isEnabled && (
+                    it.authMode == ProviderAuthModes.API_KEY && it.apiKey.isNotBlank() ||
+                        ProviderAuthModes.isOAuth(it.authMode)
+                    ) }
+            val model = provider?.models?.firstOrNull {
+                it.id == settings.questionExtractionModelId && it.isEnabled
+            }
+            if (provider == null || model == null) {
+                null
+            } else {
+                val config = RuntimeConfigRepository.buildRuntimeConfig(provider, model)
+                val capabilities = RuntimeConfigRepository.reasoningCapabilities(provider, model)
+                val effort = capabilities?.let {
+                    it.normalize(settings.questionExtractionEffort ?: it.selectableEfforts.minBy(ReasoningEffort::rank))
+                }
+                if (effort == null) config else config.copy(
+                    reasoningEffort = effort,
+                    thinkingEnabled = effort.enablesReasoning,
+                )
+            }
+        }
 
     @Synchronized
     private fun secretKey(): SecretKey {

@@ -59,6 +59,11 @@ class AgentTraceFormatterTest {
             assertFalse(search.contains(it))
             assertFalse(fetch.contains(it))
         }
+        val extraction = formatter.summarizeResult("fetch_url", AgentModelClient.ToolResult(
+            """{"ok":true,"answer":"答","question":"private-question","total_chars":20000}""",
+        ))
+        assertEquals("按问题提取 · 回答 1 字 · 原文 2 万字", extraction)
+        assertFalse(extraction.contains("private-question"))
     }
 
     @Test

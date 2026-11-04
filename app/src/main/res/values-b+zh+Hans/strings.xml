@@ -619,6 +619,8 @@
   </plurals>
   <string name="tool_detail_page">网页内容</string>
   <string name="tool_detail_page_more">网页还有更多内容，模型可以继续读取。</string>
+  <string name="tool_detail_web_question">提取问题</string>
+  <string name="tool_detail_web_answer">按问题提取的结果</string>
   <string name="tool_detail_text_limited">只显示前 %1$d 字</string>
   <plurals name="tool_output_show_all">
     <item quantity="other">展开全部（%d 行）</item>
@@ -1654,6 +1656,7 @@
   <string name="usage_purpose_compaction">压缩</string>
   <string name="usage_purpose_reply_rewrite">改写</string>
   <string name="usage_purpose_transcript_refine">转写润色</string>
+  <string name="usage_purpose_web_extract">网页提取</string>
   <string name="usage_purpose_subagent">子 Agent</string>
   <string name="usage_status_failed">失败</string>
   <string name="usage_status_cancelled">已取消</string>
@@ -1834,6 +1837,11 @@
   <string name="web_tools_custom_fetch_note">支持 {{url}}、{{raw_url}} 与 {{url_json}} 占位符；远端读取失败时自动回退到本地静态抓取。</string>
   <string name="web_tools_load_failed">无法读取网页工具设置，请返回重试</string>
   <string name="web_tools_credentials_lost">网页工具凭据无法解密，请重新填写并保存</string>
+  <string name="web_tools_question_extraction">按问题提取</string>
+  <string name="web_tools_question_extraction_model">提取模型</string>
+  <string name="web_tools_question_extraction_disabled">不使用</string>
+  <string name="web_tools_question_effort_default">该模型的最低强度</string>
+  <string name="web_tools_question_extraction_note">选好模型后，fetch_url 才会提供 question 参数；按问题提取会把整篇已提取正文发送给所选模型。</string>
   <string name="chat_queue_status">排队中</string>
   <string name="chat_queue_status_count">排队中 · %1$d</string>
   <string name="chat_queue_interrupting">插话中</string>

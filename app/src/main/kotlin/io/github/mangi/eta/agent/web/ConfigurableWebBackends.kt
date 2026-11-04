@@ -5,6 +5,7 @@ import io.github.mangi.eta.data.model.CustomWebSearchConfig
 import io.github.mangi.eta.data.model.DeepSeekWebConfig
 import io.github.mangi.eta.data.model.WebHttpMethod
 import io.github.mangi.eta.data.model.WebToolBackend
+import io.github.mangi.eta.agent.model.AgentModelClient
 import java.net.URLEncoder
 import java.util.Locale
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -21,6 +22,7 @@ internal data class WebToolsRuntimeConfig(
     val customSearchApiKey: String = "",
     val customFetch: CustomWebFetchConfig = CustomWebFetchConfig(),
     val customFetchApiKey: String = "",
+    val questionExtractionModel: AgentModelClient.ModelConfig? = null,
 )
 
 internal data class RemoteFetchedDocument(

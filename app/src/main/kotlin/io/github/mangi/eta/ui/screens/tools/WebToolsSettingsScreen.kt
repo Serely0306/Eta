@@ -33,6 +33,13 @@ import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.data.model.WebHttpMethod
 import io.github.mangi.eta.data.model.WebToolBackend
+import io.github.mangi.eta.data.model.ModelReasoningCapabilities
+import io.github.mangi.eta.data.model.ReasoningEffort
+import io.github.mangi.eta.data.repository.RuntimeConfigRepository
+import io.github.mangi.eta.ui.components.EtaModelSelectPreference
+import io.github.mangi.eta.ui.components.ModelEffortSelection
+import io.github.mangi.eta.ui.components.modelChoiceGroups
+import io.github.mangi.eta.ui.components.findModel
 import io.github.mangi.eta.ui.components.EtaOverlayDropdownPreference
 import io.github.mangi.eta.ui.components.EtaPreference
 import io.github.mangi.eta.ui.components.EtaPreferenceDefaults
@@ -123,6 +130,44 @@ internal fun WebToolsSettingsScreen(onBack: () -> Unit) {
         if (settings.fetchBackend == WebToolBackend.CUSTOM) {
             item(key = "custom_fetch") {
                 CustomFetchSection(store)
+            }
+        }
+        item(key = "question_extraction") {
+            val groups = remember(store.providers) { modelChoiceGroups(store.providers) }
+            val selected = groups.findModel(settings.questionExtractionModelId)
+            fun capabilitiesFor(modelId: String?): ModelReasoningCapabilities? {
+                val option = groups.findModel(modelId) ?: return null
+                val provider = store.providers.first { it.id == option.providerId }
+                val model = provider.models.first { it.id == option.id }
+                return RuntimeConfigRepository.reasoningCapabilities(provider, model)
+            }
+            fun lowestEffort(modelId: String?): ReasoningEffort? =
+                capabilitiesFor(modelId)?.selectableEfforts?.minByOrNull(ReasoningEffort::rank)
+            Column {
+                EtaPreferenceGroupTitle(stringResource(R.string.web_tools_question_extraction))
+                EtaPreferenceGroup {
+                    EtaModelSelectPreference(
+                        title = stringResource(R.string.web_tools_question_extraction_model),
+                        providers = store.providers,
+                        groups = groups,
+                        selectedId = settings.questionExtractionModelId,
+                        emptyOptionLabel = stringResource(R.string.web_tools_question_extraction_disabled),
+                        onSelect = { modelId, effort ->
+                            val option = groups.findModel(modelId)
+                            store.edit(settings.copy(
+                                questionExtractionProviderId = option?.providerId,
+                                questionExtractionModelId = option?.id,
+                                questionExtractionEffort = if (option == null) null else effort ?: lowestEffort(option.id),
+                            ))
+                        },
+                        effort = ModelEffortSelection(
+                            selected = settings.questionExtractionEffort ?: lowestEffort(selected?.id),
+                            followLabel = stringResource(R.string.web_tools_question_effort_default),
+                            capabilitiesFor = ::capabilitiesFor,
+                        ),
+                    )
+                }
+                WebToolsNote(stringResource(R.string.web_tools_question_extraction_note))
             }
         }
         item(key = "save") {

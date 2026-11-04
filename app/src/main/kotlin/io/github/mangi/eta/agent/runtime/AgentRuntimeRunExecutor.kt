@@ -200,6 +200,7 @@ internal class AgentRuntimeRunExecutor(
                 browserRunId = ownerId,
                 browserSession = if (ownerId == request.runId) BrowserSessionRegistry.get(browserKey) else null,
                 guiControl = if (ownerId == request.runId) guiRun else null,
+                runController = runController,
                 browserToolsEnabled = {
                     request.config.browserTools && currentPermissions().browserTools
                 },
@@ -329,6 +330,9 @@ internal class AgentRuntimeRunExecutor(
                 runId = request.runId,
                 sessionId = request.effectiveModelSessionId,
             )
+            val questionExtractionEnabled = runBlocking {
+                io.github.mangi.eta.data.repository.WebToolsSettingsRepository.questionExtractionEnabled()
+            }
             val subagentEnvironment = SubagentEnvironment(
                 runId = request.runId,
                 conversationId = subagentConversation,
@@ -343,6 +347,7 @@ internal class AgentRuntimeRunExecutor(
                 fallback = fallbackPolicy,
                 executionContext = mainLocalTools.terminalExecutionContext,
                 usageContext = usageContext,
+                questionExtractionEnabled = questionExtractionEnabled,
             )
             val subagents = AgentSubagentTools(subagentManager, subagentEnvironment)
             if (receivesSubagentNotices) {
@@ -452,6 +457,7 @@ internal class AgentRuntimeRunExecutor(
                     additionalTools = runTools,
                     fallback = fallbackPolicy,
                     executionContext = mainLocalTools.terminalExecutionContext,
+                    questionExtractionEnabled = questionExtractionEnabled,
                 ) { event ->
                     timing.accept(event)
                     acceptEvent(

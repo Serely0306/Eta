@@ -4,6 +4,13 @@ import io.github.mangi.eta.data.model.CustomWebFetchConfig
 import io.github.mangi.eta.data.model.CustomWebSearchConfig
 import io.github.mangi.eta.data.model.WebHttpMethod
 import io.github.mangi.eta.data.model.WebToolBackend
+import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentProviderClient
+import io.github.mangi.eta.agent.model.OpenAiChatCompletionsProvider
+import io.github.mangi.eta.agent.model.ProviderEvent
+import io.github.mangi.eta.agent.model.ProviderRequest
+import io.github.mangi.eta.agent.model.ProviderRequestPurpose
+import io.github.mangi.eta.agent.model.ProviderResponse
 import java.time.Instant
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
@@ -19,6 +26,82 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentWebToolsTest {
+    @Test fun questionExtractionReceivesTheEntireExtractedDocument() {
+        val body = "start " + "a".repeat(20_000) + " END_OF_PAGE"
+        val model = AgentModelClient.ModelConfig(
+            baseUrl = "https://model.example.test/v1",
+            apiKey = "fixture",
+            model = "extractor",
+            modelDisplayName = "Extractor",
+            providerName = "Fixture",
+            systemPrompt = "",
+        )
+        var captured: ProviderRequest? = null
+        val provider = object : AgentProviderClient {
+            override val id = "fixture"
+            override val capabilities = OpenAiChatCompletionsProvider.capabilities
+            override fun complete(
+                request: ProviderRequest,
+                runController: io.github.mangi.eta.agent.runtime.AgentRunController,
+                onEvent: (ProviderEvent) -> Unit,
+            ): ProviderResponse {
+                captured = request
+                return ProviderResponse(JSONObject().put("role", "assistant").put("content", "答案").put("finish_reason", "stop"))
+            }
+        }
+        val config = WebToolsRuntimeConfig(questionExtractionModel = model)
+        WebFixtureServer {
+            WebFixtureResponse(headers = mapOf("Content-Type" to "text/plain"), body = body.toByteArray())
+        }.use { server ->
+            AgentWebTools(
+                WebHttpTransport(OkHttpClient()),
+                runtimeConfig = { config },
+                providerFor = { provider },
+            ).use { tools ->
+                val result = call(tools, "fetch_url", JSONObject().put("url", server.url()).put("question", "页面末尾是什么？"))
+                val request = requireNotNull(captured)
+                val prompt = request.messages.getJSONObject(1).getString("content")
+                assertTrue(prompt.contains("END_OF_PAGE"))
+                assertTrue(prompt.contains("a".repeat(20_000)))
+                assertEquals(ProviderRequestPurpose.WEB_EXTRACT, request.purpose)
+                assertEquals(0, request.effectiveTools.length())
+                assertEquals("答案", result.getString("answer"))
+                assertEquals("页面末尾是什么？", result.getString("question"))
+                assertTrue(result.getInt("total_chars") > 16_000)
+                assertEquals("untrusted_web_content", result.getString("source_role"))
+                assertFalse(result.has("text"))
+            }
+        }
+    }
+
+    @Test fun extractionFailureReturnsAnErrorWithoutReturningThePage() {
+        val model = AgentModelClient.ModelConfig(
+            baseUrl = "https://model.example.test/v1", apiKey = "fixture", model = "extractor", systemPrompt = "",
+        )
+        val provider = object : AgentProviderClient {
+            override val id = "fixture"
+            override val capabilities = OpenAiChatCompletionsProvider.capabilities
+            override fun complete(
+                request: ProviderRequest,
+                runController: io.github.mangi.eta.agent.runtime.AgentRunController,
+                onEvent: (ProviderEvent) -> Unit,
+            ): ProviderResponse = error("provider failure detail")
+        }
+        WebFixtureServer { WebFixtureResponse(body = "whole page secret".toByteArray()) }.use { server ->
+            AgentWebTools(
+                WebHttpTransport(OkHttpClient()),
+                runtimeConfig = { WebToolsRuntimeConfig(questionExtractionModel = model) },
+                providerFor = { provider },
+            ).use { tools ->
+                val result = call(tools, "fetch_url", JSONObject().put("url", server.url()).put("question", "有什么？"))
+                assertEquals("WEB_EXTRACT_FAILED", result.getString("code"))
+                assertTrue(result.getString("message").contains("provider failure detail"))
+                assertFalse(result.has("text"))
+                assertEquals(1, server.requests.size)
+            }
+        }
+    }
+
     @Test fun cachedPagesShareTheSameSnapshotWithoutAnotherRequest() {
         val source = "第一行\n" + "a".repeat(998) + "😀" + "正文".repeat(900)
         WebFixtureServer { WebFixtureResponse(body = source.toByteArray()) }.use { server ->

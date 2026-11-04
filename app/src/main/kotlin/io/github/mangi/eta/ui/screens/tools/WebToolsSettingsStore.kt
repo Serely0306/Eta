@@ -12,6 +12,8 @@ import io.github.mangi.eta.data.model.WebToolsCredentials
 import io.github.mangi.eta.data.model.WebToolsSettings
 import io.github.mangi.eta.data.repository.WebToolsCredentialsUnavailable
 import io.github.mangi.eta.data.repository.WebToolsSettingsRepository
+import io.github.mangi.eta.data.repository.ProviderRepository
+import io.github.mangi.eta.data.model.ProviderSetting
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -23,6 +25,8 @@ internal class WebToolsSettingsStore(
     private val scope: CoroutineScope,
 ) {
     var settings by mutableStateOf(WebToolsSettings())
+        private set
+    var providers by mutableStateOf<List<ProviderSetting>>(emptyList())
         private set
     var credentials by mutableStateOf(WebToolsCredentials())
         private set
@@ -38,6 +42,9 @@ internal class WebToolsSettingsStore(
         private set
 
     init {
+        scope.launch {
+            ProviderRepository.providersFlow().collect { providers = it }
+        }
         scope.launch {
             try {
                 settings = WebToolsSettingsRepository.settings()

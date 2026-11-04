@@ -71,6 +71,7 @@ internal class SubagentEnvironment(
     val fallback: ModelFallbackPolicy = ModelFallbackPolicy.NONE,
     val executionContext: TerminalExecutionContext? = null,
     val usageContext: ModelUsageContext? = null,
+    val questionExtractionEnabled: Boolean = false,
 )
 
 internal class SubagentTurn(
@@ -739,6 +740,7 @@ internal object ModelSubagentTurnRunner : SubagentTurnRunner {
                     runCatching { turn.onProgress(latest) }
                 },
                 fallback = environment.fallback,
+                questionExtractionEnabled = environment.questionExtractionEnabled,
             ) { event ->
                 // 与 Claude Code 一致，回合不设轮数上限，由子 Agent 自然结束，或由用户、主 Agent 停止（AG-27）。
                 if (event is AgentEvent.RoundStarted) rounds++

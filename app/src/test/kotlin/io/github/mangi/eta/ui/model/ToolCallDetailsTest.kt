@@ -91,6 +91,12 @@ class ToolCallDetailsTest {
 
         val page = ToolCallDetails.webPage("""{"final_url":"https://example.com","title":null,"text":"body","has_more":true}""")!!
         assertEquals(WebPageContent("https://example.com", "", "body", true), page)
+        val extraction = ToolCallDetails.webQuestionExtraction(
+            """{"final_url":"https://example.com","title":"Title","question":"What?","answer":"Answer","document_id":"web_1","total_chars":20000,"extraction_model":"Fixture / Extractor"}""",
+        )!!
+        assertEquals("What?", extraction.question)
+        assertEquals("Answer", extraction.answer)
+        assertEquals(20000, extraction.totalChars)
     }
 
     @Test
