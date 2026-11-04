@@ -215,13 +215,18 @@ class AgentConversationStoreTest {
             code = SystemNoticeCode.ModelRetry,
             detail = "请求失败，正在重试（2/5）：upstream timeout · 2 秒后",
         )
+        val runtimeFailed = SystemNoticeMessageUi(
+            id = "assistant-run-1-2",
+            code = SystemNoticeCode.RuntimeFailed,
+            detail = "工具调用失败",
+        )
         runBlocking {
             AgentConversationStore.save(
                 context = context,
                 selectedConversationId = "conv-notice",
                 conversationsById = mapOf(
                     "conv-notice" to AgentChatHomeUiState(
-                        messages = listOf(notice),
+                        messages = listOf(notice, runtimeFailed),
                         input = "",
                         isStreaming = false,
                         thinkingEnabled = false,
@@ -235,8 +240,8 @@ class AgentConversationStoreTest {
         val snapshot = AgentConversationStore.load(context)
         assertEquals("", snapshot.titles.getValue("conv-notice"))
         assertEquals(
-            notice,
-            snapshot.conversationsById.getValue("conv-notice").messages.single(),
+            listOf(notice, runtimeFailed),
+            snapshot.conversationsById.getValue("conv-notice").messages,
         )
     }
 

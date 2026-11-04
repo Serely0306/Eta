@@ -633,6 +633,7 @@ class AgentRunMessageProjectorTest {
                 "$runId-thinking-1-0",
                 "assistant-$runId-1-1",
                 "$runId-tool-1-ws_1",
+                "$runId-thinking-1-2",
                 "assistant-$runId-1-3",
             ),
             messages.map { it.id },
@@ -640,8 +641,10 @@ class AgentRunMessageProjectorTest {
         assertFalse((messages[1] as ThinkingMessageUi).isStreaming)
         assertFalse((messages[2] as AgentMessageUi).isStreaming)
         assertEquals(ToolActivityStatusUi.Success, (messages[3] as ToolActivityMessageUi).status)
-        assertEquals("先判断需要搜索\n\n整理搜索结果", (messages[1] as ThinkingMessageUi).content)
-        assertTrue((messages[4] as AgentMessageUi).isStreaming)
+        assertEquals("先判断需要搜索", (messages[1] as ThinkingMessageUi).content)
+        assertEquals("整理搜索结果", (messages[4] as ThinkingMessageUi).content)
+        assertFalse((messages[4] as ThinkingMessageUi).isStreaming)
+        assertTrue((messages[5] as AgentMessageUi).isStreaming)
     }
 
     @Test
@@ -760,6 +763,10 @@ class AgentRunMessageProjectorTest {
         var messages = projector.appendReasoningDelta("run", 1, 0, "first", emptyList())
         now = 2_000L
         messages = projector.finalizeThinkingBlock("run", 1, 0, "complete first", messages)
+        val betweenSegments = messages.filterIsInstance<ThinkingMessageUi>().single()
+        assertTrue(betweenSegments.isStreaming)
+        assertFalse(betweenSegments.collapsed)
+        assertEquals(1, betweenSegments.elapsedSeconds)
         messages = projector.appendReasoningDelta("run", 1, 2, "second", messages)
         now = 4_000L
         messages = projector.finalizeThinkingRound("run", 1, messages)
@@ -772,6 +779,30 @@ class AgentRunMessageProjectorTest {
         now = 11_000L
         messages = projector.finalizeThinkingRound("run", 1, messages)
         assertEquals(1, messages.filterIsInstance<ThinkingMessageUi>().single().elapsedSeconds)
+    }
+
+    @Test
+    fun thinkingAfterBodyAndHostedSearchStartsANewBlockInEventOrder() {
+        var now = 1_000L
+        val projector = AgentRunMessageProjector { now }
+        var messages = projector.appendReasoningDelta("run", 1, 0, "前段思考", emptyList())
+        messages = projector.finalizeThinkingBlock("run", 1, 0, "前段思考完成", messages)
+        messages = projector.appendTextDelta("run", 1, 1, "正文", messages)
+        messages = projector.applyEvent("run", AgentEvent.HostedToolStarted(1, "search-1", "网页搜索"), messages)
+        now = 2_000L
+        messages = projector.appendReasoningDelta("run", 1, 3, "后段思考", messages)
+
+        val thinking = messages.filterIsInstance<ThinkingMessageUi>()
+        assertEquals(2, thinking.size)
+        assertEquals("前段思考完成", thinking[0].content)
+        assertFalse(thinking[0].isStreaming)
+        assertEquals("后段思考", thinking[1].content)
+        assertTrue(thinking[1].isStreaming)
+        assertTrue(messages[0] is ThinkingMessageUi)
+        assertTrue(messages[1] is AgentMessageUi)
+        assertTrue(messages[2] is ToolActivityMessageUi)
+        assertTrue(messages[3] is ThinkingMessageUi)
+        assertTrue(thinking[0].id != thinking[1].id)
     }
 
     @Test

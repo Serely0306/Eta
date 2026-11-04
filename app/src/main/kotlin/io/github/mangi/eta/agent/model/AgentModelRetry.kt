@@ -59,7 +59,7 @@ internal class AgentModelRetry(
                 )
                 waitBeforeRetry(controller, delayMs)
                 controller.throwIfCancelled()
-                // 展示保留失败尝试，模型上下文与最终思考摘要只接纳成功尝试。
+                // 重试会清除失败尝试的思考；模型上下文与最终思考摘要只接纳成功尝试。
                 discardAttemptReasoning()
                 round += 1
             }

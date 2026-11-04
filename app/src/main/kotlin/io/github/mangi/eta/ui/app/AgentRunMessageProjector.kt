@@ -20,6 +20,7 @@ internal class AgentRunMessageProjector(
 ) {
     private val thinkingStartedAt = mutableMapOf<String, Long>()
     private val thinkingSegments = mutableMapOf<String, LinkedHashMap<Int, String>>()
+    private val thinkingGroupByBlock = mutableMapOf<String, String>()
 
     /** 本次回答的总用时（AG-28，用户 2026-10-28 改为“用时”）：从 run 的第一个事件到结束。 */
     private val runStartedAt = mutableMapOf<String, Long>()
@@ -286,14 +287,21 @@ internal class AgentRunMessageProjector(
     ): List<AgentChatMessageUi> {
         if (delta.isEmpty()) return messages
 
+        val blockKey = thinkingBlockKey(runId, round, index)
+        val thinkingId = thinkingGroupByBlock[blockKey]
+            ?: messages.filterIsInstance<ThinkingMessageUi>()
+                .lastOrNull { it.isStreaming && isThinkingMessageForRound(it.id, runId, round) }
+                ?.id
+            ?: thinkingMessageId(runId, round, index)
+        thinkingGroupByBlock[blockKey] = thinkingId
         val transitioned = transitionVisibleBlock(
             runId = runId,
             round = round,
             kind = AgentEvent.AssistantBlockKind.THINKING,
             index = index,
             messages = messages,
+            preferredThinkingId = thinkingId,
         )
-        val thinkingId = thinkingMessageId(runId, round, index)
         val segments = thinkingSegments.getOrPut(thinkingId) { linkedMapOf() }
         segments[index] = segments[index].orEmpty() + delta
         val content = segments.values.joinToString("\n\n")
@@ -357,7 +365,7 @@ internal class AgentRunMessageProjector(
             } else {
                 message
             }
-        }
+        }.also { thinkingGroupByBlock.keys.removeAll { it.startsWith("$runId:") } }
 
     /** 终态不依赖各块结束事件全部到齐；缺少工具结果时只能标为未知，不能推断执行成功。 */
     fun finalizeRun(runId: String, messages: List<AgentChatMessageUi>): List<AgentChatMessageUi> =
@@ -394,12 +402,18 @@ internal class AgentRunMessageProjector(
         replacementContent: String?,
         messages: List<AgentChatMessageUi>,
     ): List<AgentChatMessageUi> {
-        val thinkingId = thinkingMessageId(runId, round, index)
+        val blockKey = thinkingBlockKey(runId, round, index)
+        val thinkingId = thinkingGroupByBlock[blockKey] ?: thinkingMessageId(runId, round, index).also {
+            thinkingGroupByBlock[blockKey] = it
+        }
         replacementContent?.let { thinkingSegments.getOrPut(thinkingId) { linkedMapOf() }[index] = it }
         val content = thinkingSegments[thinkingId]?.values?.joinToString("\n\n")
         return messages.map { message ->
             if (message is ThinkingMessageUi && message.id == thinkingId) {
-                message.finished(content ?: message.content)
+                message.copy(
+                    content = content ?: message.content,
+                    elapsedSeconds = if (message.isStreaming) elapsedSeconds(thinkingId) else message.elapsedSeconds,
+                )
             } else {
                 message
             }
@@ -614,6 +628,7 @@ internal class AgentRunMessageProjector(
     fun clearRun(runId: String) {
         thinkingStartedAt.keys.removeAll { it.startsWith("$runId-thinking-") }
         thinkingSegments.keys.removeAll { it.startsWith("$runId-thinking-") }
+        thinkingGroupByBlock.keys.removeAll { it.startsWith("$runId:") }
         runStartedAt.remove(runId)
     }
 
@@ -624,6 +639,7 @@ internal class AgentRunMessageProjector(
     ): List<AgentChatMessageUi> {
         thinkingStartedAt.keys.removeAll { isThinkingMessageForRound(it, runId, round) }
         thinkingSegments.keys.removeAll { isThinkingMessageForRound(it, runId, round) }
+        thinkingGroupByBlock.keys.removeAll { it.startsWith(thinkingBlockPrefix(runId, round)) }
         return messages.filterNot { it is ThinkingMessageUi && isThinkingMessageForRound(it.id, runId, round) }
     }
 
@@ -653,6 +669,7 @@ internal class AgentRunMessageProjector(
         kind: AgentEvent.AssistantBlockKind,
         index: Int,
         messages: List<AgentChatMessageUi>,
+        preferredThinkingId: String? = null,
     ): List<AgentChatMessageUi> {
         val activeAssistantId = if (kind == AgentEvent.AssistantBlockKind.TEXT) {
             assistantMessageId(runId, round, index)
@@ -660,7 +677,11 @@ internal class AgentRunMessageProjector(
             null
         }
         val activeThinkingId = if (kind == AgentEvent.AssistantBlockKind.THINKING) {
-            thinkingMessageId(runId, round, index)
+            preferredThinkingId
+                ?: messages.filterIsInstance<ThinkingMessageUi>()
+                    .lastOrNull { it.isStreaming && isThinkingMessageForRound(it.id, runId, round) }
+                    ?.id
+                ?: thinkingMessageId(runId, round, index)
         } else {
             null
         }
@@ -706,7 +727,12 @@ internal class AgentRunMessageProjector(
         "${assistantMessagePrefix(runId)}$round-$index"
 
     private fun thinkingMessageId(runId: String, round: Int, index: Int): String =
-        "$runId-thinking-$round-0"
+        "$runId-thinking-$round-$index"
+
+    private fun thinkingBlockKey(runId: String, round: Int, index: Int): String =
+        "${thinkingBlockPrefix(runId, round)}$index"
+
+    private fun thinkingBlockPrefix(runId: String, round: Int): String = "$runId:$round:"
 
     private fun thinkingFallbackMessageId(runId: String, round: Int): String =
         "$runId-thinking-$round-fallback"
