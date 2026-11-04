@@ -122,7 +122,8 @@ class AgentPromptBuilderTest {
                 assertFalse(identity.contains(config.modelDisplayName))
                 if (modelId != config.model) assertFalse(identity.contains(config.model))
                 if (providerPrompt.isNotBlank()) {
-                    assertEquals(providerPrompt, messages.getJSONObject(0).getString("content"))
+                    // AG-40：用户写的提示词排在 Eta 系统提示之后。
+                    assertEquals(providerPrompt, messages.getJSONObject(messages.length() - 1).getString("content"))
                 }
             }
         }
@@ -155,7 +156,8 @@ class AgentPromptBuilderTest {
             listOf("system", "system", "system", "user", "assistant", "user"),
             messages.roles(),
         )
-        assertEquals("自定义系统约束", messages.getJSONObject(0).getString("content"))
+        // AG-40：Eta 主提示、终端段之后才是用户写的提示词。
+        assertEquals("自定义系统约束", messages.getJSONObject(2).getString("content"))
         assertTrue(messages.systemContents().any { it.contains("只有系统保护后端可用时才会请求有限重绑") })
         assertTrue(messages.systemContents().any { it.contains("不要改用坐标或 Shell 重放") })
         assertTrue(messages.systemContents().any { it.contains("通用 GUI 工具完成输入和点击发送") })
@@ -183,9 +185,9 @@ class AgentPromptBuilderTest {
         assertTrue(messages.systemContents().any { it.contains("合法且克制的 GitHub Flavored Markdown") })
         assertTrue(messages.systemContents().any { it.contains("不用整句粗体冒充标题") })
         assertTrue(messages.systemContents().any { it.contains("表格前后留空行") })
-        assertTrue(messages.getJSONObject(2).getString("content").contains("只需 command"))
-        assertTrue(messages.getJSONObject(2).getString("content").contains("同一轮最多读取一张"))
-        assertTrue(messages.getJSONObject(2).getString("content").contains("观察返回内容后再读下一张"))
+        assertTrue(messages.getJSONObject(1).getString("content").contains("只需 command"))
+        assertTrue(messages.getJSONObject(1).getString("content").contains("同一轮最多读取一张"))
+        assertTrue(messages.getJSONObject(1).getString("content").contains("观察返回内容后再读下一张"))
         assertFalse(messages.systemContents().any { it.contains("网页浏览、读取") })
         assertEquals("旧问题", messages.getJSONObject(3).getString("content"))
         assertEquals("旧回答", messages.getJSONObject(4).getString("content"))

@@ -82,6 +82,24 @@ class EtaBackupRepositoryTest {
     }
 
     @Test
+    fun modelPromptRulesRoundTripThroughBackupAndOldBackupsKeepTheDeviceRules() = runBlocking {
+        val rules = mapOf("gpt-*" to "只写事实", "deepseek-v4-flash" to "用中文回答")
+        SettingsDataStore.setModelPrompts(rules)
+        val output = ByteArrayOutputStream()
+        EtaBackupRepository.export(context, output)
+        SettingsDataStore.setModelPrompts(mapOf("other" to "设备上后来改的"))
+
+        EtaBackupRepository.import(context, ByteArrayInputStream(output.toByteArray()))
+        assertEquals(rules, SettingsDataStore.modelPrompts())
+
+        // 旧版本导出的备份没有这个字段：设备上的规则不变。
+        val legacy = Json.encodeToString(EtaBackupDocument(exportedAt = 0))
+        assertFalse(legacy.contains("modelPrompts"))
+        EtaBackupRepository.import(context, ByteArrayInputStream(legacy.toByteArray()))
+        assertEquals(rules, SettingsDataStore.modelPrompts())
+    }
+
+    @Test
     fun oauthBackupPreservesConnectionModeButCannotRestoreSecretThroughApiKey() = runBlocking {
         ProviderRepository.addProvider(OpenAiCompatibleProviderSetting(
             id = "oauth-backup", name = "订阅", baseUrl = "https://api.openai.com/v1",

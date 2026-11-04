@@ -70,7 +70,9 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 import io.github.mangi.eta.EtaApp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.auth.ProviderAuthException
+import io.github.mangi.eta.data.datastore.SettingsDataStore
 import io.github.mangi.eta.data.model.Model
+import io.github.mangi.eta.data.model.ModelPromptRules
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.ProviderAuthModes
 import io.github.mangi.eta.data.model.GeminiProviderSetting
@@ -182,10 +184,12 @@ internal fun ProviderModelsTab(
     scope: CoroutineScope,
     scrollBehavior: ScrollBehavior,
     contentSidePadding: Dp,
+    onOpenModelPrompts: (pattern: String) -> Unit,
 ) {
     val context = LocalContext.current
     val fetchScope = rememberCoroutineScope()
     val selectedModelId by RuntimeConfigRepository.selectedModelIdFlow().collectAsState(initial = null)
+    val modelPrompts by remember { SettingsDataStore.modelPromptsFlow() }.collectAsState(initial = emptyMap())
     var isFetching by remember { mutableStateOf(false) }
     var isMutatingModel by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -502,6 +506,12 @@ internal fun ProviderModelsTab(
             isNew = isCreatingModel,
             isSaving = isMutatingModel,
             error = editorError,
+            modelPrompts = modelPrompts,
+            onOpenModelPrompt = { pattern ->
+                // 弹窗不跟着翻页，先关掉再跳转。
+                editingModel = null
+                onOpenModelPrompts(pattern)
+            },
             onDismiss = {
                 if (!isMutatingModel) editingModel = null
             },
@@ -880,6 +890,8 @@ private fun ModelEditDialog(
     isNew: Boolean,
     isSaving: Boolean,
     error: String?,
+    modelPrompts: Map<String, String>,
+    onOpenModelPrompt: (pattern: String) -> Unit,
     onDismiss: () -> Unit,
     onSubmit: (Model) -> Unit,
     onDelete: (() -> Unit)?,
@@ -1142,6 +1154,34 @@ private fun ModelEditDialog(
                         style = MiuixTheme.textStyles.footnote2,
                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+                    )
+                }
+                // 按模型的提示词（AG-40）：按当前填写的 Model ID 匹配，点开跳到那条规则；没有命中时可以为它新建。
+                val promptPattern = ModelPromptRules.match(modelPrompts, modelId)
+                Text(
+                    text = stringResource(
+                        R.string.model_prompt_effective,
+                        promptPattern ?: stringResource(R.string.model_prompt_none),
+                    ),
+                    style = MiuixTheme.textStyles.body2,
+                    color = if (promptPattern != null) MiuixTheme.colorScheme.primary
+                        else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    modifier = Modifier
+                        .padding(top = 12.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(enabled = !isSaving && promptPattern != null) { promptPattern?.let(onOpenModelPrompt) }
+                        .padding(horizontal = 4.dp, vertical = 10.dp),
+                )
+                val newPromptPattern = ModelPromptRules.normalizePattern(modelId)
+                if (promptPattern == null && newPromptPattern != null) {
+                    Text(
+                        text = stringResource(R.string.model_prompt_create_for_model),
+                        style = MiuixTheme.textStyles.body2,
+                        color = MiuixTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(enabled = !isSaving) { onOpenModelPrompt(newPromptPattern) }
+                            .padding(horizontal = 4.dp, vertical = 10.dp),
                     )
                 }
                 error?.let { message ->

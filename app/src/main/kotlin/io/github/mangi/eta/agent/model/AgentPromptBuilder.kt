@@ -57,9 +57,6 @@ internal object AgentPromptBuilder {
     ): JSONArray {
         val screenTools = "observe_screen" !in disabledTools
         val messages = JSONArray()
-        if (roleplayContext == null && config.systemPrompt.isNotBlank()) {
-            messages.put(systemMessage(config.systemPrompt))
-        }
         messages.put(
             systemMessage(
                 (if (roleplayContext == null) {
@@ -185,6 +182,10 @@ internal object AgentPromptBuilder {
         roleplayContext?.personaMessage()?.let(messages::put)
         buildMemorySystemMessage(memoryContext, writable = roleplayContext == null)?.let(messages::put)
         buildSkillSystemMessage(skillContext)?.let(messages::put)
+        // 用户写的提示词（模型提示词与服务商提示词，AG-40）排在 Eta 自己的系统提示之后。
+        if (roleplayContext == null && config.systemPrompt.isNotBlank()) {
+            messages.put(systemMessage(config.systemPrompt))
+        }
         return messages
     }
 

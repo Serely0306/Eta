@@ -365,6 +365,7 @@ internal object AgentModelClient {
         val model: String,
         val modelDisplayName: String = "",
         val contextWindow: Int? = null,
+        /** 用户写的提示词：命中的模型提示词在前、服务商提示词在后（AG-40），放在 Eta 系统提示之后，角色会话不带。 */
         val systemPrompt: String,
         val anthropicVersion: String = AnthropicProviderSetting.DEFAULT_ANTHROPIC_VERSION,
         val openAiEndpointMode: String = OpenAiEndpointMode.CHAT_COMPLETIONS,

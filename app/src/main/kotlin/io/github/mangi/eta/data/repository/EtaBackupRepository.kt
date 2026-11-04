@@ -27,6 +27,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import java.io.InputStream
@@ -53,6 +54,8 @@ internal data class EtaBackupDocument(
     /** AG-19：会话级子 Agent（含上下文）与它们的通知；旧备份没有时，导入后会话里没有子 Agent。 */
     val subagents: List<ConversationSubagentEntity> = emptyList(),
     val subagentMail: List<ConversationSubagentMailEntity> = emptyList(),
+    /** AG-40：按模型的提示词规则；旧备份没有这个字段（null）时保留设备上的规则。 */
+    val modelPrompts: Map<String, String>? = null,
 ) {
     companion object {
         const val FORMAT = "eta-backup"
@@ -92,6 +95,7 @@ internal object EtaBackupRepository {
             val database = EtaDatabase.get(appContext)
             val settings = SettingsDataStore.settings()
             val catalogRevision = SettingsDataStore.officialModelCatalogRevision()
+            val modelPrompts = SettingsDataStore.modelPrompts()
             EtaBackupJsonStreams.export(appContext, output, onPhase = { phase = it }) { writer ->
                 database.withTransaction {
                     val dao = database.conversationDao()
@@ -106,6 +110,7 @@ internal object EtaBackupRepository {
                     writer.value("catalogRevision", Int.serializer(), catalogRevision)
                     writer.value("selectedProviderId", String.serializer().nullable, settings.selectedProviderId)
                     writer.value("selectedModelId", String.serializer().nullable, settings.selectedModelId)
+                    writer.value("modelPrompts", MapSerializer(String.serializer(), String.serializer()), modelPrompts)
                     writer.value("conversationState", ConversationStateEntity.serializer().nullable, dao.state())
                     writer.value("memoryMd", String.serializer(), memory)
                     val boundAvatars = linkedMapOf<String, String?>()
@@ -325,6 +330,14 @@ internal object EtaBackupRepository {
                         ProviderRepository.repairSelection()
                     } catch (failure: Exception) {
                         throw IllegalStateException("数据已导入，但默认模型设置未完全恢复，请重新选择服务商和模型。", failure)
+                    }
+                    document.modelPrompts?.let { rules ->
+                        try {
+                            phase = "restore_model_prompts"
+                            SettingsDataStore.setModelPrompts(rules)
+                        } catch (failure: Exception) {
+                            throw IllegalStateException("数据已导入，但模型提示词未恢复，请在设置的“模型提示词”页重新填写。", failure)
+                        }
                     }
                 }
                 summary

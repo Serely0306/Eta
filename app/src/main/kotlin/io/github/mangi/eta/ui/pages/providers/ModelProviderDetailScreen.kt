@@ -75,6 +75,8 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 internal fun ModelProviderDetailScreen(
     providerId: String? = null,
     newType: NewProviderType? = null,
+    /** 模型编辑弹窗里跳到“模型提示词”页的某条规则（AG-40）。 */
+    onOpenModelPrompts: (pattern: String) -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -178,6 +180,7 @@ internal fun ModelProviderDetailScreen(
                             scope = scope,
                             scrollBehavior = scrollBehavior,
                             contentSidePadding = sidePadding,
+                            onOpenModelPrompts = onOpenModelPrompts,
                         )
                     }
                 }

@@ -71,6 +71,7 @@ import io.github.mangi.eta.ui.pages.providers.CommunityCatalogProviderScreen
 import io.github.mangi.eta.ui.pages.providers.CommunityCatalogScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderDetailScreen
 import io.github.mangi.eta.ui.pages.providers.ModelProviderListScreen
+import io.github.mangi.eta.ui.pages.providers.ModelPromptsScreen
 import io.github.mangi.eta.ui.screens.backup.DataBackupScreen
 import io.github.mangi.eta.ui.screens.browser.AgentBrowserActivity
 import io.github.mangi.eta.agent.browser.BrowserSessionRegistry
@@ -801,14 +802,19 @@ fun AgentAppRoot(
             entry<AppRoute.ModelProviderDetail>(swipeDismiss = swipeDismiss) { route ->
                 ModelProviderDetailScreen(
                     providerId = route.providerId,
+                    onOpenModelPrompts = { pattern -> pushRoute(AppRoute.ModelPrompts(pattern)) },
                     onBack = ::popRoute
                 )
             }
             entry<AppRoute.ModelProviderNew>(swipeDismiss = swipeDismiss) { route ->
                 ModelProviderDetailScreen(
                     newType = route.providerType,
+                    onOpenModelPrompts = { pattern -> pushRoute(AppRoute.ModelPrompts(pattern)) },
                     onBack = ::popRoute
                 )
+            }
+            entry<AppRoute.ModelPrompts>(swipeDismiss = swipeDismiss) { route ->
+                ModelPromptsScreen(initialPattern = route.pattern, onBack = ::popRoute)
             }
         }
     }

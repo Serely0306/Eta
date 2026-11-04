@@ -34,6 +34,29 @@ class RuntimeConfigRepositoryTest {
     }
 
     @Test
+    fun modelPromptAppliesToTheSameModelOnEveryProviderBeforeTheProviderPrompt() {
+        val rules = mapOf("gpt-6.1-sol" to "只写事实", "claude-*" to "Claude 规则")
+        val official = OpenAiCompatibleProviderSetting(
+            id = "official", name = "官方", baseUrl = "https://api.example.invalid/v1", systemPrompt = "官方连接要求",
+        )
+        val relay = OpenAiCompatibleProviderSetting(id = "relay", name = "中转", baseUrl = "https://relay.example.invalid/v1")
+
+        val onOfficial = RuntimeConfigRepository.buildRuntimeConfig(
+            official, Model(id = "m1", modelId = "gpt-6.1-sol", displayName = "GPT"), rules,
+        )
+        val onRelay = RuntimeConfigRepository.buildRuntimeConfig(
+            relay, Model(id = "m2", modelId = "openai/gpt-6.1-sol-2026-10-01", displayName = "GPT"), rules,
+        )
+        val unmatched = RuntimeConfigRepository.buildRuntimeConfig(
+            official, Model(id = "m3", modelId = "deepseek-v4-flash", displayName = "DeepSeek"), rules,
+        )
+
+        assertEquals("只写事实\n\n官方连接要求", onOfficial.systemPrompt)
+        assertEquals("只写事实", onRelay.systemPrompt)
+        assertEquals("官方连接要求", unmatched.systemPrompt)
+    }
+
+    @Test
     fun oauthConfigUsesBoundEndpointAndNeverSerializesApiKey() {
         val provider = OpenAiCompatibleProviderSetting(
             id = "oauth-provider",

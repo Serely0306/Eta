@@ -113,6 +113,10 @@ sealed interface AppRoute : NavKey {
 
     @Serializable
     data class ModelProviderNew(val providerType: NewProviderType) : AppRoute
+
+    /** 按模型的提示词（AG-40）；[pattern] 不为空时打开这条规则，规则还不存在时以它为模式新建。 */
+    @Serializable
+    data class ModelPrompts(val pattern: String? = null) : AppRoute
 }
 
 @Serializable

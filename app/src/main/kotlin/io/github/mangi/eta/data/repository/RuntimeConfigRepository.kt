@@ -10,6 +10,7 @@ import io.github.mangi.eta.data.model.AnthropicProviderSetting
 import io.github.mangi.eta.data.model.CustomProviderSetting
 import io.github.mangi.eta.data.model.Model
 import io.github.mangi.eta.data.model.ModelFallbackSettings
+import io.github.mangi.eta.data.model.ModelPromptRules
 import io.github.mangi.eta.data.model.ModelReasoningCapabilities
 import io.github.mangi.eta.data.model.OpenAiCompatibleProviderSetting
 import io.github.mangi.eta.data.model.OpenAiEndpointMode
@@ -78,14 +79,14 @@ internal object RuntimeConfigRepository {
         val settings = ProviderRepository.repairSelection()
         val provider = settings.selectedProviderId?.let { ProviderRepository.providerById(it) } ?: return null
         val model = provider.selectedOrFirstModel(settings.selectedModelId) ?: return null
-        return buildRuntimeConfig(provider, model)
+        return buildRuntimeConfig(provider, model, SettingsDataStore.modelPrompts())
     }
 
     /** 会话绑定的模型仍可用时使用它，否则回落到默认模型。 */
     suspend fun runtimeConfigFor(modelId: String?): AgentModelClient.ModelConfig? {
         ProviderRepository.ensureBuiltInsMerged()
         ProviderRepository.allProviders().enabledModel(modelId)?.let { (provider, model) ->
-            return buildRuntimeConfig(provider, model)
+            return buildRuntimeConfig(provider, model, SettingsDataStore.modelPrompts())
         }
         return currentRuntimeConfig()
     }
@@ -93,8 +94,9 @@ internal object RuntimeConfigRepository {
     /** 指定模型仍启用时返回其配置；与 [runtimeConfigFor] 不同，不可用时返回 null，不回落到默认模型。 */
     suspend fun enabledRuntimeConfig(modelId: String): AgentModelClient.ModelConfig? {
         ProviderRepository.ensureBuiltInsMerged()
+        val modelPrompts = SettingsDataStore.modelPrompts()
         return ProviderRepository.allProviders().enabledModel(modelId)?.let { (provider, model) ->
-            buildRuntimeConfig(provider, model)
+            buildRuntimeConfig(provider, model, modelPrompts)
         }
     }
 
@@ -170,10 +172,11 @@ internal object RuntimeConfigRepository {
         if (modelIds.isEmpty()) return ModelFallbackPolicy.NONE
         ProviderRepository.ensureBuiltInsMerged()
         val providers = ProviderRepository.allProviders()
+        val modelPrompts = SettingsDataStore.modelPrompts()
         val configs = modelIds.mapNotNull { id ->
             providers.enabledModel(id)?.let { (provider, model) ->
                 withReasoningEffort(
-                    buildRuntimeConfig(provider, model),
+                    buildRuntimeConfig(provider, model, modelPrompts),
                     requested = settings.efforts[id],
                     defaultEffort = primary.effectiveReasoningEffort,
                 )
@@ -201,7 +204,7 @@ internal object RuntimeConfigRepository {
         val provider = ProviderRepository.providerById(providerId)
             ?.takeIf { it.isEnabled && it.authMode == authMode } ?: return null
         val model = provider.models.firstOrNull { it.isEnabled && it.modelId == modelName } ?: return null
-        return buildRuntimeConfig(provider, model)
+        return buildRuntimeConfig(provider, model, SettingsDataStore.modelPrompts())
     }
 
     suspend fun syncToRemotePreferences(service: XposedService?): Boolean {
@@ -219,8 +222,20 @@ internal object RuntimeConfigRepository {
     fun runtimeConfigJson(config: AgentModelClient.ModelConfig): String =
         json.encodeToString(if (config.authMode == ProviderAuthModes.API_KEY) config else config.copy(apiKey = ""))
 
-    fun buildRuntimeConfig(provider: ProviderSetting, model: Model): AgentModelClient.ModelConfig {
-        val systemPrompt = provider.systemPrompt.orEmpty().trim()
+    /**
+     * [modelPrompts] 是按模型的提示词规则（AG-40）；对话与子 Agent 的配置都从 [SettingsDataStore.modelPrompts] 传入，
+     * 只用来列选项或做网页提取的调用方可以不传。
+     */
+    fun buildRuntimeConfig(
+        provider: ProviderSetting,
+        model: Model,
+        modelPrompts: Map<String, String> = emptyMap(),
+    ): AgentModelClient.ModelConfig {
+        val modelPrompt = ModelPromptRules.match(modelPrompts, model.modelId)?.let { modelPrompts.getValue(it) }.orEmpty().trim()
+        // 用户写的提示词：命中的模型提示词在前，服务商提示词在后。
+        val systemPrompt = listOf(modelPrompt, provider.systemPrompt.orEmpty().trim())
+            .filter(String::isNotEmpty)
+            .joinToString("\n\n")
         val sourceType = ProviderSourceRegistry.resolve(provider)
         val profile = ProviderConnectionProfile.forAuthMode(provider.authMode)
         val endpointMode = profile?.endpointMode ?: provider.endpointMode()

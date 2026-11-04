@@ -35,7 +35,23 @@ internal object SettingsDataStore {
     private val SPEECH_SETTINGS = stringPreferencesKey("speech_settings_v1")
     private val USAGE_PRICING_SETTINGS = stringPreferencesKey("usage_pricing_v1")
     private val WEB_TOOLS_SETTINGS = stringPreferencesKey("web_tools_settings_v1")
+    private val MODEL_PROMPTS = stringPreferencesKey("model_prompts_v1")
     private val speechJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+    /** 按模型的提示词（AG-40）：规整后的匹配模式 → 提示词，见 [io.github.mangi.eta.data.model.ModelPromptRules]。 */
+    fun modelPromptsFlow(): Flow<Map<String, String>> {
+        ensureInitialized()
+        return dataStore.data
+            .catch { cause -> if (cause is IOException) emit(emptyPreferences()) else throw cause }
+            .map { prefs -> prefs[MODEL_PROMPTS]?.let { speechJson.decodeFromString<Map<String, String>>(it) } ?: emptyMap() }
+    }
+
+    suspend fun modelPrompts(): Map<String, String> = modelPromptsFlow().first()
+
+    suspend fun setModelPrompts(rules: Map<String, String>) {
+        ensureInitialized()
+        dataStore.edit { it[MODEL_PROMPTS] = speechJson.encodeToString(rules) }
+    }
 
     fun usagePricingFlow(): Flow<UsagePricingSettings> {
         ensureInitialized()

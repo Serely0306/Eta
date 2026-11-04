@@ -300,6 +300,16 @@ private fun SettingsPageContent(
                     )
 
                     EtaPreferenceDivider()
+                    EtaArrowPreference(
+                        title = stringResource(R.string.model_prompts_title),
+                        summary = stringResource(R.string.model_prompts_summary),
+                        startAction = {
+                            EtaPreferenceIcon(icon = Icons.Rounded.Description, tint = EtaPreferenceColors.Blue)
+                        },
+                        onClick = { onNavigate(AppRoute.ModelPrompts()) },
+                    )
+
+                    EtaPreferenceDivider()
                     SwitchPref(
                         context = context,
                         prefs = agentPrefs,

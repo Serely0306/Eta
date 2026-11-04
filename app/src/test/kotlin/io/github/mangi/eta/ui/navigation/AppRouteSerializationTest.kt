@@ -55,6 +55,8 @@ class AppRouteSerializationTest {
             AppRoute.ModelProviderNew(NewProviderType.OpenAiCompatible),
             AppRoute.ModelProviderNew(NewProviderType.Anthropic),
             AppRoute.ModelProviderNew(NewProviderType.Gemini),
+            AppRoute.ModelPrompts(),
+            AppRoute.ModelPrompts("gpt-*"),
         )
         val json = Json { ignoreUnknownKeys = true }
 
