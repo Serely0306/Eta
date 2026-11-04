@@ -7,11 +7,13 @@ import kotlin.random.Random
 
 /**
  * 重试只包围模型请求；完整响应返回前不提交历史或执行本地工具，所以整次重发不会重复执行工具。
- * 次数取全局设置（默认 5，AG-26）；退避从 1 秒起翻倍并加抖动，服务商给了 Retry-After 时按它等。
+ * 次数和等待上下限取全局设置（AG-26）；按初始等待翻倍并加抖动，服务商给了 Retry-After 时按它等。
  */
 internal class AgentModelRetry(
     private val maxRetries: () -> Int = Prefs::modelRetryLimit,
     private val jitter: () -> Double = { Random.nextDouble(-JITTER_RATIO, JITTER_RATIO) },
+    private val retryInitialSeconds: () -> Int = Prefs::modelRetryInitialSeconds,
+    private val retryMaximumSeconds: () -> Int = Prefs::modelRetryMaxSeconds,
     private val waitBeforeRetry: (AgentRunController, Long) -> Unit = { controller, delay ->
         controller.awaitRetryDelay(delay)
     },
@@ -51,7 +53,7 @@ internal class AgentModelRetry(
                 val limit = maxRetries()
                 if (retries >= limit) throw exhausted(classified, limit)
                 retries += 1
-                val delayMs = delayMs(retries, classified.retryAfterMs, jitter(), Prefs.modelRetryInitialSeconds(), Prefs.modelRetryMaxSeconds())
+                val delayMs = delayMs(retries, classified.retryAfterMs, jitter(), retryInitialSeconds(), retryMaximumSeconds())
                 onEvent(
                     AgentEvent.ModelRetryScheduled(
                         round, retries, limit, delayMs.toInt(), classified.code, reasonText(classified),
@@ -87,7 +89,7 @@ internal class AgentModelRetry(
                 val limit = maxRetries()
                 if (retries >= limit) throw exhausted(classified, limit)
                 retries += 1
-                val delayMs = delayMs(retries, classified.retryAfterMs, jitter(), Prefs.modelRetryInitialSeconds(), Prefs.modelRetryMaxSeconds())
+                val delayMs = delayMs(retries, classified.retryAfterMs, jitter(), retryInitialSeconds(), retryMaximumSeconds())
                 onRetry(retries, limit, delayMs, classified)
                 waitBeforeRetry(controller, delayMs)
             }
@@ -98,7 +100,7 @@ internal class AgentModelRetry(
         private const val JITTER_RATIO = 0.2
         private const val MAX_REASON_CHARS = 120
 
-        fun delayMs(retry: Int, retryAfterMs: Long?, jitter: Double, initialSeconds: Int = 1, maxSeconds: Int = 30): Long {
+        fun delayMs(retry: Int, retryAfterMs: Long?, jitter: Double, initialSeconds: Int, maxSeconds: Int): Long {
             val initialMs = initialSeconds * 1_000L
             val maximumMs = maxOf(initialSeconds, maxSeconds) * 1_000L
             retryAfterMs?.let { return it.coerceIn(0, maxOf(60_000L, maximumMs)) }

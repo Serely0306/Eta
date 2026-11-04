@@ -43,6 +43,31 @@ class AgentModelRetryTest {
     }
 
     @Test
+    fun configuredInitialAndMaximumWaitApplyToRequestAndBlockRetries() {
+        val delays = mutableListOf<Long>()
+        val retry = AgentModelRetry(
+            maxRetries = { 3 },
+            jitter = { 0.0 },
+            retryInitialSeconds = { 5 },
+            retryMaximumSeconds = { 10 },
+            waitBeforeRetry = { _, delay -> delays += delay },
+        )
+        var calls = 0
+
+        complete(retry, provider { _, _ ->
+            if (calls++ < 3) throw SocketTimeoutException("timeout")
+            response()
+        })
+        calls = 0
+        retry.retrying(AgentRunController()) {
+            if (calls++ == 0) throw SocketTimeoutException("timeout")
+            "done"
+        }
+
+        assertEquals(listOf(5_000L, 10_000L, 10_000L, 5_000L), delays)
+    }
+
+    @Test
     fun zeroRetriesFailsOnFirstTransientFailure() {
         val retry = AgentModelRetry(maxRetries = { 0 }) { _, _ -> fail("不应重试") }
         var calls = 0
@@ -151,10 +176,10 @@ class AgentModelRetryTest {
         assertEquals(5_000L, AgentModelRetry.delayMs(10, null, 0.2, 5, 5))
         assertEquals(10_000L, AgentModelRetry.delayMs(10, null, -0.2, 10, 5))
         assertEquals(120_000L, AgentModelRetry.delayMs(1, 200_000L, 0.0, 1, 120))
-        assertEquals(1_200L, AgentModelRetry.delayMs(1, null, 0.2))
-        assertEquals(30_000L, AgentModelRetry.delayMs(10, null, 0.0))
-        assertEquals(60_000L, AgentModelRetry.delayMs(1, 90_000L, 0.0))
-        assertEquals(0L, AgentModelRetry.delayMs(3, 0L, 0.0))
+        assertEquals(1_200L, AgentModelRetry.delayMs(1, null, 0.2, 1, 30))
+        assertEquals(30_000L, AgentModelRetry.delayMs(10, null, 0.0, 1, 30))
+        assertEquals(60_000L, AgentModelRetry.delayMs(1, 90_000L, 0.0, 1, 30))
+        assertEquals(0L, AgentModelRetry.delayMs(3, 0L, 0.0, 1, 30))
     }
 
     @Test
