@@ -185,8 +185,8 @@ class AgentConversationStoreTest {
     fun saveAndLoadPreservesSemanticSystemNoticesWithoutTranslatedContent() {
         val notice = SystemNoticeMessageUi(
             id = "assistant-run-1-1",
-            code = SystemNoticeCode.RuntimeFailed,
-            detail = "upstream timeout",
+            code = SystemNoticeCode.ModelRetry,
+            detail = "请求失败，正在重试（2/5）：upstream timeout · 2 秒后",
         )
         runBlocking {
             AgentConversationStore.save(

@@ -620,7 +620,6 @@ class AgentRunMessageProjectorTest {
                 "$runId-thinking-1-0",
                 "assistant-$runId-1-1",
                 "$runId-tool-1-ws_1",
-                "$runId-thinking-1-2",
                 "assistant-$runId-1-3",
             ),
             messages.map { it.id },
@@ -628,8 +627,8 @@ class AgentRunMessageProjectorTest {
         assertFalse((messages[1] as ThinkingMessageUi).isStreaming)
         assertFalse((messages[2] as AgentMessageUi).isStreaming)
         assertEquals(ToolActivityStatusUi.Success, (messages[3] as ToolActivityMessageUi).status)
-        assertFalse((messages[4] as ThinkingMessageUi).isStreaming)
-        assertTrue((messages[5] as AgentMessageUi).isStreaming)
+        assertEquals("先判断需要搜索\n\n整理搜索结果", (messages[1] as ThinkingMessageUi).content)
+        assertTrue((messages[4] as AgentMessageUi).isStreaming)
     }
 
     @Test
@@ -739,6 +738,27 @@ class AgentRunMessageProjectorTest {
         assertEquals("上下文压缩已中断", interruptedNotice.detail)
         assertFalse(interruptedNotice.running)
         assertEquals(base + completed, projector.finishContextCompaction(runId, base + completed, "上下文压缩已中断"))
+    }
+
+    @Test
+    fun summarySegmentsShareOneBlockAndClockAndRetriesDiscardIt() {
+        var now = 1_000L
+        val projector = AgentRunMessageProjector { now }
+        var messages = projector.appendReasoningDelta("run", 1, 0, "first", emptyList())
+        now = 2_000L
+        messages = projector.finalizeThinkingBlock("run", 1, 0, "complete first", messages)
+        messages = projector.appendReasoningDelta("run", 1, 2, "second", messages)
+        now = 4_000L
+        messages = projector.finalizeThinkingRound("run", 1, messages)
+        assertEquals("complete first\n\nsecond", messages.filterIsInstance<ThinkingMessageUi>().single().content)
+        assertEquals(3, messages.filterIsInstance<ThinkingMessageUi>().single().elapsedSeconds)
+        messages = projector.scheduleModelRetry("run", AgentEvent.ModelRetryScheduled(1, 1, 5, 1_000, "timeout"), messages)
+        assertTrue(messages.none { it is ThinkingMessageUi })
+        now = 10_000L
+        messages = projector.appendReasoningDelta("run", 1, 0, "retry", messages)
+        now = 11_000L
+        messages = projector.finalizeThinkingRound("run", 1, messages)
+        assertEquals(1, messages.filterIsInstance<ThinkingMessageUi>().single().elapsedSeconds)
     }
 
     @Test

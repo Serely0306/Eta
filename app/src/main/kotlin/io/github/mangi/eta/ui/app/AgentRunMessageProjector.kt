@@ -19,6 +19,7 @@ internal class AgentRunMessageProjector(
     private val nowElapsedRealtime: () -> Long = { SystemClock.elapsedRealtime() },
 ) {
     private val thinkingStartedAt = mutableMapOf<String, Long>()
+    private val thinkingSegments = mutableMapOf<String, LinkedHashMap<Int, String>>()
 
     /** 本次回答的总用时（AG-28，用户 2026-10-28 改为“用时”）：从 run 的第一个事件到结束。 */
     private val runStartedAt = mutableMapOf<String, Long>()
@@ -197,7 +198,7 @@ internal class AgentRunMessageProjector(
         messages: List<AgentChatMessageUi>,
     ): List<AgentChatMessageUi> {
         val finalized = finalizeTextRound(
-            runId, event.round, finalizeThinkingRound(runId, event.round, messages),
+            runId, event.round, discardThinkingRound(runId, event.round, messages),
         )
         val notice = SystemNoticeMessageUi(
             id = "assistant-$runId-retry-${event.round}",
@@ -207,14 +208,13 @@ internal class AgentRunMessageProjector(
         return finalized.filterNot { it.id == notice.id } + notice
     }
 
-    /** 换用备用模型前失败尝试的半截正文与思考照常收口，随后插入切换提示。 */
     fun noteModelFallback(
         runId: String,
         event: AgentEvent.ModelFallback,
         messages: List<AgentChatMessageUi>,
     ): List<AgentChatMessageUi> {
         val finalized = finalizeTextRound(
-            runId, event.round, finalizeThinkingRound(runId, event.round, messages),
+            runId, event.round, discardThinkingRound(runId, event.round, messages),
         )
         val notice = SystemNoticeMessageUi(
             id = "assistant-$runId-fallback-${event.round}",
@@ -293,13 +293,16 @@ internal class AgentRunMessageProjector(
             messages = messages,
         )
         val thinkingId = thinkingMessageId(runId, round, index)
+        val segments = thinkingSegments.getOrPut(thinkingId) { linkedMapOf() }
+        segments[index] = segments[index].orEmpty() + delta
+        val content = segments.values.joinToString("\n\n")
         val elapsedSeconds = elapsedSeconds(thinkingId)
         var updated = false
         val next = transitioned.map { message ->
             if (message is ThinkingMessageUi && message.id == thinkingId) {
                 updated = true
                 message.copy(
-                    content = message.content + delta,
+                    content = content,
                     isStreaming = true,
                     elapsedSeconds = elapsedSeconds,
                     collapsed = false,
@@ -312,7 +315,7 @@ internal class AgentRunMessageProjector(
 
         return next + ThinkingMessageUi(
             id = thinkingId,
-            content = delta,
+            content = content,
             isStreaming = true,
             elapsedSeconds = elapsedSeconds,
             collapsed = false,
@@ -391,9 +394,12 @@ internal class AgentRunMessageProjector(
         messages: List<AgentChatMessageUi>,
     ): List<AgentChatMessageUi> {
         val thinkingId = thinkingMessageId(runId, round, index)
+        if (replacementContent == null) return messages
+        val segments = thinkingSegments.getOrPut(thinkingId) { linkedMapOf() }
+        segments[index] = replacementContent
         return messages.map { message ->
             if (message is ThinkingMessageUi && message.id == thinkingId) {
-                message.finished(replacementContent)
+                message.copy(content = segments.values.joinToString("\n\n"))
             } else {
                 message
             }
@@ -607,7 +613,18 @@ internal class AgentRunMessageProjector(
 
     fun clearRun(runId: String) {
         thinkingStartedAt.keys.removeAll { it.startsWith("$runId-thinking-") }
+        thinkingSegments.keys.removeAll { it.startsWith("$runId-thinking-") }
         runStartedAt.remove(runId)
+    }
+
+    private fun discardThinkingRound(
+        runId: String,
+        round: Int,
+        messages: List<AgentChatMessageUi>,
+    ): List<AgentChatMessageUi> {
+        thinkingStartedAt.keys.removeAll { isThinkingMessageForRound(it, runId, round) }
+        thinkingSegments.keys.removeAll { isThinkingMessageForRound(it, runId, round) }
+        return messages.filterNot { it is ThinkingMessageUi && isThinkingMessageForRound(it.id, runId, round) }
     }
 
     /** 时长只在块从流式转为结束时定格；已结束的块在整轮收尾或恢复时保持原值，不再按“开始到现在”累计。 */
@@ -689,7 +706,7 @@ internal class AgentRunMessageProjector(
         "${assistantMessagePrefix(runId)}$round-$index"
 
     private fun thinkingMessageId(runId: String, round: Int, index: Int): String =
-        "$runId-thinking-$round-$index"
+        "$runId-thinking-$round-0"
 
     private fun thinkingFallbackMessageId(runId: String, round: Int): String =
         "$runId-thinking-$round-fallback"
