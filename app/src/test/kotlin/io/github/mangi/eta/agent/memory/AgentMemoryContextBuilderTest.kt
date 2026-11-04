@@ -60,11 +60,11 @@ class AgentMemoryContextBuilderTest {
     }
 
     @Test
-    fun coreBudgetTracksWindowWithSafeUnknownFallback() {
-        assertEquals(8_000, AgentMemoryContextBuilder.coreBudgetChars(null))
-        assertEquals(8_000, AgentMemoryContextBuilder.coreBudgetChars(128_000))
-        assertEquals(16_000, AgentMemoryContextBuilder.coreBudgetChars(256_000))
-        assertEquals(32_000, AgentMemoryContextBuilder.coreBudgetChars(1_000_000))
+    fun coreBudgetIsFixedRegardlessOfContextWindow() {
+        assertEquals(4_000, AgentMemoryContextBuilder.coreBudgetChars(null))
+        assertEquals(4_000, AgentMemoryContextBuilder.coreBudgetChars(128_000))
+        assertEquals(4_000, AgentMemoryContextBuilder.coreBudgetChars(256_000))
+        assertEquals(4_000, AgentMemoryContextBuilder.coreBudgetChars(1_000_000))
         assertEquals(4_000, AgentMemoryContextBuilder.coreBudgetChars(16_000))
     }
 
@@ -85,7 +85,7 @@ class AgentMemoryContextBuilderTest {
         val snapshot = snapshot(content)
         val context = AgentMemoryContextBuilder.build(snapshot, null)
 
-        assertEquals(8_000, context.coreContent.length)
+        assertEquals(4_000, context.coreContent.length)
         assertTrue(context.coreTruncated)
         assertEquals(snapshot.revision, context.revision)
     }

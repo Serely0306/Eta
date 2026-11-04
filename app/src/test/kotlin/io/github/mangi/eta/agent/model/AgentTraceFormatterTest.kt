@@ -340,7 +340,7 @@ class AgentTraceFormatterTest {
         )
 
         assertTrue(summary.contains("已读取记忆"))
-        assertTrue(summary.contains("9 行"))
+        assertTrue(summary.contains("读取 14 字"))
         assertTrue(summary.contains("321 字节"))
         assertFalse(summary.contains("ok="))
         assertFalse(summary.contains("private memory"))

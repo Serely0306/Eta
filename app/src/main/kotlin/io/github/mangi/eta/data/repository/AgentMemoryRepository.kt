@@ -92,6 +92,13 @@ internal class AgentMemoryStore(
             is AgentMemoryMutation.Append -> append(current, mutation.content)
             is AgentMemoryMutation.Clear -> ""
         }
+        if (updated.length > 20_000 &&
+            (mutation is AgentMemoryMutation.Append || updated.length > current.content.length)) {
+            throw AgentMemoryException(
+                code = "MEMORY_FULL",
+                message = "记忆超过 20000 字符；请先用 replace_range 合并或删除旧内容",
+            )
+        }
         writeLocked(updated)
         AgentMemoryWriteResult.Success(snapshotOf(updated))
     }
@@ -292,7 +299,7 @@ internal class AgentMemoryStore(
 
     companion object {
         const val MAX_FILE_BYTES = 1024 * 1024
-        const val DEFAULT_READ_CHARS = 12_000
+        const val DEFAULT_READ_CHARS = 4_000
         const val MAX_READ_CHARS = 32_000
         const val MIN_READ_CHARS = 1
         const val MAX_WRITE_CONTENT_CHARS = 3_500

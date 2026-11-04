@@ -406,8 +406,8 @@ internal class AgentTraceFormatter {
     private fun summarizeMemoryResult(toolName: String, json: JSONObject): String =
         buildList {
             add(if (toolName.endsWith("memory_get")) "已读取记忆" else "已更新记忆")
-            if (json.has("line_count")) add("${json.optInt("line_count")} 行")
-            if (json.has("bytes")) add("${json.optInt("bytes")} 字节")
+            if (toolName.endsWith("memory_get")) add("读取 ${json.optString("content").length} 字")
+            if (json.has("bytes")) add("全文 ${json.optInt("bytes")} 字节")
         }.joinToString(" · ")
 
     private fun summarizeGenericResult(

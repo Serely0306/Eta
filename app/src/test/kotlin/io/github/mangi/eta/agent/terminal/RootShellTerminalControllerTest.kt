@@ -11,6 +11,24 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
 class RootShellTerminalControllerTest {
+    @Test
+    fun longOutputReturnsBoundedPreviewAndSavesBothStreams() {
+        val workspace = temporaryFolder.newFolder()
+        val controller = RootShellTerminalController(NoopLogger, executionContext = TerminalExecutionContext(
+            TerminalEnvironment.ALPINE, null, workspace.path,
+        ))
+        val stdout = "a".repeat(5_000)
+        val stderr = "b".repeat(10_000)
+        val result = JSONObject()
+        with(controller) { result.putTerminalOutput(stdout, stderr) }
+        assertEquals(15_000, result.getInt("total_chars"))
+        assertEquals("[stdout]\n$stdout\n[stderr]\n$stderr", File(result.getString("output_file")).readText())
+        assertTrue(result.getString("stdout").startsWith("a".repeat(2_000)))
+        assertTrue(result.getString("stdout").endsWith("b".repeat(6_000)))
+        assertTrue(result.getString("stdout").contains("省略 7000 字符"))
+        assertEquals("", result.getString("stderr"))
+    }
+
 
     @get:Rule
     val temporaryFolder = TemporaryFolder()

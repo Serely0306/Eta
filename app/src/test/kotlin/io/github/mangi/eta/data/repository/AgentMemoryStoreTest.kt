@@ -53,6 +53,25 @@ class AgentMemoryStoreTest {
     }
 
     @Test
+    fun softLimitRejectsGrowthButAllowsConsolidationAndSettingsEdits() {
+        val store = store()
+        val full = store.replaceAll("a".repeat(20_000))
+        val failure = assertThrows(AgentMemoryException::class.java) {
+            store.mutate(AgentMemoryMutation.Append(full.revision, "more"))
+        }
+        assertEquals("MEMORY_FULL", failure.code)
+        assertEquals(full, store.snapshot())
+        val larger = store.replaceAll("a".repeat(21_000))
+        assertThrows(AgentMemoryException::class.java) {
+            store.mutate(AgentMemoryMutation.ReplaceRange(larger.revision, 1, 1, "a".repeat(21_001)))
+        }
+        val smaller = store.mutate(AgentMemoryMutation.ReplaceRange(larger.revision, 1, 1, "a".repeat(20_500))) as AgentMemoryWriteResult.Success
+        assertEquals(20_500, smaller.snapshot.content.length)
+        val cleared = store.mutate(AgentMemoryMutation.Clear(smaller.snapshot.revision)) as AgentMemoryWriteResult.Success
+        assertEquals("", cleared.snapshot.content)
+    }
+
+    @Test
     fun mutationsAreAtomicRevisionCheckedAndCanDeleteOrClear() {
         val store = store()
         val initial = store.replaceAll("# 核心记忆\n旧偏好\n## 项目\n旧项目")

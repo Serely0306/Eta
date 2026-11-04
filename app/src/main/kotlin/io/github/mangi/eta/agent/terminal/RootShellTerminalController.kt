@@ -30,7 +30,6 @@ internal class RootShellTerminalController(
         const val USER_STORAGE = "/storage/emulated/0"
         const val MAX_TIMEOUT_SECONDS = 180
         const val MAX_OUTPUT_CHARS = 16_000
-        const val MAX_COMMAND_OUTPUT_BYTES = 256 * 1024
     }
 
     private val sessions = linkedMapOf<String, TerminalSession>()
@@ -400,8 +399,6 @@ internal class RootShellTerminalController(
         } else {
             result.stdout
         }
-        val stdout = rawStdout.truncateForJson()
-        val stderr = if (mergeStderr) "" else result.stderr.truncateForJson()
         return JSONObject()
             .put("ok", result.exitCode == 0)
             .put("tool", "terminal")
@@ -414,11 +411,7 @@ internal class RootShellTerminalController(
             .put("status", when { result.timedOut -> "timed_out"; session.closed -> "cancelled"; result.exitCode == 0 -> "exited"; else -> "failed" })
             .put("exit_code", result.exitCode)
             .put("timed_out", result.timedOut)
-            .put("stdout", stdout)
-            .put("stderr", stderr)
-            .put("stdout_truncated", rawStdout.length > MAX_OUTPUT_CHARS)
-            .put("stderr_truncated", !mergeStderr && result.stderr.length > MAX_OUTPUT_CHARS)
-            .put("output_truncated", rawStdout.length > MAX_OUTPUT_CHARS || (!mergeStderr && result.stderr.length > MAX_OUTPUT_CHARS))
+            .apply { putTerminalOutput(rawStdout, if (mergeStderr) "" else result.stderr) }
             .put("session_closed", result.timedOut || session.closed)
             .toString()
     }
@@ -553,8 +546,6 @@ internal class RootShellTerminalController(
         } else {
             observation.text
         }
-        val stdout = rawStdout.truncateForJson()
-        val stderr = if (mergeStderr) "" else result.stderr.truncateForJson()
         return JSONObject()
             .put("ok", result.exitCode == 0)
             .put("tool", "terminal")
@@ -566,11 +557,7 @@ internal class RootShellTerminalController(
             .put("status", when { processSupervisor.isClosing -> "cancelled"; result.exitCode == -2 -> "timed_out"; result.exitCode == 0 -> "exited"; else -> "failed" })
             .put("exit_code", result.exitCode)
             .put("timed_out", result.exitCode == -2)
-            .put("stdout", stdout)
-            .put("stderr", stderr)
-            .put("stdout_truncated", result.outputTruncated || rawStdout.length > MAX_OUTPUT_CHARS || (mergeStderr && result.stderrTruncated))
-            .put("stderr_truncated", !mergeStderr && (result.stderrTruncated || result.stderr.length > MAX_OUTPUT_CHARS))
-            .put("output_truncated", result.outputTruncated || result.stderrTruncated || rawStdout.length > MAX_OUTPUT_CHARS || result.stderr.length > MAX_OUTPUT_CHARS)
+            .apply { putTerminalOutput(rawStdout, if (mergeStderr) "" else result.stderr) }
             .toString()
     }
 
@@ -735,7 +722,7 @@ internal class RootShellTerminalController(
             timeoutSeconds = timeoutSeconds,
             stdin = null,
             environment = environment,
-            maxOutputBytes = MAX_COMMAND_OUTPUT_BYTES,
+            maxOutputBytes = Int.MAX_VALUE,
         )
         return ShellTextResult(
             exitCode = result.exitCode,
@@ -764,7 +751,34 @@ internal class RootShellTerminalController(
             linuxRootfsPath = rootfsPathFor(environment),
             linuxSharedMounts = sharedMountsFor(environment),
             maxOutputBytes = maxOutputBytes,
+            maxStderrBytes = maxOutputBytes,
         )
+
+    internal fun JSONObject.putTerminalOutput(stdout: String, stderr: String) {
+        val totalChars = stdout.length + stderr.length
+        put("total_chars", totalChars)
+        if (totalChars <= 8_000) {
+            put("stdout", stdout).put("stderr", stderr).put("output_truncated", false)
+                .put("stdout_truncated", false).put("stderr_truncated", false)
+            return
+        }
+        val directory = File(androidWorkspace(), ".eta/terminal-output")
+        if (!directory.isDirectory && !directory.mkdirs()) {
+            throw java.io.IOException("无法创建终端输出目录：${directory.path}")
+        }
+        val now = System.currentTimeMillis()
+        val files = directory.listFiles() ?: throw java.io.IOException("无法列出终端输出目录：${directory.path}")
+        files.filter { it.isFile && it.lastModified() < now - TimeUnit.DAYS.toMillis(7) }.forEach {
+            if (!it.delete()) throw java.io.IOException("无法删除过期终端输出：${it.path}")
+        }
+        val outputFile = File(directory, "$now-${UUID.randomUUID().toString().take(8)}.log")
+        outputFile.writeText("[stdout]\n$stdout\n[stderr]\n$stderr")
+        val combined = stdout + stderr
+        val preview = combined.take(2_000) +
+            "\n[省略 ${totalChars - 8_000} 字符，全文见 ${outputFile.path}]\n" + combined.takeLast(6_000)
+        put("stdout", preview).put("stderr", "").put("output_file", outputFile.path)
+            .put("output_truncated", true).put("stdout_truncated", true).put("stderr_truncated", stderr.isNotEmpty())
+    }
 
     private fun String.truncateForJson(): String =
         if (length <= MAX_OUTPUT_CHARS) this else take(MAX_OUTPUT_CHARS) + "\n...[truncated]"

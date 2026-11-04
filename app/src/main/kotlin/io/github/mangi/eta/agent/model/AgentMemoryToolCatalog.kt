@@ -37,7 +37,7 @@ internal object AgentMemoryToolCatalog {
                                         .put("type", "integer")
                                         .put("minimum", AgentMemoryStore.MIN_READ_CHARS)
                                         .put("maximum", AgentMemoryStore.MAX_READ_CHARS)
-                                        .put("description", "Maximum returned characters; default 12000, maximum 32000."),
+                                        .put("description", "Maximum returned characters; default 4000, maximum 32000."),
                                 ),
                         ),
                 ),
@@ -47,7 +47,7 @@ internal object AgentMemoryToolCatalog {
             .put(
                 AgentToolSchema.function(
                     name = "memory_write",
-                    description = "Atomically update persistent MEMORY.md. Store only durable cross-conversation facts, preferences, relationships, and ongoing project context; never store secrets, credentials, verification codes, or transient requests. Keep '# 核心记忆' concise, correct stale facts, and prefer replacing an existing section over blindly appending duplicates. Use the revision from the most recent memory_write or memory_get result, or the session memory snapshot if neither has run.",
+                    description = "Atomically update persistent MEMORY.md only when the user explicitly asks to remember something or a new fact will be useful in future conversations. Never store task progress, temporary conclusions, current device state, investigation details, secrets or credentials. Write at most once per run. Check the heading index first and replace an existing matching section instead of appending. Keep '# 核心记忆' concise. Above 20000 characters, MEMORY_FULL requires replace_range to consolidate or delete old content first. Use the revision from the latest memory_write or memory_get result, or the session memory snapshot.",
                     parameters = JSONObject()
                         .put("type", "object")
                         .put(

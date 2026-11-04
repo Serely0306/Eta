@@ -383,7 +383,7 @@ internal class AgentLocalTools(
         val result = AgentMemoryRepository.read(
             query = args.optString("query").takeIf(String::isNotBlank),
             startLine = args.optInt("start_line", 1),
-            maxChars = args.optInt("max_chars", 12_000),
+            maxChars = args.optInt("max_chars", 4_000),
         )
         JSONObject()
             .put("ok", true)
