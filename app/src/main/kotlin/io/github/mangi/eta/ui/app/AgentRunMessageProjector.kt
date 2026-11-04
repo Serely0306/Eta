@@ -91,6 +91,7 @@ internal class AgentRunMessageProjector(
                 id = prefix + (messages.count { it.id.startsWith(prefix) } + 1),
                 code = SystemNoticeCode.SubagentNotified,
                 detail = event.display,
+                jobIds = event.jobIds,
             )
         }
         // 待回答问题由会话状态承载，问答结论随 ask_user 的工具结果进入消息流。

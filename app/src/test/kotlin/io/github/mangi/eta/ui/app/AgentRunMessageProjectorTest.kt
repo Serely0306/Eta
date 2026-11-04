@@ -19,6 +19,19 @@ import org.junit.Test
 
 class AgentRunMessageProjectorTest {
     @Test
+    fun backgroundCommandNoticeCarriesJobIdsFromItsPayload() {
+        val messages = AgentRunMessageProjector { 1_000L }.applyEvent(
+            "run",
+            AgentEvent.SubagentNotified("后台命令 build 完成", listOf("job_payload_id")),
+            emptyList(),
+        )
+
+        val notice = messages.single() as SystemNoticeMessageUi
+        assertEquals("后台命令 build 完成", notice.detail)
+        assertEquals(listOf("job_payload_id"), notice.jobIds)
+    }
+
+    @Test
     fun answerDurationCoversTheWholeRunFromItsFirstEvent() {
         var now = 0L
         val projector = AgentRunMessageProjector { now }

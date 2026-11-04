@@ -67,9 +67,10 @@ internal class BackgroundTerminalJobs(
         val task = supervisor.findTask(id)?.takeIf { it.commandTask }
             ?: return failure("JOB_NOT_FOUND", "未找到后台命令，请用 terminal_job 的 list 查看任务")
         val logs = supervisor.readLogs(id, maxBytes)
-        val result = taskJson(task).put("action", "read")
+        val result = taskJson(task).put("action", "read").put("command", task.command)
         if (!logs.ok) return result.put("ok", false).put("code", logs.code).put("message", logs.message).toString()
-        return result.put("output", logs.text).put("output_truncated", logs.truncated).toString()
+        return result.put("output", logs.text)
+            .put("output_truncated", logs.truncated).toString()
     }
 
     fun stop(id: String): String {
@@ -174,7 +175,6 @@ internal class BackgroundTerminalJobs(
 
     private fun taskJson(task: DetachedTask): JSONObject = base("status")
         .put("job_id", task.id).put("description", task.description)
-        .put("command", task.command)
         .put("environment", task.environment.wireName).put("identity", task.identity).put("cwd", task.cwd)
         .put("status", task.commandStatus).put("running", task.completedAt == null)
         .put("started_at", task.startedAt).put("completed_at", task.completedAt ?: JSONObject.NULL)

@@ -21,6 +21,7 @@ import io.github.mangi.eta.ui.model.TokenUsageUi
 import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import io.github.mangi.eta.ui.model.UserMessageUi
+import io.github.mangi.eta.ui.components.BackgroundNoticeEntry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -46,6 +47,32 @@ class AgentConversationStoreTest {
         context = RuntimeEnvironment.getApplication()
         EtaDatabase.closeForTests()
         context.deleteDatabase("eta.db")
+    }
+
+    @Test
+    fun backgroundCommandJobIdsSurviveConversationReload() = runBlocking {
+        val notice = SystemNoticeMessageUi(
+            id = "notice-job",
+            code = SystemNoticeCode.SubagentNotified,
+            detail = "后台命令 build 完成",
+            jobIds = listOf("job_payload_id"),
+        )
+        AgentConversationStore.save(
+            context = context,
+            selectedConversationId = "notice-job",
+            conversationsById = mapOf("notice-job" to AgentChatHomeUiState(
+                messages = listOf(notice), input = "", isStreaming = false, thinkingEnabled = false,
+            )),
+            titles = mapOf("notice-job" to "后台命令"),
+            updatedAt = mapOf("notice-job" to 1L),
+        )
+
+        val restored = AgentConversationStore.load(context).conversationsById.getValue("notice-job")
+            .messages.single() as SystemNoticeMessageUi
+
+        assertEquals("后台命令 build 完成", restored.detail)
+        assertEquals(listOf("job_payload_id"), restored.jobIds)
+        assertEquals("job_payload_id", BackgroundNoticeEntry.parse(restored.detail.orEmpty(), restored.jobIds).single().jobId)
     }
 
     @Test

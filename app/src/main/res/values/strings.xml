@@ -566,6 +566,18 @@
   <string name="subagent_strategy_on_request">Only when I ask</string>
   <string name="background_tasks_message">Message</string>
   <string name="background_tasks_stop">Stop</string>
+  <string name="background_command_loading">Reading background command…</string>
+  <string name="background_command_status">Status: %1$s</string>
+  <string name="background_command_status_running">Running</string>
+  <string name="background_command_status_completed">Completed</string>
+  <string name="background_command_status_failed">Failed</string>
+  <string name="background_command_status_timed_out">Timed out</string>
+  <string name="background_command_status_stopped">Stopped</string>
+  <string name="background_command_status_interrupted">Interrupted</string>
+  <string name="background_command_status_unknown">Unknown</string>
+  <string name="background_command_elapsed_seconds">Elapsed: %1$d sec</string>
+  <string name="background_command_expand_log">Expand log (up to 64 KiB)</string>
+  <string name="background_command_collapse_log">Collapse log</string>
   <string name="background_tasks_close">Close</string>
   <string name="background_tasks_send">Send</string>
   <string name="background_tasks_message_hint">Tell it directly…</string>
@@ -594,6 +606,7 @@
   <string name="tool_detail_open">Details</string>
   <string name="tool_detail_arguments">Arguments</string>
   <string name="tool_detail_result">Result</string>
+  <string name="tool_detail_original_arguments_and_result">Original arguments and result</string>
   <plurals name="tool_detail_stdout">
     <item quantity="one">Standard output · %d line</item>
     <item quantity="other">Standard output · %d lines</item>

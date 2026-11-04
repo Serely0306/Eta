@@ -368,7 +368,7 @@ internal class AgentLoop(
         )
         runController.consumeNotices(notices.flatMap { it.mailIds })
         context.userAppended()
-        notices.forEach { onEvent(AgentEvent.SubagentNotified(it.display)) }
+        notices.forEach { onEvent(AgentEvent.SubagentNotified(it.display, it.jobIds)) }
         return true
     }
 

@@ -892,6 +892,7 @@ internal object AgentRuntimeWire {
             is AgentEvent.SubagentNotified -> {
                 putString(KEY_TYPE, "subagent_notified")
                 putString("display", event.display)
+                putStringArrayList("job_ids", ArrayList(event.jobIds))
             }
 
             is AgentEvent.SubagentUpdate -> {
@@ -1085,7 +1086,10 @@ internal object AgentRuntimeWire {
             planJson = bundle.getString("plan_json").orEmpty(),
         )
 
-        "subagent_notified" -> AgentEvent.SubagentNotified(bundle.getString("display").orEmpty())
+        "subagent_notified" -> AgentEvent.SubagentNotified(
+            bundle.getString("display").orEmpty(),
+            bundle.getStringArrayList("job_ids").orEmpty(),
+        )
 
         "subagent_update" -> AgentEvent.SubagentUpdate(
             toolCallId = bundle.getString("tool_call_id").orEmpty(),

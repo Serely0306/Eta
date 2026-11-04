@@ -522,6 +522,7 @@ internal class AgentSubagentManager(
                 (if (hasSubagentMail) "子 Agent 会一直保留：之后有相关的事用 send_agent 交给同一个，它记得之前的内容。" else ""),
             display = mails.joinToString("\n") { displayLine(it) },
             mailIds = mails.map { it.id },
+            jobIds = mails.filter(::isCommandMail).map { JSONObject(it.payload).getString("job_id") },
         )
         if (parent != null && parent.controller.deliverNotice(notice)) {
             parent.queuedMailIds.addAll(notice.mailIds)

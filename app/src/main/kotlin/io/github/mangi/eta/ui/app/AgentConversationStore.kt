@@ -42,6 +42,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.json.JSONArray
+import org.json.JSONObject
 
 internal object AgentConversationStore {
     private val json = Json {
@@ -463,7 +464,7 @@ internal object AgentConversationStore {
                 sortIndex = sortIndex,
                 type = TYPE_SYSTEM_NOTICE,
                 content = code.wireValue,
-                resultSummary = detail,
+                resultSummary = storedSystemNoticeDetail(this),
                 contextTokens = contextTokens,
                 renderMarkdown = false,
             )
@@ -528,10 +529,12 @@ internal object AgentConversationStore {
             )
 
             TYPE_SYSTEM_NOTICE -> SystemNoticeCode.fromWireValue(content)?.let { code ->
+                val (detail, jobIds) = decodeSystemNoticeDetail(resultSummary)
                 SystemNoticeMessageUi(
                     id = id,
                     code = code,
-                    detail = resultSummary,
+                    detail = detail,
+                    jobIds = jobIds,
                     contextTokens = contextTokens,
                 )
             }
@@ -575,6 +578,23 @@ internal object AgentConversationStore {
         JSONArray().also { array ->
             forEach { array.put(it) }
         }.toString()
+
+    private fun storedSystemNoticeDetail(message: SystemNoticeMessageUi): String? =
+        if (message.jobIds.isEmpty()) message.detail else JSONObject()
+            .put("_eta_notice", true)
+            .put("detail", message.detail ?: JSONObject.NULL)
+            .put("job_ids", JSONArray(message.jobIds))
+            .toString()
+
+    private fun decodeSystemNoticeDetail(raw: String?): Pair<String?, List<String>> {
+        val value = raw?.let { runCatching { JSONObject(it) }.getOrNull() }
+        if (value?.optBoolean("_eta_notice") != true) return raw to emptyList()
+        val jobIds = value.optJSONArray("job_ids")?.let { ids ->
+            (0 until ids.length()).mapNotNull { ids.optString(it).takeIf(String::isNotBlank) }
+        }.orEmpty()
+        val detail = if (value.isNull("detail")) null else value.optString("detail")
+        return detail to jobIds
+    }
 
     private fun String.toStringList(): List<String> =
         runCatching {

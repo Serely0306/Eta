@@ -238,8 +238,8 @@ internal sealed interface AgentEvent {
         }
     }
 
-    /** 子 Agent 一个回合结束的通知交给了主 Agent；[display] 是给界面的一句话（谁、完成或失败、结论开头）。 */
-    data class SubagentNotified(val display: String) : AgentEvent {
+    /** 子 Agent 或后台命令通知交给了主 Agent；[display] 给界面展示，命令 ID 来自通知 payload。 */
+    data class SubagentNotified(val display: String, val jobIds: List<String> = emptyList()) : AgentEvent {
         override fun toLogLine(): String = "subagent_notified chars=${display.length}"
     }
 

@@ -148,8 +148,13 @@ internal class AgentRunController(
     val hasPendingNotices: Boolean
         get() = lock.withLock { notices.isNotEmpty() }
 
-    /** [modelText] 进入模型上下文；[display] 只给界面的系统提示；[mailIds] 是对应的待投递通知。 */
-    data class Notice(val modelText: String, val display: String, val mailIds: List<Long> = emptyList())
+    /** [modelText] 进入模型上下文；[display] 与 [jobIds] 供界面展示；[mailIds] 是待投递通知。 */
+    data class Notice(
+        val modelText: String,
+        val display: String,
+        val mailIds: List<Long> = emptyList(),
+        val jobIds: List<String> = emptyList(),
+    )
 
     /** 默认逐条消费，避免后来的补充指令越过前一条的模型回合。 */
     fun pollSteering(): Steering? =

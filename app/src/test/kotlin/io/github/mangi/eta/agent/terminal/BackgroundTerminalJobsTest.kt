@@ -35,6 +35,7 @@ class BackgroundTerminalJobsTest {
         val started = JSONObject(first.executeTool("terminal_job", JSONObject().put("action", "start")
             .put("command", "sleep 0.3; printf '完成\\n'").put("description", "生成报告").put("cwd", temporary.root.path)))
         assertTrue(started.toString(), started.getBoolean("ok"))
+        assertFalse(started.has("command"))
         first.closeAll()
         val second = controller(supervisor, jobs)
         try {
@@ -46,9 +47,12 @@ class BackgroundTerminalJobsTest {
             assertEquals("completed", result.getString("status"))
             assertEquals(0, result.getInt("exit_code"))
             assertEquals("完成\n", result.getString("output"))
+            assertEquals("sleep 0.3; printf '完成\\n'", result.getString("command"))
             assertEquals("完成\n", File(result.getString("output_path")).readText())
             assertEquals(1, notifications.get())
-            assertEquals(1, JSONObject(jobs.list(false)).getJSONArray("tasks").length())
+            val listed = JSONObject(jobs.list(false)).getJSONArray("tasks")
+            assertEquals(1, listed.length())
+            assertFalse(listed.getJSONObject(0).has("command"))
             assertEquals(0, JSONObject(jobs.list(true)).getJSONArray("tasks").length())
         } finally { second.closeAll() }
     }

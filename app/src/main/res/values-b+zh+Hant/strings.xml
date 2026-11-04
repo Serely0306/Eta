@@ -545,6 +545,18 @@
   <string name="subagent_strategy_on_request">僅在我要求時</string>
   <string name="background_tasks_message">發訊息</string>
   <string name="background_tasks_stop">停止</string>
+  <string name="background_command_loading">正在讀取背景命令…</string>
+  <string name="background_command_status">狀態：%1$s</string>
+  <string name="background_command_status_running">執行中</string>
+  <string name="background_command_status_completed">已完成</string>
+  <string name="background_command_status_failed">失敗</string>
+  <string name="background_command_status_timed_out">逾時</string>
+  <string name="background_command_status_stopped">已停止</string>
+  <string name="background_command_status_interrupted">已中斷</string>
+  <string name="background_command_status_unknown">未知</string>
+  <string name="background_command_elapsed_seconds">耗時：%1$d 秒</string>
+  <string name="background_command_expand_log">展開日誌（最多 64 KiB）</string>
+  <string name="background_command_collapse_log">收起日誌</string>
   <string name="background_tasks_close">關閉</string>
   <string name="background_tasks_send">傳送</string>
   <string name="background_tasks_message_hint">直接告訴它…</string>
@@ -573,6 +585,7 @@
   <string name="tool_detail_open">詳情</string>
   <string name="tool_detail_arguments">呼叫參數</string>
   <string name="tool_detail_result">結果</string>
+  <string name="tool_detail_original_arguments_and_result">原始參數與結果</string>
   <plurals name="tool_detail_stdout">
     <item quantity="other">標準輸出 · %d 行</item>
   </plurals>

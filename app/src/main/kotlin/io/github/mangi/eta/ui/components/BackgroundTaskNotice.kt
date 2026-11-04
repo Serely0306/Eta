@@ -46,6 +46,8 @@ import org.json.JSONObject
 import io.github.mangi.eta.data.db.ConversationSubagentEntity
 import io.github.mangi.eta.ui.model.SubagentProgressUi
 import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
+import io.github.mangi.eta.ui.model.ToolCallDetail
+import io.github.mangi.eta.ui.model.ToolCallDetails
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
@@ -69,36 +71,39 @@ internal data class BackgroundNoticeEntry(
         private val BARE_AGENT = Regex("^sub_\\d+$")
 
         /** 解析管理器写的显示行；旧记录里的长原文也按同一规则压成一句摘要。 */
-        fun parse(detail: String): List<BackgroundNoticeEntry> = detail.lines().filter(String::isNotBlank).map { line ->
-            val trimmed = line.trim()
-            if (trimmed.startsWith(COMMAND_PREFIX)) {
-                return@map BackgroundNoticeEntry(
-                    title = trimmed.removePrefix(COMMAND_PREFIX),
-                    summary = "",
-                    agentId = null,
-                    isCommand = true,
-                    jobId = Regex("（(job_[A-Za-z0-9]+)）").find(trimmed)?.groupValues?.get(1),
-                    status = when {
-                        trimmed.contains(" 完成") -> ToolActivityStatusUi.Success
-                        trimmed.contains(" 已停止") -> ToolActivityStatusUi.Unknown
-                        else -> ToolActivityStatusUi.Failed
+        fun parse(detail: String, jobIds: List<String> = emptyList()): List<BackgroundNoticeEntry> {
+            var commandIndex = 0
+            return detail.lines().filter(String::isNotBlank).map { line ->
+                val trimmed = line.trim()
+                if (trimmed.startsWith(COMMAND_PREFIX)) {
+                    return@map BackgroundNoticeEntry(
+                        title = trimmed.removePrefix(COMMAND_PREFIX),
+                        summary = "",
+                        agentId = null,
+                        isCommand = true,
+                        jobId = jobIds.getOrNull(commandIndex++),
+                        status = when {
+                            trimmed.contains(" 完成") -> ToolActivityStatusUi.Success
+                            trimmed.contains(" 已停止") -> ToolActivityStatusUi.Unknown
+                            else -> ToolActivityStatusUi.Failed
+                        },
+                    )
+                }
+                val match = SUBAGENT_LINE.find(trimmed)
+                    ?: return@map BackgroundNoticeEntry(trimmed, "", null, false, ToolActivityStatusUi.Unknown)
+                val (label, verb, text) = match.destructured
+                BackgroundNoticeEntry(
+                    title = "$label · $verb",
+                    summary = BackgroundNoticeText.summary(text),
+                    agentId = AGENT_IN_LABEL.find(label)?.groupValues?.get(1) ?: label.takeIf(BARE_AGENT::matches),
+                    isCommand = false,
+                    status = when (verb) {
+                        "完成" -> ToolActivityStatusUi.Success
+                        "失败" -> ToolActivityStatusUi.Failed
+                        else -> ToolActivityStatusUi.Unknown
                     },
                 )
             }
-            val match = SUBAGENT_LINE.find(trimmed)
-                ?: return@map BackgroundNoticeEntry(trimmed, "", null, false, ToolActivityStatusUi.Unknown)
-            val (label, verb, text) = match.destructured
-            BackgroundNoticeEntry(
-                title = "$label · $verb",
-                summary = BackgroundNoticeText.summary(text),
-                agentId = AGENT_IN_LABEL.find(label)?.groupValues?.get(1) ?: label.takeIf(BARE_AGENT::matches),
-                isCommand = false,
-                status = when (verb) {
-                    "完成" -> ToolActivityStatusUi.Success
-                    "失败" -> ToolActivityStatusUi.Failed
-                    else -> ToolActivityStatusUi.Unknown
-                },
-            )
         }
 
         private const val COMMAND_PREFIX = "后台命令 "
@@ -112,7 +117,9 @@ internal data class BackgroundNoticeEntry(
 @Composable
 internal fun BackgroundTaskNotice(message: SystemNoticeMessageUi, modifier: Modifier = Modifier) {
     val conversationId = LocalChatConversationId.current
-    val entries = remember(message.detail) { BackgroundNoticeEntry.parse(message.detail.orEmpty()) }
+    val entries = remember(message.detail, message.jobIds) {
+        BackgroundNoticeEntry.parse(message.detail.orEmpty(), message.jobIds)
+    }
     var opened by remember(message.id) { mutableStateOf<BackgroundNoticeEntry?>(null) }
     var show by remember(message.id) { mutableStateOf(false) }
     Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
@@ -200,12 +207,19 @@ internal fun BackgroundTaskNotice(message: SystemNoticeMessageUi, modifier: Modi
 }
 
 @Composable
-internal fun BackgroundCommandDialog(jobId: String, show: Boolean, onDismiss: () -> Unit, onDismissFinished: () -> Unit) {
+internal fun BackgroundCommandDialog(
+    jobId: String,
+    show: Boolean,
+    onDismiss: () -> Unit,
+    onDismissFinished: () -> Unit,
+    originalDetail: ToolCallDetail? = null,
+) {
     val context = LocalContext.current
     val jobs = remember(context) { TerminalRuntime.backgroundJobs(context) }
     val scope = rememberCoroutineScope()
     var result by remember(jobId) { mutableStateOf<JSONObject?>(null) }
     var expanded by remember(jobId) { mutableStateOf(false) }
+    var showOriginal by remember(jobId) { mutableStateOf(false) }
     var actionError by remember(jobId) { mutableStateOf<String?>(null) }
     LaunchedEffect(jobId, show) {
         if (!show) return@LaunchedEffect
@@ -220,17 +234,60 @@ internal fun BackgroundCommandDialog(jobId: String, show: Boolean, onDismiss: ()
         Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
             val current = result
             if (current == null) {
-                Text("正在读取后台命令…")
+                Text(stringResource(R.string.background_command_loading))
             } else {
-                SelectionContainer { Text(current.optString("command")) }
-                Text("状态：${current.optString("status")} · 退出码：${current.opt("exit_code")}")
-                val ended = if (current.isNull("completed_at")) System.currentTimeMillis() else current.getLong("completed_at")
-                Text("用时：${(ended - current.optLong("started_at")).coerceAtLeast(0) / 1000} 秒")
+                current.optString("command").takeIf(String::isNotBlank)?.let { command ->
+                    SelectionContainer { Text(command) }
+                }
+                if (current.optBoolean("ok")) {
+                    val status = when (current.optString("status")) {
+                        "running" -> R.string.background_command_status_running
+                        "completed" -> R.string.background_command_status_completed
+                        "failed" -> R.string.background_command_status_failed
+                        "timed_out" -> R.string.background_command_status_timed_out
+                        "stopped" -> R.string.background_command_status_stopped
+                        "interrupted" -> R.string.background_command_status_interrupted
+                        else -> R.string.background_command_status_unknown
+                    }
+                    Text(stringResource(R.string.background_command_status, stringResource(status)))
+                    if (!current.isNull("exit_code")) {
+                        Text(stringResource(R.string.tool_detail_exit_code, current.getInt("exit_code")))
+                    }
+                    val ended = if (current.isNull("completed_at")) System.currentTimeMillis() else current.getLong("completed_at")
+                    Text(stringResource(
+                        R.string.background_command_elapsed_seconds,
+                        (ended - current.optLong("started_at")).coerceAtLeast(0) / 1000,
+                    ))
+                }
                 if (!current.optBoolean("ok")) Text(current.optString("message"), color = MiuixTheme.colorScheme.error)
                 actionError?.let { Text(it, color = MiuixTheme.colorScheme.error) }
                 val output = current.optString("output")
-                SelectionContainer { Text(if (expanded) output else output.lines().takeLast(6).joinToString("\n")) }
-                EtaTextButton(text = if (expanded) "收起日志" else "展开日志（最多 64 KiB）", onClick = { expanded = !expanded })
+                if (current.optBoolean("ok")) {
+                    SelectionContainer { Text(if (expanded) output else output.lines().takeLast(6).joinToString("\n")) }
+                    EtaTextButton(
+                        text = stringResource(
+                            if (expanded) R.string.background_command_collapse_log
+                            else R.string.background_command_expand_log,
+                        ),
+                        onClick = { expanded = !expanded },
+                    )
+                }
+                if (originalDetail != null && !originalDetail.sensitive) {
+                    EtaTextButton(
+                        text = stringResource(R.string.tool_detail_original_arguments_and_result),
+                        onClick = { showOriginal = !showOriginal },
+                    )
+                    if (showOriginal || current.optString("code") == "JOB_NOT_FOUND") {
+                        originalDetail.argumentsJson?.let { arguments ->
+                            Text(stringResource(R.string.tool_detail_arguments))
+                            SelectionContainer { Text(ToolCallDetails.pretty(arguments)) }
+                        }
+                        originalDetail.result?.let { toolResult ->
+                            Text(stringResource(R.string.tool_detail_result))
+                            SelectionContainer { Text(ToolCallDetails.pretty(toolResult)) }
+                        }
+                    }
+                }
                 if (current.optBoolean("running")) {
                     EtaTextButton(text = stringResource(R.string.background_tasks_stop), onClick = {
                         scope.launch {

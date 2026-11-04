@@ -94,6 +94,21 @@ class ToolCallDetailsTest {
     }
 
     @Test
+    fun onlyStartCallsOpenTheBackgroundCommandDialog() {
+        fun detail(action: String, result: String = """{"job_id":"job_payload_id"}""") = ToolCallDetail(
+            argumentsJson = """{"action":"$action"}""",
+            result = result,
+            sensitive = false,
+        )
+
+        assertEquals("job_payload_id", ToolCallDetails.terminalJobId(detail("start"), "terminal_job"))
+        assertNull(ToolCallDetails.terminalJobId(detail("list"), "terminal_job"))
+        assertNull(ToolCallDetails.terminalJobId(detail("read"), "terminal_job"))
+        assertNull(ToolCallDetails.terminalJobId(detail("stop"), "terminal_job"))
+        assertNull(ToolCallDetails.terminalJobId(detail("start", "not-json"), "terminal_job"))
+    }
+
+    @Test
     fun prettyPrintingKeepsSlashesAndFallsBackToRawText() {
         val pretty = ToolCallDetails.pretty("""{"command":"df -h /data","note":"中文"}""")
         assertTrue(pretty.contains("\"command\": \"df -h /data\""))

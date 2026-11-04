@@ -102,6 +102,13 @@ internal object ToolCallDetails {
         )
     }
 
+    fun terminalJobId(detail: ToolCallDetail?, toolName: String): String? {
+        if (toolName != "terminal_job") return null
+        val arguments = detail?.argumentsJson?.let(::jsonObject) ?: return null
+        if (arguments.text("action") != "start") return null
+        return detail.result?.let(::jsonObject)?.text("job_id")?.takeIf(String::isNotBlank)
+    }
+
     fun searchQuery(argumentsJson: String?): String? =
         argumentsJson?.let(::jsonObject)?.text("query")?.takeIf(String::isNotBlank)
 
@@ -149,7 +156,7 @@ internal object ToolCallDetails {
     private fun isRedactedArguments(arguments: String): Boolean =
         jsonObject(arguments)?.let { it.length() == 1 && it.optBoolean("redacted") } == true
 
-    private fun jsonObject(raw: String): JSONObject? = runCatching { JSONObject(raw) }.getOrNull()
+    internal fun jsonObject(raw: String): JSONObject? = runCatching { JSONObject(raw) }.getOrNull()
 
     /** 缺失或为 JSON null 时为空串（optString 会把 null 变成 "null"）。 */
     private fun JSONObject.text(key: String): String =
