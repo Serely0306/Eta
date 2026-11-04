@@ -355,7 +355,6 @@ internal fun AgentChatInputBar(
                                     effort = reasoningEffort,
                                     options = availableReasoningEfforts,
                                     providerDefault = providerDefaultEffort,
-                                    enabled = !isStreaming,
                                     popupAnchorTopPx = inputContainerTopPx,
                                     popupMaxHeight = thinkingPopupMaxHeight,
                                     onEffortChange = onReasoningEffortChange,
@@ -378,7 +377,6 @@ internal fun AgentChatInputBar(
 
                         AgentModelPickerButton(
                             state = modelPickerState,
-                            isStreaming = isStreaming,
                             popupAnchorTopPx = inputContainerTopPx,
                             popupMaxHeight = thinkingPopupMaxHeight,
                             onModelSelected = onModelSelected,
@@ -514,7 +512,6 @@ private fun ThinkingEffortChip(
     effort: ReasoningEffort,
     options: List<ReasoningEffort>,
     providerDefault: ReasoningEffort?,
-    enabled: Boolean,
     popupAnchorTopPx: Int,
     popupMaxHeight: Dp,
     onEffortChange: (ReasoningEffort) -> Unit,
@@ -522,7 +519,8 @@ private fun ThinkingEffortChip(
 ) {
     var showPopup by remember { mutableStateOf(false) }
     val active = effort != ReasoningEffort.OFF
-    val menuEnabled = enabled && options.size > 1
+    // 运行中也能选：选中的强度从下一次运行起使用（AG-32）。
+    val menuEnabled = options.size > 1
     LaunchedEffect(menuEnabled) {
         if (!menuEnabled) showPopup = false
     }

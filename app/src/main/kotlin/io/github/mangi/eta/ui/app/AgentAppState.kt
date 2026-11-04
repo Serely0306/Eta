@@ -800,6 +800,7 @@ internal class AgentAppState(
     fun updateReasoningEffort(effort: ReasoningEffort) {
         if (!homeState.isConversationLoaded) return
         val normalized = currentReasoningCapabilities?.normalize(effort) ?: ReasoningEffort.OFF
+        if (homeState.isStreaming && normalized != homeState.reasoningEffort) notifyAppliesToNextMessage()
         updateCurrentConversation(
             homeState.copy(
                 thinkingEnabled = normalized.enablesReasoning,
@@ -809,16 +810,19 @@ internal class AgentAppState(
         if (selectedConversationId != null) persistConversations()
     }
 
-    /** 聊天内切换同时改当前会话绑定与默认模型；默认模型供新会话和系统助手入口使用。 */
+    /**
+     * 聊天内切换同时改当前会话绑定与默认模型；默认模型供新会话和系统助手入口使用。
+     * 运行中也可以切换：运行在发送时已绑定模型（[launchConversationRun]），插话仍用原模型，下一次运行才换（AG-32）。
+     */
     fun selectModel(modelId: String) {
         if (
             !homeState.isConversationLoaded ||
-            homeState.isStreaming ||
             modelPickerState.isChanging ||
             modelPickerState.selectedModel?.id == modelId
         ) {
             return
         }
+        if (homeState.isStreaming) notifyAppliesToNextMessage()
         updateCurrentConversation(homeState.copy(modelId = modelId))
         refreshConversationModel()
         if (selectedConversationId != null) persistConversations()
@@ -839,6 +843,10 @@ internal class AgentAppState(
                 }
             }
         }
+    }
+
+    private fun notifyAppliesToNextMessage() {
+        Toast.makeText(appContext, appContext.getString(R.string.chat_setting_applies_next_message), Toast.LENGTH_SHORT).show()
     }
 
     fun updateSearchQuery(query: String) {

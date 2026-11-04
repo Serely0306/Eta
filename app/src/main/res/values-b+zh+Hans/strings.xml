@@ -1330,6 +1330,7 @@
   <string name="chat_edit_replace_later">发送后将替换此消息及之后内容</string>
   <string name="chat_edit_replace_message">发送后将替换此消息</string>
   <string name="chat_eta_working">Eta 正在执行…可输入补充要求</string>
+  <string name="chat_setting_applies_next_message">从下一条消息起使用</string>
   <string name="chat_follow_up_queued">将在当前回复结束后作为新消息发送</string>
   <string name="chat_input_hint">交给 Eta 去完成</string>
   <string name="chat_stop">停止</string>

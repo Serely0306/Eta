@@ -1317,6 +1317,7 @@
   <string name="chat_edit_replace_later">傳送後將取代此訊息及其後的內容</string>
   <string name="chat_edit_replace_message">傳送後將取代此訊息</string>
   <string name="chat_eta_working">Eta 正在執行…可輸入補充要求</string>
+  <string name="chat_setting_applies_next_message">從下一則訊息起使用</string>
   <string name="chat_follow_up_queued">將在目前回覆結束後作為新訊息傳送</string>
   <string name="chat_input_hint">交給 Eta 完成</string>
   <string name="chat_stop">停止</string>
