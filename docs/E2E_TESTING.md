@@ -94,6 +94,7 @@
 | 小爱语音提问单独开关（DEV-7）：“小爱语音提问交给 Eta”管唤醒词、长按电源键唤起小爱、锁屏三种语音入口，在“启用厂商助手自定义模型”开启时生效，默认开；`/agent` 前缀只约束打字提问 | DEV-7 提交 | G4、G5、G13 | 未执行 |
 | `fetch_url` 按问题提取（AG-39）：设置里选提取模型（默认不使用）后才有 `question` 参数和对应提示，整篇正文一次交给提取模型，用量记为“网页提取”，失败报 `WEB_EXTRACT_FAILED` 不退回全文 | 待回填 | V1–V5 | 未执行 |
 | 一次性终端命令的进程没起来、被取消或超时时，`stderr` 带上原因（AG-38） | 待回填 | E10、E13 | 未执行 |
+| 正在写入的文件读取目标只延长一次，读到就结束，不再追读到时间预算用完，目录里其他文件照常搜到（AG-31） | 待回填 | E12 | 未执行 |
 
 后续阶段的用例在实现时补充；虚拟屏执行实现时在 M 组追加。
 
@@ -255,7 +256,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | E7 `R` | 终端页打开控制台，运行 vim 与 htop，切横屏、弹出软键盘 | 全屏界面正常绘制，网格随尺寸变化；键条的 Ctrl、方向键可用 |
 | E10 `R` | 前台终端用按行编号的输出（每行 8 字符，例如 `awk` 打印 `o000000`…），分别测试只有 2000 行 stdout、2000 行 stdout 加 1000 行 stderr 两种，一次性命令和持久会话各一次；一次性命令另测输出超过 32 MiB | 只有 stdout 时预览是 stdout 首 2000 字（第 0–249 行）、省略说明、尾 6000 字（最后 750 行）；有 stderr 时是 stdout 首 2000 字、省略说明、尾 4000 字（最后 500 行）、`[stderr]` 分隔行、stderr 尾 2000 字（最后 250 行），按行号核对；结果带 `output_file` 与 `total_chars`，输出文件保留两路全文且不超过 32 MiB；超限时 `output_truncated` 为 true；过期文件删除失败时结果仍返回并带 warning；全文写入失败时工具错误包含 `exit_code` 和已有预览 |
 | E11 `R` | 点主对话后台命令通知，查看已完成和仍在运行的命令；展开日志并停止运行中的命令；点 `terminal_job` 的 start/list/read/stop 工具卡 | 仅 start 打开实时弹窗；list/read/stop 保留普通参数与结果详情。通知弹窗状态已本地化，显示退出码、用时和最多 64 KiB 日志；原始参数与结果可展开，任务记录已清理时直接显示原始结果；list 不重复携带 command，read 保留 command；停止复用现有路径，失败原因可见；工具说明写明自动回报和自动记录，无需 wait 或自行重定向 |
-| E12 `R` | 在持续写入的目录列第一页和续页，再用 grep_files/glob_files 续查；搜索期间向正在读取的文件追加匹配行 | 列表最多额外重试两次，持续变化返回 `complete=false` 和 `stop_reason`；`complete` 唯一表示完整性，`truncated`/`next_cursor` 表示后续页，计数标明变化或跳过项；跨块追加的匹配仍找到且同一文件只计一次变化；读写身份等真正错误仍上报 |
+| E12 `R` | 在持续写入的目录列第一页和续页，再用 grep_files/glob_files 续查；搜索期间向正在读取的文件追加匹配行；另在一个目录里后台不停向 `live.log` 追加 `needle` 行（`while true; do echo needle >> live.log; sleep 0.05; done`，文件保持在 256 KiB 以内），同目录另有两个含 `needle` 的普通文件，对该目录 grep_files | 列表最多额外重试两次，持续变化返回 `complete=false` 和 `stop_reason`；`complete` 唯一表示完整性，`truncated`/`next_cursor` 表示后续页，计数标明变化或跳过项；跨块追加的匹配仍找到且同一文件只计一次变化；读写身份等真正错误仍上报。持续写入时一次调用就结束：`truncated=false`、`stop_reason=files_changed`、`changed_files=1`，不以 `time_limit` 反复续页；`live.log` 只读到第一次检测到变化时的大小，那之前追加的匹配在结果里；两个普通文件的匹配都在结果里 |
 | E13 `M` | 一次性 `terminal` 执行 `sleep 5`、`timeout_ms=1000`；另让剧本在 run 停止、终端控制器关闭后仍发出一次 `terminal` 调用 | 前者 `exit_code=-2`、`timed_out=true`、`stderr` 为“命令执行超时”；后者 `ok=false`、`exit_code=-3`、`status=cancelled`、`stderr` 为“操作已取消”；进程没起来时（`exit_code=-1`）`stderr` 为“无法启动进程”，不再只有退出码而输出全空 |
 
 ### F. 缓存与上下文

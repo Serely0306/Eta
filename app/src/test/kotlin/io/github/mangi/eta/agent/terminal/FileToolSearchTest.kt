@@ -117,23 +117,26 @@ class FileToolSearchTest {
 
     @Test fun changingFileKeepsMatchesAndMarksIncompleteCoverage() {
         val file = temporary.newFile("changing.txt").apply { writeText("needle\n") }
+        temporary.newFile("other.txt").writeText("needle\n")
         val local = LocalFileToolBackend(temporary.root)
-        var changed = false
+        // 每读一次 changing.txt 都再追加一行：读取目标只延长一次，搜索要能结束并搜到其他文件。
         val backend = object : FileToolBackend by local {
             override fun readBytes(path: String, offset: Long, limit: Int): ByteArray {
                 val bytes = local.readBytes(path, offset, limit)
-                if (!changed) {
-                    file.appendText("more\n")
-                    changed = true
-                }
+                if (File(path).name == "changing.txt") file.appendText("needle appended\n")
                 return bytes
             }
         }
         val result = JSONObject(AgentFileOperations(backend).grepFiles("", "needle"))
         assertTrue(result.toString(), result.getBoolean("ok"))
-        assertEquals(1, result.getInt("count"))
+        assertFalse(result.getBoolean("truncated"))
+        assertEquals("files_changed", result.getString("stop_reason"))
         assertEquals(1, result.getInt("changed_files"))
         assertFalse(result.getBoolean("complete"))
+        val matches = result.getJSONArray("matches").let { array -> (0 until array.length()).map(array::getJSONObject) }
+        assertEquals(listOf(1L), matches.filter { it.getString("relative_path") == "other.txt" }.map { it.getLong("line") })
+        // 第 2 行是第一次延长范围内追加的那行。
+        assertEquals(listOf(1L, 2L), matches.filter { it.getString("relative_path") == "changing.txt" }.map { it.getLong("line") })
     }
 
     @Test fun grepContinuesFromTheCurrentOffsetWhenAFileGrowsBetweenChunks() {

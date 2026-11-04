@@ -87,21 +87,14 @@ internal class FileToolSearch(
             val filePath = join(root, pending.relative)
             try {
                 val stat = backend.stat(filePath)
-                if (stat.revision != pending.revision) {
-                    if (pending.offset > 0) recordFileChange(state, pending)
-                    pending.revision = stat.revision
-                    pending.sizeBytes = stat.sizeBytes
-                    pending.offset = pending.offset.coerceAtMost(stat.sizeBytes)
-                }
-                pending.sizeBytes = stat.sizeBytes
+                // 旧游标没有读取目标，按当前大小补上。
+                if (pending.sizeBytes < 0) pending.sizeBytes = stat.sizeBytes
+                if (stat.revision != pending.revision) onFileChanged(state, pending, stat)
                 val chunk = reader.read(stat, pending.offset, minOf(16_000, byteBudget))
                 if (chunk.text.isEmpty()) {
                     val latest = backend.stat(filePath)
                     if (latest.revision != stat.revision) {
-                        if (pending.offset > 0) recordFileChange(state, pending)
-                        pending.revision = latest.revision
-                        pending.sizeBytes = latest.sizeBytes
-                        pending.offset = pending.offset.coerceAtMost(latest.sizeBytes)
+                        onFileChanged(state, pending, latest)
                         if (pending.offset < pending.sizeBytes) continue
                     }
                     state.pending = null
@@ -149,23 +142,14 @@ internal class FileToolSearch(
                     if (matches.length() >= maxResults) { stopReason = "result_limit"; paused = true; break }
                 }
                 val after = backend.stat(filePath)
-                if (after.revision != stat.revision) {
-                    recordFileChange(state, pending)
-                    pending.revision = after.revision
-                    pending.sizeBytes = after.sizeBytes
-                    pending.offset = pending.offset.coerceAtMost(after.sizeBytes)
-                }
+                if (after.revision != stat.revision) onFileChanged(state, pending, after)
                 if (pending.offset >= pending.sizeBytes) state.pending = null
                 if (paused) break
             } catch (error: FileToolException) {
                 backend.checkActive()
                 if (error.isGlobalFailure()) throw error
                 if (error.code == "FILE_CHANGED") {
-                    if (pending.offset > 0) recordFileChange(state, pending)
-                    val latest = backend.stat(filePath)
-                    pending.revision = latest.revision
-                    pending.sizeBytes = latest.sizeBytes
-                    pending.offset = pending.offset.coerceAtMost(latest.sizeBytes)
+                    onFileChanged(state, pending, backend.stat(filePath))
                 } else {
                     skip(state, skipped, pending.relative, error.code)
                     state.pending = null
@@ -259,6 +243,20 @@ internal class FileToolSearch(
     private fun skip(state: State, skipped: JSONArray, relative: String, reason: String) {
         state.skipped++
         if (skipped.length() < 10) skipped.put(JSONObject().put("relative_path", relative).put("reason", reason))
+    }
+
+    /**
+     * 读取目标 [Pending.sizeBytes] 只在第一次检测到变化时延长到当时的大小，之后再变化只更新版本：
+     * 一直在写入的文件读到目标就结束，不会每块都追到最新大小、耗尽时间预算而让目录里其他文件搜不到。
+     * 还没开始读（offset=0）时的变化发生在列表之后，只按当时的大小重定目标，不计数。
+     */
+    private fun onFileChanged(state: State, pending: Pending, latest: FileToolStat) {
+        if (!pending.changeCounted) {
+            if (pending.offset > 0) recordFileChange(state, pending)
+            pending.sizeBytes = latest.sizeBytes
+        }
+        pending.revision = latest.revision
+        pending.offset = pending.offset.coerceAtMost(latest.sizeBytes)
     }
 
     private fun recordFileChange(state: State, pending: Pending) {
