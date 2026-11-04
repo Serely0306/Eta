@@ -79,6 +79,7 @@ class AgentFileOperationsTest {
             revision = page.getString("revision")
             val entries = page.getJSONArray("entries")
             for (index in 0 until entries.length()) assertTrue(names.add(entries.getJSONObject(index).getString("name")))
+            assertEquals(!page.getBoolean("has_more"), page.getBoolean("complete"))
             offset = page.getInt("next_offset")
         } while (page.getBoolean("has_more"))
         assertEquals(241, names.size)
@@ -86,7 +87,11 @@ class AgentFileOperationsTest {
         Files.setLastModifiedTime(temporary.root.toPath(), FileTime.fromMillis(oldTime + 10_000))
         val changed = JSONObject(operations.listDirectory("", offset = offset, expectedRevision = revision))
         assertTrue(changed.getBoolean("ok"))
-        assertTrue(changed.getBoolean("revision_changed"))
+        assertFalse(changed.getBoolean("complete"))
+        assertEquals(1, changed.getInt("changed_count"))
+        assertEquals("directory_changed", changed.getString("stop_reason"))
+        assertFalse(changed.has("warning"))
+        assertFalse(changed.has("revision_changed"))
     }
 
     @Test fun deepDirectoryResumesAfterOutputBudgetWithoutLosingOrRepeatingNames() {

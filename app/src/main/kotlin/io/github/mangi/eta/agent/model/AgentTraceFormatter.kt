@@ -421,7 +421,7 @@ internal class AgentTraceFormatter {
             if (json.has("bytes_read")) add("已读 ${json.optLong("bytes_read")} 字节")
             if (json.has("replacements")) add("替换 ${json.optInt("replacements")} 处")
             if (json.optBoolean("truncated") || json.optBoolean("has_more")) add("可继续读取")
-            if (json.optBoolean("partial") || json.optBoolean("scan_limited")) add("采集范围有限")
+            if ((json.has("complete") && !json.optBoolean("complete")) || json.optBoolean("scan_limited")) add("采集范围有限")
             json.optJSONArray("apps")?.let { add("找到 ${it.length()} 个应用") }
             json.optJSONArray("candidates")?.let { add("${it.length()} 个候选") }
             if (result.images.isNotEmpty()) add("${result.images.size} 张图片")

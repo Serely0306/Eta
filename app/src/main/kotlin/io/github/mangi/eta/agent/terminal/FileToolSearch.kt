@@ -88,13 +88,25 @@ internal class FileToolSearch(
             try {
                 val stat = backend.stat(filePath)
                 if (stat.revision != pending.revision) {
-                    state.changedFiles++
+                    if (pending.offset > 0) recordFileChange(state, pending)
                     pending.revision = stat.revision
-                    pending.tail = ""
-                    pending.lineMatched = false
+                    pending.sizeBytes = stat.sizeBytes
+                    pending.offset = pending.offset.coerceAtMost(stat.sizeBytes)
                 }
+                pending.sizeBytes = stat.sizeBytes
                 val chunk = reader.read(stat, pending.offset, minOf(16_000, byteBudget))
-                if (chunk.text.isEmpty()) { state.pending = null; continue }
+                if (chunk.text.isEmpty()) {
+                    val latest = backend.stat(filePath)
+                    if (latest.revision != stat.revision) {
+                        if (pending.offset > 0) recordFileChange(state, pending)
+                        pending.revision = latest.revision
+                        pending.sizeBytes = latest.sizeBytes
+                        pending.offset = pending.offset.coerceAtMost(latest.sizeBytes)
+                        if (pending.offset < pending.sizeBytes) continue
+                    }
+                    state.pending = null
+                    continue
+                }
                 var position = 0
                 var paused = false
                 while (position < chunk.text.length) {
@@ -136,18 +148,28 @@ internal class FileToolSearch(
                     }
                     if (matches.length() >= maxResults) { stopReason = "result_limit"; paused = true; break }
                 }
-                if (backend.stat(filePath).revision != stat.revision) {
-                    state.changedFiles++
-                    state.pending = null
+                val after = backend.stat(filePath)
+                if (after.revision != stat.revision) {
+                    recordFileChange(state, pending)
+                    pending.revision = after.revision
+                    pending.sizeBytes = after.sizeBytes
+                    pending.offset = pending.offset.coerceAtMost(after.sizeBytes)
                 }
-                if (pending.offset >= stat.sizeBytes) state.pending = null
+                if (pending.offset >= pending.sizeBytes) state.pending = null
                 if (paused) break
             } catch (error: FileToolException) {
                 backend.checkActive()
                 if (error.isGlobalFailure()) throw error
-                if (error.code == "FILE_CHANGED") state.changedFiles++
-                else skip(state, skipped, pending.relative, error.code)
-                state.pending = null
+                if (error.code == "FILE_CHANGED") {
+                    if (pending.offset > 0) recordFileChange(state, pending)
+                    val latest = backend.stat(filePath)
+                    pending.revision = latest.revision
+                    pending.sizeBytes = latest.sizeBytes
+                    pending.offset = pending.offset.coerceAtMost(latest.sizeBytes)
+                } else {
+                    skip(state, skipped, pending.relative, error.code)
+                    state.pending = null
+                }
             } catch (_: IOException) {
                 backend.checkActive()
                 skip(state, skipped, pending.relative, "FILE_UNREADABLE")
@@ -160,17 +182,19 @@ internal class FileToolSearch(
         }
         val hasMore = state.pending != null || state.frames.isNotEmpty()
         if (hasMore && stopReason == "complete") stopReason = "result_limit"
+        val complete = !hasMore && state.skipped == 0 && !state.revisionChanged && !state.unstable && state.changedFiles == 0
+        if (!complete && !hasMore && stopReason == "complete") {
+            stopReason = when {
+                state.skipped > 0 -> "skipped_files"
+                state.changedFiles > 0 -> "files_changed"
+                else -> "directory_changed"
+            }
+        }
         JSONObject().put("ok", true).put("tool", if (query == null) "glob_files" else "grep_files")
             .put("environment", backend.environment).put("identity", backend.identity).put("path", root)
             .put("matches", matches).put("count", matches.length()).put("truncated", hasMore)
-            .put("revision_changed", state.revisionChanged).put("unstable", state.unstable)
             .put("changed_files", state.changedFiles)
-            .apply {
-                if (state.revisionChanged || state.unstable || state.changedFiles > 0)
-                    put("warning", "搜索范围持续变化，结果可能不完整，续查可能重复或遗漏")
-            }
-            .put("partial", hasMore || state.skipped > 0 || state.revisionChanged || state.unstable || state.changedFiles > 0)
-            .put("complete", !hasMore && state.skipped == 0 && !state.revisionChanged && !state.unstable && state.changedFiles == 0).put("stop_reason", stopReason)
+            .put("complete", complete).put("stop_reason", stopReason)
             .put("entries_scanned", MAX_ENTRIES - entryBudget).put("bytes_scanned", MAX_BYTES - byteBudget)
             .put("skipped_files", state.skipped - skippedBefore).put("total_skipped", state.skipped).put("skipped", skipped)
             .put("next_cursor", if (hasMore) encodeCursor(state, signature) else JSONObject.NULL)
@@ -224,7 +248,7 @@ internal class FileToolSearch(
                 if (state.frames.size >= MAX_DEPTH) { skip(state, skipped, relative, "DEPTH_LIMIT"); continue }
                 state.frames += Frame(relative, 0, entry.revision)
             } else if (entry.kind == FileToolKind.FILE && matcher.matches(relative)) {
-                return NextFile(Pending(relative, 0, 1, entry.revision), visited)
+                return NextFile(Pending(relative, 0, 1, entry.revision, sizeBytes = entry.sizeBytes), visited)
             } else if (entry.kind == FileToolKind.SYMLINK) {
                 skip(state, skipped, relative, "SYMLINK_NOT_FOLLOWED")
             }
@@ -237,13 +261,21 @@ internal class FileToolSearch(
         if (skipped.length() < 10) skipped.put(JSONObject().put("relative_path", relative).put("reason", reason))
     }
 
+    private fun recordFileChange(state: State, pending: Pending) {
+        if (!pending.changeCounted) {
+            pending.changeCounted = true
+            state.changedFiles++
+        }
+    }
+
     private fun encodeCursor(state: State, signature: String): String {
         val frames = JSONArray()
         state.frames.forEach { frames.put(JSONObject().put("path", it.relative).put("offset", it.offset).put("revision", it.revision)) }
         val json = JSONObject().put("version", 1).put("signature", signature).put("frames", frames).put("skipped", state.skipped)
             .put("unstable", state.unstable).put("revision_changed", state.revisionChanged).put("changed_files", state.changedFiles)
         state.pending?.let { json.put("pending", JSONObject().put("path", it.relative).put("offset", it.offset).put("line", it.line)
-            .put("revision", it.revision).put("tail", it.tail).put("matched", it.lineMatched)) }
+            .put("revision", it.revision).put("size_bytes", it.sizeBytes).put("tail", it.tail)
+            .put("matched", it.lineMatched).put("change_counted", it.changeCounted)) }
         val encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(json.toString().toByteArray(Charsets.UTF_8))
         if (encoded.length > MAX_CURSOR_CHARS) throw FileToolException("CURSOR_LIMIT", "搜索路径过深或过长，请选择更小的搜索目录")
         return encoded
@@ -265,7 +297,8 @@ internal class FileToolSearch(
         val pending = json.optJSONObject("pending")?.let {
             Pending(it.getString("path").also(::validateRelative), it.getLong("offset").also { offset -> require(offset >= 0) },
                 it.getLong("line").also { line -> require(line > 0) }, it.getString("revision"),
-                it.getString("tail").also { tail -> require(tail.length <= 512) }, it.getBoolean("matched"))
+                it.getString("tail").also { tail -> require(tail.length <= 512) }, it.getBoolean("matched"),
+                it.optLong("size_bytes", -1).also { size -> require(size >= -1) }, it.optBoolean("change_counted"))
         }
         State(
             frames = frames,
@@ -301,7 +334,16 @@ internal class FileToolSearch(
     )
 
     private data class Frame(val relative: String, var offset: Int, var revision: String)
-    private data class Pending(val relative: String, var offset: Long, var line: Long, var revision: String, var tail: String = "", var lineMatched: Boolean = false)
+    private data class Pending(
+        val relative: String,
+        var offset: Long,
+        var line: Long,
+        var revision: String,
+        var tail: String = "",
+        var lineMatched: Boolean = false,
+        var sizeBytes: Long,
+        var changeCounted: Boolean = false,
+    )
     private data class State(val frames: MutableList<Frame>, var pending: Pending? = null, var skipped: Int = 0, var unstable: Boolean = false, var revisionChanged: Boolean = false, var changedFiles: Int = 0)
     private data class NextFile(val file: Pending?, val visited: Int, val timeLimited: Boolean = false)
     private data class CachedPage(val offset: Int, val page: FileToolDirectoryPage)

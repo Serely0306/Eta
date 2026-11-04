@@ -97,7 +97,8 @@ class FileToolSearchTest {
         Files.setLastModifiedTime(temporary.root.toPath(), FileTime.fromMillis(temporary.root.lastModified() + 10_000))
         val changed = JSONObject(operations().grepFiles("", "hit", cursor = cursor))
         assertTrue(changed.toString(), changed.getBoolean("ok"))
-        assertTrue(changed.getBoolean("revision_changed"))
+        assertFalse(changed.getBoolean("complete"))
+        assertEquals("directory_changed", changed.getString("stop_reason"))
     }
 
     @Test fun globalBackendFailureIsNotReportedAsSuccessfulPartialSearch() {
@@ -117,10 +118,14 @@ class FileToolSearchTest {
     @Test fun changingFileKeepsMatchesAndMarksIncompleteCoverage() {
         val file = temporary.newFile("changing.txt").apply { writeText("needle\n") }
         val local = LocalFileToolBackend(temporary.root)
+        var changed = false
         val backend = object : FileToolBackend by local {
             override fun readBytes(path: String, offset: Long, limit: Int): ByteArray {
                 val bytes = local.readBytes(path, offset, limit)
-                file.appendText("more\n")
+                if (!changed) {
+                    file.appendText("more\n")
+                    changed = true
+                }
                 return bytes
             }
         }
@@ -129,6 +134,53 @@ class FileToolSearchTest {
         assertEquals(1, result.getInt("count"))
         assertEquals(1, result.getInt("changed_files"))
         assertFalse(result.getBoolean("complete"))
+    }
+
+    @Test fun grepContinuesFromTheCurrentOffsetWhenAFileGrowsBetweenChunks() {
+        val file = temporary.newFile("growing.txt").apply { writeText("x".repeat(16_000)) }
+        val local = LocalFileToolBackend(temporary.root)
+        var appended = false
+        val backend = object : FileToolBackend by local {
+            override fun readBytes(path: String, offset: Long, limit: Int): ByteArray {
+                val bytes = local.readBytes(path, offset, limit)
+                if (!appended) {
+                    file.appendText("needle\n")
+                    appended = true
+                }
+                return bytes
+            }
+        }
+
+        val result = JSONObject(AgentFileOperations(backend).grepFiles("", "needle"))
+
+        assertTrue(result.toString(), result.getBoolean("ok"))
+        assertEquals(1, result.getInt("count"))
+        assertEquals(16_000, result.getJSONArray("matches").getJSONObject(0).getInt("match_offset_bytes"))
+        assertEquals(1, result.getInt("changed_files"))
+        assertFalse(result.getBoolean("complete"))
+        assertFalse(result.has("partial"))
+        assertFalse(result.has("warning"))
+        assertFalse(result.has("revision_changed"))
+        assertFalse(result.has("unstable"))
+    }
+
+    @Test fun revisionChangeBeforeTheFirstReadDoesNotCountTheFileAsChanged() {
+        temporary.newFile("fresh.txt").writeText("needle\n")
+        val local = LocalFileToolBackend(temporary.root)
+        val backend = object : FileToolBackend by local {
+            override fun stat(path: String): FileToolStat {
+                val stat = local.stat(path)
+                if (File(path).name != "fresh.txt") return stat
+                return stat.copy(revision = "new-revision")
+            }
+        }
+
+        val result = JSONObject(AgentFileOperations(backend).grepFiles("", "needle"))
+
+        assertTrue(result.toString(), result.getBoolean("ok"))
+        assertEquals(1, result.getInt("count"))
+        assertEquals(0, result.getInt("changed_files"))
+        assertTrue(result.getBoolean("complete"))
     }
 
     @Test fun globCursorCannotBeReusedForLiteralNullGrepQuery() {
@@ -163,7 +215,7 @@ class FileToolSearchTest {
             for (index in 0 until matches.length()) paths += matches.getJSONObject(index).getString("relative_path")
             if (result.getString("stop_reason") == "time_limit") {
                 timedPage = true
-                assertTrue(result.getBoolean("partial"))
+                assertFalse(result.getBoolean("complete"))
                 assertTrue(result.getInt("bytes_scanned") > 0)
             }
             cursor = if (result.isNull("next_cursor")) null else result.getString("next_cursor")

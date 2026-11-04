@@ -194,20 +194,16 @@ class ShellFileToolBackendTest {
                 backend.list("/workspace", 0, 2)
             }
         }
-        var stats = 0
         val changing = newBackend { command, _, _ ->
-            if ("find " in command) result()
-            else result(metadata("directory", version = (++stats).toString()))
-        }
-        assertTrue(changing.list("/workspace", 0, 2).unstable)
-        assertEquals(6, stats)
-        var calls = 0
+            if ("find " in command) result() else result(metadata("directory", version = System.nanoTime().toString()))
+        }.list("/workspace", 0, 2)
+        assertTrue(changing.unstable)
+        assertTrue(changing.entries.isEmpty())
         val stale = newBackend { command, _, _ ->
-            calls++
             if ("find " in command) result() else result(metadata("directory"))
-        }
-        assertTrue(stale.list("/workspace", 0, 2, "old-revision").revisionChanged)
-        assertEquals(3, calls)
+        }.list("/workspace", 0, 2, "old-revision")
+        assertTrue(stale.revisionChanged)
+        assertTrue(stale.entries.isEmpty())
     }
 
     @Test

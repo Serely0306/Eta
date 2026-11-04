@@ -84,15 +84,12 @@ internal class AgentFileOperations(private val backend: FileToolBackend) {
         require(limit > 0 && offset >= 0)
         val resolved = backend.resolve(path)
         val page = backend.list(resolved, offset, limit.coerceAtMost(200), expectedRevision)
+        val changedCount = if (page.unstable || page.revisionChanged) 1 else 0
         val entries = JSONArray()
         val result = base("list_directory").put("path", resolved).put("revision", page.revision)
-            .put("unstable", page.unstable).put("revision_changed", page.revisionChanged)
-            .apply {
-                if (page.unstable) put("warning", "目录持续变化，结果可能不完整")
-                if (page.revisionChanged) put("revision_warning", "目录版本已变化，续页可能重复或遗漏")
-            }
+            .put("changed_count", changedCount)
             .put("entries", entries).put("offset", offset).put("next_offset", page.nextOffset)
-            .put("truncated", false).put("has_more", false).put("stop_reason", "output_limit")
+            .put("truncated", false).put("has_more", false).put("complete", false).put("stop_reason", "output_limit")
         // 先保留最长状态字段的空间，分页必须停在尚未发布的条目前，不能截断完整 JSON。
         var outputChars = result.toString().length
         if (outputChars > MAX_DIRECTORY_JSON_CHARS) throw FileToolException("FILE_OUTPUT_LIMIT", "目录路径和元数据超过输出预算")
@@ -115,7 +112,13 @@ internal class AgentFileOperations(private val backend: FileToolBackend) {
         val hasMore = page.hasMore || consumed < page.entries.size
         val nextOffset = if (consumed == page.entries.size) page.nextOffset else offset + consumed
         result.put("next_offset", nextOffset).put("truncated", hasMore).put("has_more", hasMore)
-            .put("stop_reason", when { !hasMore -> "eof"; outputLimited -> "output_limit"; else -> "entry_limit" })
+            .put("complete", !hasMore && changedCount == 0)
+            .put("stop_reason", when {
+                changedCount > 0 -> if (page.unstable) "directory_unstable" else "directory_changed"
+                !hasMore -> "eof"
+                outputLimited -> "output_limit"
+                else -> "entry_limit"
+            })
     }
 
     fun writeFile(path: String, content: String, append: Boolean = false, expectedRevision: String? = null): String =

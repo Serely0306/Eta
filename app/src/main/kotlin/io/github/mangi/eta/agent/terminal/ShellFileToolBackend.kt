@@ -83,7 +83,8 @@ internal class ShellFileToolBackend(
 
     override fun list(path: String, offset: Int, limit: Int, expectedRevision: String?): FileToolDirectoryPage {
         if (offset < 0 || limit !in 1..200) fail("INVALID_ARGUMENT", "目录分页范围无效")
-        repeat(3) { attempt ->
+        var attempt = 0
+        while (true) {
             val before = stat(path)
             if (before.kind != FileToolKind.DIRECTORY) fail("NOT_DIRECTORY", "目标不是目录")
             val quoted = shellQuote(path)
@@ -102,12 +103,14 @@ internal class ShellFileToolBackend(
             val selected = statPage(selectedPaths)
             val after = stat(path)
             val unstable = selected.size != selectedPaths.size || after.revision != before.revision
-            if (unstable && attempt < 2) return@repeat
+            if (unstable && attempt < MAX_DIRECTORY_RETRIES) {
+                attempt++
+                continue
+            }
             val next = (offset.toLong() + selectedPaths.size).coerceAtMost(sorted.size.toLong()).toInt()
             return FileToolDirectoryPage(selected, next, next < sorted.size, after.revision, unstable,
                 expectedRevision != null && expectedRevision != after.revision)
         }
-        error("Directory retry exhausted")
     }
 
     /** 一页条目的元数据共用一次命名空间；路径经 stdin 传入，避免撑满 exec 参数。 */
@@ -210,6 +213,7 @@ internal class ShellFileToolBackend(
         const val MAX_READ_BYTES = 512 * 1024
         const val MAX_DIRECTORY_BYTES = 1024 * 1024
         const val MAX_DIRECTORY_ENTRIES = 20_000
+        const val MAX_DIRECTORY_RETRIES = 2
         const val MAX_STAT_BYTES = 8192
     }
 }

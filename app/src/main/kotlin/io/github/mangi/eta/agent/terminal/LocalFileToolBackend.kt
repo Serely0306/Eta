@@ -62,7 +62,8 @@ internal class LocalFileToolBackend(
         require(offset >= 0 && limit in 1..MAX_DIRECTORY_PAGE)
         if (offset > MAX_DIRECTORY_POSITION) throw FileToolException("DIRECTORY_LIMIT", "目录枚举位置超过当前限制")
         val directory = File(resolve(path)).toPath()
-        repeat(3) { attempt ->
+        var attempt = 0
+        while (true) {
             val before = metadata(directory)
             if (before.kind != FileToolKind.DIRECTORY) throw FileToolException("NOT_DIRECTORY", "目标不是目录")
             val entries = ArrayList<FileToolStat>(limit)
@@ -92,12 +93,12 @@ internal class LocalFileToolBackend(
             }
             val after = metadata(directory)
             val unstable = missingEntry || after.revision != before.revision
-            if (!unstable || attempt == 2) return FileToolDirectoryPage(
+            if (!unstable || attempt == MAX_DIRECTORY_RETRIES) return FileToolDirectoryPage(
                 entries, position, hasMore, after.revision, unstable,
                 expectedRevision != null && expectedRevision != after.revision,
             )
+            attempt++
         }
-        error("Directory retry exhausted")
     }
 
     override fun write(
@@ -220,5 +221,6 @@ internal class LocalFileToolBackend(
         const val MAX_WRITE_BYTES = 512 * 1024
         const val MAX_DIRECTORY_PAGE = 200
         const val MAX_DIRECTORY_POSITION = 1_000_000
+        const val MAX_DIRECTORY_RETRIES = 2
     }
 }
