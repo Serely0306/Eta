@@ -237,7 +237,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | D2 `M` | 剧本强行调用已关闭的工具 | 工具结果为 `TOOL_DISABLED`，run 继续 |
 | D3 `M` | 关闭被依赖工具 | 依赖它的工具一并从列表中消失 |
 
-| D4 `M` | 请求编辑已知文件、查找系统目录、读取通知/剪贴板等服务数据及 dumpsys 类信息 | 提示分别引导文件工具、终端、对应结构化工具；已有工具开关默认值不变 |
+| D4 `M` | 请求编辑已知文件、查找系统目录、读取通知/剪贴板等服务数据及 dumpsys 类信息；关闭 terminal 工具再问一次 | 文件与终端分工只在 terminal 专属提示出现；关闭 terminal 后该分工提示消失，结构化 Android 工具说明仍保留；终端 tool description 不重复过滤与 dumpsys 指引 |
 
 ### E. 文件身份与终端参数
 

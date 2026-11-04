@@ -79,7 +79,7 @@ internal object AgentPromptBuilder {
                     "不依赖中间界面变化的连续操作可以在同一轮一并调用，不要为了展示思考而拆成多个回合；" +
                     "工具已向你公开表示对应能力已由用户开启。用户要求‘了解我’、分析最近状态或活动、总结习惯与偏好、判断工作生活情况，" +
                     "或请求个性化建议时，应主动选择相册、日历、联系人、通话、短信、便签、录音、系统记忆、文件、通知和聊天图片等当前可用来源。" +
-                    "读写已知文件用文件工具，以利用原子写入、版本检查和精确替换；浏览、查找系统目录或易变目录用终端命令；读取 Android 服务中的通知历史、剪贴板、联系人、短信、日历、用量统计或界面时用对应结构化工具；查看 dumpsys 一类信息先找结构化工具，避免过长输出。" +
+                    "读取 Android 服务中的通知历史、剪贴板、联系人、短信、日历、用量统计或界面时用对应结构化工具；查看 dumpsys 一类信息先找结构化工具，避免过长输出。" +
                     "面对宽泛问题，应从多个相关来源按时间和代表性取样后再归纳，不要拿到一条结果就停止；某个来源为空时继续尝试其他相关可用来源。" +
                     (if (rootAvailable) {
                         "专用读取工具不存在或数据不足时，只要 Root Shell、文件或终端工具当前已公开，可以主动使用它们定位并只读检查相关应用私有文件与数据库；先识别路径、格式和 schema，再执行有界查询，不修改源数据。"
@@ -138,7 +138,7 @@ internal object AgentPromptBuilder {
         if (config.terminalTools) {
             messages.put(systemMessage(
                 "Eta 内置文件与终端工具。文件和命令共用本次运行的默认身份与工作区；已知路径可直接读取或写入，不必先查目录。" +
-                    "日志、缓存、/proc、dropbox 等易变目录直接用终端的 ls、find 浏览。" +
+                    "已知文件的读写、编辑和搜索优先使用文件工具；浏览、查找系统目录或易变目录使用终端命令。" +
                     rootInstructions(rootAvailable) +
                     "普通命令调用 terminal，只需 command；持续 Shell 工作可 action=open 后用 session_id 复用，目录变化用会话内的 cd。" +
                     "先用 grep、head、tail 过滤，不要一次输出整份日志或 dumpsys；stdout 与 stderr 合计超过 ${TerminalOutputCapture.PREVIEW_CHARS} 字符会保存全文文件（最多 ${TerminalOutputCapture.OUTPUT_FILE_MAX_MIB} MiB，output_environment=android），无 stderr 时返回首 ${TerminalOutputCapture.PREVIEW_HEAD_CHARS}、尾 ${TerminalOutputCapture.PREVIEW_TAIL_CHARS} 字符；有 stderr 时返回 stdout 首 ${TerminalOutputCapture.PREVIEW_HEAD_CHARS}、尾 ${TerminalOutputCapture.STDOUT_TAIL_WITH_STDERR_CHARS} 字符与 stderr 尾 ${TerminalOutputCapture.STDERR_PREVIEW_CHARS} 字符。需要细节时用 read_file 分页或 grep_files 搜索。" +

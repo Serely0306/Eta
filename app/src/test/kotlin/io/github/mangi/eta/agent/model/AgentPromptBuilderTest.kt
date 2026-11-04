@@ -60,6 +60,36 @@ class AgentPromptBuilderTest {
     }
 
     @Test
+    fun terminalToolDivisionAppearsOnlyWhenTerminalToolsAreEnabled() {
+        fun systemText(terminalTools: Boolean) = AgentPromptBuilder.buildSystemMessages(
+            config = modelConfig("", terminalTools = terminalTools, browserTools = false),
+            skillContext = SkillContext.EMPTY,
+            memoryContext = AgentMemoryContext.DISABLED,
+            rootAvailable = false,
+        ).systemContents().joinToString("\n")
+
+        val withTerminal = systemText(terminalTools = true)
+        val withoutTerminal = systemText(terminalTools = false)
+
+        assertTrue(withTerminal.contains("已知文件的读写、编辑和搜索优先使用文件工具"))
+        assertTrue(withTerminal.contains("浏览、查找系统目录或易变目录使用终端命令"))
+        assertFalse(withoutTerminal.contains("浏览、查找系统目录或易变目录使用终端命令"))
+        assertTrue(withoutTerminal.contains("读取 Android 服务中的通知历史"))
+    }
+
+    @Test
+    fun terminalDescriptionDoesNotRepeatItsSystemPromptGuidance() {
+        val tools = JSONArray().also(AgentTerminalToolCatalog::appendTo)
+        val description = (0 until tools.length()).map { tools.getJSONObject(it) }
+            .single { it.getJSONObject("function").getString("name") == "terminal" }
+            .getJSONObject("function").getString("description")
+
+        assertFalse(description.contains("grep"))
+        assertFalse(description.contains("head"))
+        assertFalse(description.contains("dumpsys"))
+    }
+
+    @Test
     fun currentModelIdentityFollowsConfigWithCustomOrEmptyProviderPrompt() {
         for (providerPrompt in listOf("你是小满", "")) {
             val config = modelConfig(providerPrompt, terminalTools = false, browserTools = false)
