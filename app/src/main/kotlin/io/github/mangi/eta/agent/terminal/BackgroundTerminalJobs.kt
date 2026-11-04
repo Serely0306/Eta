@@ -174,6 +174,7 @@ internal class BackgroundTerminalJobs(
 
     private fun taskJson(task: DetachedTask): JSONObject = base("status")
         .put("job_id", task.id).put("description", task.description)
+        .put("command", task.command)
         .put("environment", task.environment.wireName).put("identity", task.identity).put("cwd", task.cwd)
         .put("status", task.commandStatus).put("running", task.completedAt == null)
         .put("started_at", task.startedAt).put("completed_at", task.completedAt ?: JSONObject.NULL)

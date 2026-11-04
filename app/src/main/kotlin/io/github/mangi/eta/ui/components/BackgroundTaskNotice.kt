@@ -10,12 +10,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Layers
 import androidx.compose.material.icons.rounded.Terminal
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,12 +30,19 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
 import io.github.mangi.eta.agent.runtime.BackgroundNoticeText
+import io.github.mangi.eta.agent.terminal.TerminalRuntime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import io.github.mangi.eta.data.db.ConversationSubagentEntity
 import io.github.mangi.eta.ui.model.SubagentProgressUi
 import io.github.mangi.eta.ui.model.SystemNoticeMessageUi
@@ -48,6 +61,7 @@ internal data class BackgroundNoticeEntry(
     val agentId: String?,
     val isCommand: Boolean,
     val status: ToolActivityStatusUi,
+    val jobId: String? = null,
 ) {
     companion object {
         private val SUBAGENT_LINE = Regex("^(.+?) (完成|失败|已中断)：(.*)$")
@@ -63,6 +77,7 @@ internal data class BackgroundNoticeEntry(
                     summary = "",
                     agentId = null,
                     isCommand = true,
+                    jobId = Regex("（(job_[A-Za-z0-9]+)）").find(trimmed)?.groupValues?.get(1),
                     status = when {
                         trimmed.contains(" 完成") -> ToolActivityStatusUi.Success
                         trimmed.contains(" 已停止") -> ToolActivityStatusUi.Unknown
@@ -107,7 +122,7 @@ internal fun BackgroundTaskNotice(message: SystemNoticeMessageUi, modifier: Modi
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
         )
         entries.forEach { entry ->
-            val openable = entry.agentId != null && conversationId != null
+            val openable = entry.jobId != null || entry.agentId != null && conversationId != null
             Spacer(modifier = Modifier.height(4.dp))
             Row(
                 modifier = Modifier
@@ -163,6 +178,9 @@ internal fun BackgroundTaskNotice(message: SystemNoticeMessageUi, modifier: Modi
         }
     }
     val entry = opened
+    if (entry?.jobId != null) {
+        BackgroundCommandDialog(entry.jobId, show, { show = false }, { opened = null })
+    }
     val agentId = entry?.agentId
     if (entry != null && agentId != null && conversationId != null) {
         // 通知里的状态是交出那一刻的；窗口里用侧栏同一份最新状态，发消息后能看到它重新运行。
@@ -178,5 +196,52 @@ internal fun BackgroundTaskNotice(message: SystemNoticeMessageUi, modifier: Modi
             onDismissFinished = { opened = null },
             controls = live?.controlsTarget() ?: SubagentControlsTarget(conversationId, agentId, running = false, closed = false),
         )
+    }
+}
+
+@Composable
+private fun BackgroundCommandDialog(jobId: String, show: Boolean, onDismiss: () -> Unit, onDismissFinished: () -> Unit) {
+    val context = LocalContext.current
+    val jobs = remember(context) { TerminalRuntime.backgroundJobs(context) }
+    val scope = rememberCoroutineScope()
+    var result by remember(jobId) { mutableStateOf<JSONObject?>(null) }
+    var expanded by remember(jobId) { mutableStateOf(false) }
+    var actionError by remember(jobId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(jobId, show) {
+        if (!show) return@LaunchedEffect
+        do {
+            result = withContext(Dispatchers.IO) { JSONObject(jobs.read(jobId, 65_536)) }
+            if (result?.optBoolean("running") != true) break
+            delay(1_000)
+        } while (true)
+    }
+    EtaWindowDialog(show = show, title = result?.optString("description")?.ifBlank { jobId } ?: jobId,
+        onDismissRequest = onDismiss, onDismissFinished = onDismissFinished) {
+        Column(Modifier.fillMaxWidth().heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
+            val current = result
+            if (current == null) {
+                Text("正在读取后台命令…")
+            } else {
+                SelectionContainer { Text(current.optString("command")) }
+                Text("状态：${current.optString("status")} · 退出码：${current.opt("exit_code")}")
+                val ended = if (current.isNull("completed_at")) System.currentTimeMillis() else current.getLong("completed_at")
+                Text("用时：${(ended - current.optLong("started_at")).coerceAtLeast(0) / 1000} 秒")
+                if (!current.optBoolean("ok")) Text(current.optString("message"), color = MiuixTheme.colorScheme.error)
+                actionError?.let { Text(it, color = MiuixTheme.colorScheme.error) }
+                val output = current.optString("output")
+                SelectionContainer { Text(if (expanded) output else output.lines().takeLast(6).joinToString("\n")) }
+                EtaTextButton(text = if (expanded) "收起日志" else "展开日志（最多 64 KiB）", onClick = { expanded = !expanded })
+                if (current.optBoolean("running")) {
+                    EtaTextButton(text = stringResource(R.string.background_tasks_stop), onClick = {
+                        scope.launch {
+                            val stopped = withContext(Dispatchers.IO) { JSONObject(jobs.stop(jobId)) }
+                            actionError = if (stopped.optBoolean("ok")) null else stopped.optString("message")
+                            result = withContext(Dispatchers.IO) { JSONObject(jobs.read(jobId, 65_536)) }
+                        }
+                    })
+                }
+            }
+            EtaTextButton(text = stringResource(R.string.action_close), onClick = onDismiss)
+        }
     }
 }

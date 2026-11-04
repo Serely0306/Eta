@@ -29,7 +29,7 @@ internal object AgentTerminalToolCatalog {
                 description = "启动可在本次回复结束后继续运行的后台命令。start 立即返回 job_id；命令结束（完成、失败、超时）后，" +
                     "结果与日志末尾会作为通知交给你，主对话已结束时会自动继续，所以启动后继续做别的或先结束回答，不要轮询或等待，" +
                     "也不要猜测还没出来的结果。list 查看任务，read 查看当前状态和日志，stop 终止任务。" +
-                    "日志保存为文件，read 返回 output_path；预览截断时可用 read_file 分页读取完整日志。" +
+                    "stdout 和 stderr 自动记录，不要再重定向到文件，除非结果要给其他程序使用或长期保存。read 返回 output_path；预览截断时可用 read_file 分页读取完整日志。" +
                     "后台命令使用独立 Shell；不继承 terminal 会话。",
                 parameters = parameters(
                     executionProperties()

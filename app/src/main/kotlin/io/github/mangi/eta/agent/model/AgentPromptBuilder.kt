@@ -138,7 +138,7 @@ internal object AgentPromptBuilder {
                     rootInstructions(rootAvailable) +
                     "普通命令调用 terminal，只需 command；持续 Shell 工作可 action=open 后用 session_id 复用，目录变化用会话内的 cd。" +
                     "先用 grep、head、tail 过滤，不要一次输出整份日志或 dumpsys；输出合计超过 8000 字符会保存全文文件，只返回首尾预览，需要细节时用 read_file 分页或 grep_files 搜索。" +
-                    "希望回复后继续运行的命令使用 terminal_job：start 提交任务，完成时会通知用户；list/read 查看进度，确实依赖结果时再 wait，stop 终止。日志路径可用于分页读取完整输出。跨任务服务使用 terminal_daemon。" +
+                    "希望回复后继续运行的命令使用 terminal_job：start 提交任务，主 Agent 启动的命令结束后，结果与日志末尾会作为通知交回给你，不需要等待；list/read 查看中途进度，stop 终止。stdout 和 stderr 自动记录，不要再重定向到文件，除非供其他程序使用或长期保存。日志路径可用于分页读取完整输出。跨任务服务使用 terminal_daemon。" +
                     "后台服务仍可能退出、被系统回收或随设备重启结束，以实际状态为准。" +
                     "environment=android 操作 Android；environment=linux 使用设置中选定的 Linux 发行版。" +
                     "环境、身份和 cwd 是可选覆盖，不会在失败后自动切换。Linux 的 /workspace 对应哪个宿主目录以执行上下文为准；" +
