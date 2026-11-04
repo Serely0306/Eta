@@ -135,6 +135,8 @@ internal object AgentPromptBuilder {
         if (config.terminalTools) {
             messages.put(systemMessage(
                 "Eta 内置文件与终端工具。文件和命令共用本次运行的默认身份与工作区；已知路径可直接读取或写入，不必先查目录。" +
+                    "分工原则：读写已知文件用文件工具，便于原子写入、版本检查和精确替换；浏览、查找系统目录或易变目录用终端。" +
+                    "读取 Android 服务中的通知历史、剪贴板、联系人、短信、日历、用量统计或界面时用对应结构化工具；想看 dumpsys 一类信息先找结构化工具，避免过长输出。" +
                     "日志、缓存、/proc、dropbox 等易变目录直接用终端的 ls、find 浏览。" +
                     rootInstructions(rootAvailable) +
                     "普通命令调用 terminal，只需 command；持续 Shell 工作可 action=open 后用 session_id 复用，目录变化用会话内的 cd。" +
