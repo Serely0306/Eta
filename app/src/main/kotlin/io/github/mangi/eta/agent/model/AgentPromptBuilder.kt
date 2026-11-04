@@ -4,6 +4,7 @@ import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.roleplay.RoleplayRunContext
 import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
+import io.github.mangi.eta.agent.terminal.TerminalOutputCapture
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -139,7 +140,7 @@ internal object AgentPromptBuilder {
                     "日志、缓存、/proc、dropbox 等易变目录直接用终端的 ls、find 浏览。" +
                     rootInstructions(rootAvailable) +
                     "普通命令调用 terminal，只需 command；持续 Shell 工作可 action=open 后用 session_id 复用，目录变化用会话内的 cd。" +
-                    "先用 grep、head、tail 过滤，不要一次输出整份日志或 dumpsys；输出合计超过 8000 字符会保存全文文件（output_environment=android），只返回首尾预览，需要细节时用 read_file 分页或 grep_files 搜索。" +
+                    "先用 grep、head、tail 过滤，不要一次输出整份日志或 dumpsys；stdout 与 stderr 合计超过 ${TerminalOutputCapture.PREVIEW_CHARS} 字符会保存全文文件（最多 ${TerminalOutputCapture.OUTPUT_FILE_MAX_MIB} MiB，output_environment=android），无 stderr 时返回首 ${TerminalOutputCapture.PREVIEW_HEAD_CHARS}、尾 ${TerminalOutputCapture.PREVIEW_TAIL_CHARS} 字符；有 stderr 时返回 stdout 首 ${TerminalOutputCapture.PREVIEW_HEAD_CHARS}、尾 ${TerminalOutputCapture.STDOUT_TAIL_WITH_STDERR_CHARS} 字符与 stderr 尾 ${TerminalOutputCapture.STDERR_PREVIEW_CHARS} 字符。需要细节时用 read_file 分页或 grep_files 搜索。" +
                     "希望回复后继续运行的命令使用 terminal_job：start 提交任务，主 Agent 启动的命令结束后，结果与日志末尾会作为通知交回给你，不需要等待；list/read 查看中途进度，stop 终止。stdout 和 stderr 自动记录，不要再重定向到文件，除非供其他程序使用或长期保存。日志路径可用于分页读取完整输出。跨任务服务使用 terminal_daemon。" +
                     "后台服务仍可能退出、被系统回收或随设备重启结束，以实际状态为准。" +
                     "environment=android 操作 Android；environment=linux 使用设置中选定的 Linux 发行版。" +

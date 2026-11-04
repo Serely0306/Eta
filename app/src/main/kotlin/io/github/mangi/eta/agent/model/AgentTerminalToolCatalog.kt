@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.agent.terminal.TerminalOutputCapture
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -13,7 +14,7 @@ internal object AgentTerminalToolCatalog {
                 description = "执行 Shell 命令，直接提供 command 即可。默认环境、身份和工作目录见本次运行上下文。" +
                     "需要保留 cd、环境变量等 Shell 状态时，先 action=open，再通过 session_id 执行命令，最后 action=close。" +
                     "耗时命令使用 terminal_job；跨运行的后台服务使用 terminal_daemon。" +
-                    "先用 grep、head、tail 过滤日志或 dumpsys。stdout 与 stderr 合计超过 8000 字符时全文存文件，只返回开头 2000 与末尾 6000 字符及 output_file，output_environment=android；细节用 read_file 分页或 grep_files 搜索。" +
+                    "先用 grep、head、tail 过滤日志或 dumpsys。stdout 与 stderr 合计超过 ${TerminalOutputCapture.PREVIEW_CHARS} 字符时全文最多保存 ${TerminalOutputCapture.OUTPUT_FILE_MAX_MIB} MiB（output_environment=android）；没有 stderr 时返回首 ${TerminalOutputCapture.PREVIEW_HEAD_CHARS}、尾 ${TerminalOutputCapture.PREVIEW_TAIL_CHARS} 字符，有 stderr 时 stdout 返回首 ${TerminalOutputCapture.PREVIEW_HEAD_CHARS}、尾 ${TerminalOutputCapture.STDOUT_TAIL_WITH_STDERR_CHARS} 字符并附 stderr 尾 ${TerminalOutputCapture.STDERR_PREVIEW_CHARS} 字符。需要细节时用 output_file 配合 read_file 分页或 grep_files 搜索。" +
                     "已知文件的读写、编辑和搜索优先使用对应文件工具。",
                 parameters = parameters(
                     commandProperties()

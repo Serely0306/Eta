@@ -394,7 +394,7 @@ internal class RootShellTerminalController(
         if (result.timedOut) {
             closeSession(session.id)
         }
-        return JSONObject()
+        val response = JSONObject()
             .put("ok", result.exitCode == 0)
             .put("tool", "terminal")
             .put("action", "exec")
@@ -406,7 +406,20 @@ internal class RootShellTerminalController(
             .put("status", when { result.timedOut -> "timed_out"; session.closed -> "cancelled"; result.exitCode == 0 -> "exited"; else -> "failed" })
             .put("exit_code", result.exitCode)
             .put("timed_out", result.timedOut)
-            .apply { putTerminalOutput(result.stdout, result.stderr, mergeStderr) }
+        try {
+            with(response) { putTerminalOutput(result.stdout, result.stderr, mergeStderr) }
+        } catch (failure: TerminalOutputWriteException) {
+            return JSONObject()
+                .put("ok", false)
+                .put("code", "TERMINAL_OUTPUT_WRITE_FAILED")
+                .put("message", "命令已执行（exit_code=${result.exitCode}），但全文输出保存失败：${failure.cause?.message ?: failure.message}")
+                .put("exit_code", result.exitCode)
+                .put("stdout", failure.preview)
+                .put("total_chars", failure.totalChars)
+                .put("session_closed", result.timedOut || session.closed)
+                .toString()
+        }
+        return response
             .put("session_closed", result.timedOut || session.closed)
             .toString()
     }
@@ -516,6 +529,7 @@ internal class RootShellTerminalController(
             command = fullCommand,
             timeoutSeconds = timeout.toLong(),
             environment = environment,
+            probeMarker = probeMarker,
         )
         val outcome = when (result.exitCode) {
             0 -> "succeeded"
@@ -531,7 +545,17 @@ internal class RootShellTerminalController(
         } else {
             logger.warn(logMessage)
         }
-        val observation = TerminalExecutionProbe.extract(result.output, probeMarker, normalizedIdentity, environment)
+        if (result.writeFailure != null) {
+            return JSONObject()
+                .put("ok", false)
+                .put("code", "TERMINAL_OUTPUT_WRITE_FAILED")
+                .put("message", "命令已执行（exit_code=${result.exitCode}），但全文输出保存失败：${result.writeFailure.message ?: result.writeFailure.javaClass.simpleName}")
+                .put("exit_code", result.exitCode)
+                .put("stdout", result.output)
+                .put("stderr", result.stderr)
+                .put("total_chars", result.totalChars)
+                .toString()
+        }
         return JSONObject()
             .put("ok", result.exitCode == 0)
             .put("tool", "terminal")
@@ -539,11 +563,25 @@ internal class RootShellTerminalController(
             .put("identity", normalizedIdentity)
             .put("environment", environment.wireName)
             .put("cwd", safeCwd)
-            .put("runtime", observation.runtime ?: JSONObject.NULL)
+            .put("runtime", result.runtime ?: JSONObject.NULL)
             .put("status", when { processSupervisor.isClosing -> "cancelled"; result.exitCode == -2 -> "timed_out"; result.exitCode == 0 -> "exited"; else -> "failed" })
             .put("exit_code", result.exitCode)
             .put("timed_out", result.exitCode == -2)
-            .apply { putTerminalOutput(observation.text, result.stderr, mergeStderr) }
+            .apply {
+                if (result.outputFile == null) {
+                    putTerminalOutput(result.output, result.stderr, mergeStderr)
+                } else {
+                    put("total_chars", result.totalChars)
+                    put("stdout", result.output)
+                    put("stderr", "")
+                    put("output_file", result.outputFile.path)
+                    put("output_environment", "android")
+                    put("output_truncated", result.outputTruncated)
+                    put("stdout_truncated", result.stdoutTruncated)
+                    put("stderr_truncated", result.stderrTruncated)
+                }
+                result.warning?.let { put("warning", it) }
+            }
             .toString()
     }
 
@@ -701,21 +739,38 @@ internal class RootShellTerminalController(
         command: String,
         timeoutSeconds: Long,
         environment: TerminalEnvironment,
+        probeMarker: String,
     ): ShellTextResult {
+        val capture = TerminalOutputCapture(
+            directory = File(androidWorkspace(), ".eta/terminal-output"),
+            marker = probeMarker,
+            identity = identity,
+            environment = environment,
+        )
         val result = runProcess(
             identity = identity,
             command = command,
             timeoutSeconds = timeoutSeconds,
             stdin = null,
             environment = environment,
-            maxOutputBytes = Int.MAX_VALUE,
+            maxOutputBytes = 4 * 1024,
+            maxStderrBytes = 4 * 1024,
+            onStdoutChunk = capture::stdout,
+            onStderrChunk = capture::stderr,
         )
+        val output = capture.finish(result.output.decodeToString())
         return ShellTextResult(
             exitCode = result.exitCode,
-            output = result.output.decodeToString(),
-            stderr = result.stderr.decodeToString(),
-            outputTruncated = result.outputTruncated,
-            stderrTruncated = result.stderrTruncated,
+            output = output.stdout,
+            stderr = output.stderr,
+            totalChars = output.totalChars,
+            outputFile = output.outputFile,
+            outputTruncated = output.fileTruncated,
+            stdoutTruncated = output.stdoutTruncated,
+            stderrTruncated = output.stderrTruncated,
+            warning = output.warning,
+            writeFailure = output.writeFailure,
+            runtime = output.runtime,
         )
     }
 
@@ -726,6 +781,9 @@ internal class RootShellTerminalController(
         stdin: ByteArray?,
         environment: TerminalEnvironment,
         maxOutputBytes: Int = Int.MAX_VALUE,
+        maxStderrBytes: Int = maxOutputBytes,
+        onStdoutChunk: ((ByteArray, Int) -> Unit)? = null,
+        onStderrChunk: ((ByteArray, Int) -> Unit)? = null,
     ): OneShotShellResult =
         runOneShotShell(
             processSupervisor = processSupervisor,
@@ -737,35 +795,60 @@ internal class RootShellTerminalController(
             linuxRootfsPath = rootfsPathFor(environment),
             linuxSharedMounts = sharedMountsFor(environment),
             maxOutputBytes = maxOutputBytes,
-            maxStderrBytes = maxOutputBytes,
+            maxStderrBytes = maxStderrBytes,
+            onStdoutChunk = onStdoutChunk,
+            onStderrChunk = onStderrChunk,
         )
 
     internal fun JSONObject.putTerminalOutput(stdout: String, stderr: String, mergeStderr: Boolean = false) {
         val totalChars = stdout.length + stderr.length
         put("total_chars", totalChars)
-        if (totalChars <= 8_000) {
+        if (totalChars <= TerminalOutputCapture.PREVIEW_CHARS) {
             val output = if (mergeStderr && stderr.isNotBlank()) stdout.trimEnd() + "\n[stderr]\n" + stderr.trimEnd() else stdout.trimEnd()
             put("stdout", output).put("stderr", if (mergeStderr) "" else stderr.trimEnd()).put("output_truncated", false)
                 .put("stdout_truncated", false).put("stderr_truncated", false)
             return
         }
+        val stdoutTailLimit = if (stderr.isEmpty()) TerminalOutputCapture.PREVIEW_TAIL_CHARS
+            else TerminalOutputCapture.STDOUT_TAIL_WITH_STDERR_CHARS
+        val stdoutHead = if (stdout.length > TerminalOutputCapture.PREVIEW_HEAD_CHARS + stdoutTailLimit) {
+            stdout.take(TerminalOutputCapture.PREVIEW_HEAD_CHARS)
+        } else stdout
+        val stdoutTail = if (stdout.length > TerminalOutputCapture.PREVIEW_HEAD_CHARS + stdoutTailLimit) {
+            stdout.takeLast(stdoutTailLimit)
+        } else ""
+        val stderrPreview = if (stderr.length > TerminalOutputCapture.STDERR_PREVIEW_CHARS) {
+            stderr.takeLast(TerminalOutputCapture.STDERR_PREVIEW_CHARS)
+        } else stderr
+        val omittedChars = totalChars - stdoutHead.length - stdoutTail.length - stderrPreview.length
+        val previewWithoutFile = stdoutHead + "\n[省略 $omittedChars 字符，全文保存失败]\n" + stdoutTail +
+            if (stderr.isEmpty()) "" else "\n[stderr]\n$stderrPreview"
         val directory = File(androidWorkspace(), ".eta/terminal-output")
-        if (!directory.isDirectory && !directory.mkdirs()) {
-            throw java.io.IOException("无法创建终端输出目录：${directory.path}")
-        }
+        val warnings = mutableListOf<String>()
         val now = System.currentTimeMillis()
-        val files = directory.listFiles() ?: throw java.io.IOException("无法列出终端输出目录：${directory.path}")
-        files.filter { it.isFile && it.lastModified() < now - TimeUnit.DAYS.toMillis(7) }.forEach {
-            if (!it.delete()) throw java.io.IOException("无法删除过期终端输出：${it.path}")
-        }
         val outputFile = File(directory, "$now-${UUID.randomUUID().toString().take(8)}.log")
-        outputFile.writeText("[stdout]\n$stdout\n[stderr]\n$stderr")
-        val combined = stdout + stderr
-        val preview = combined.take(2_000) +
-            "\n[省略 ${totalChars - 8_000} 字符，全文见 ${outputFile.path}]\n" + combined.takeLast(6_000)
+        try {
+            if (!directory.isDirectory && !directory.mkdirs()) {
+                throw java.io.IOException("无法创建终端输出目录：${directory.path}")
+            }
+            val files = directory.listFiles()
+            if (files == null) {
+                warnings += "无法列出终端输出目录：${directory.path}"
+            } else files.filter { it.isFile && it.lastModified() < now - TimeUnit.DAYS.toMillis(7) }.forEach {
+                if (it.exists() && !it.delete()) warnings += "无法删除过期终端输出：${it.path}"
+            }
+            outputFile.writeText("[stdout]\n$stdout\n[stderr]\n$stderr")
+        } catch (failure: java.io.IOException) {
+            throw TerminalOutputWriteException(failure, previewWithoutFile, totalChars)
+        }
+        val preview = stdoutHead + "\n[省略 $omittedChars 字符，全文见 ${outputFile.path}]\n" + stdoutTail +
+            if (stderr.isEmpty()) "" else "\n[stderr]\n$stderrPreview"
         put("stdout", preview).put("stderr", "").put("output_file", outputFile.path)
             .put("output_environment", "android")
-            .put("output_truncated", true).put("stdout_truncated", true).put("stderr_truncated", stderr.isNotEmpty())
+            .put("output_truncated", false)
+            .put("stdout_truncated", stdoutTail.isNotEmpty())
+            .put("stderr_truncated", stderr.length > TerminalOutputCapture.STDERR_PREVIEW_CHARS)
+        warnings.takeIf { it.isNotEmpty() }?.let { put("warning", it.joinToString("; ")) }
     }
 
     private fun String.truncateForJson(): String =
@@ -782,9 +865,21 @@ internal class RootShellTerminalController(
         val exitCode: Int,
         val output: String,
         val stderr: String,
-        val outputTruncated: Boolean = false,
-        val stderrTruncated: Boolean = false,
+        val totalChars: Long,
+        val outputFile: File?,
+        val outputTruncated: Boolean,
+        val stdoutTruncated: Boolean,
+        val stderrTruncated: Boolean,
+        val warning: String?,
+        val writeFailure: java.io.IOException?,
+        val runtime: JSONObject?,
     )
+
+    private class TerminalOutputWriteException(
+        cause: java.io.IOException,
+        val preview: String,
+        val totalChars: Int,
+    ) : java.io.IOException(cause)
     private data class SessionCommandResult(
         val exitCode: Int,
         val stdout: String,

@@ -17,20 +17,50 @@ class RootShellTerminalControllerTest {
         val controller = RootShellTerminalController(NoopLogger, executionContext = TerminalExecutionContext(
             TerminalEnvironment.ALPINE, null, workspace.path,
         ))
-        val stdout = "a".repeat(5_000)
-        val stderr = "b".repeat(10_000)
+        val stdout = "a".repeat(10_000)
+        val stderr = "b".repeat(5_000)
         val result = JSONObject()
         with(controller) { result.putTerminalOutput(stdout, stderr) }
         assertEquals(15_000, result.getInt("total_chars"))
         assertEquals("[stdout]\n$stdout\n[stderr]\n$stderr", File(result.getString("output_file")).readText())
         assertTrue(result.getString("stdout").startsWith("a".repeat(2_000)))
-        assertTrue(result.getString("stdout").endsWith("b".repeat(6_000)))
+        assertTrue(result.getString("stdout").contains("[stderr]"))
+        assertTrue(result.getString("stdout").endsWith("b".repeat(2_000)))
         assertTrue(result.getString("stdout").contains("省略 7000 字符"))
+        assertFalse(result.getBoolean("output_truncated"))
         assertEquals("", result.getString("stderr"))
         val merged = JSONObject()
         with(controller) { merged.putTerminalOutput(stdout, stderr, mergeStderr = true) }
         assertEquals(15_000, merged.getInt("total_chars"))
         assertEquals("[stdout]\n$stdout\n[stderr]\n$stderr", File(merged.getString("output_file")).readText())
+    }
+
+    @Test
+    fun oneShotLongOutputStreamsCompleteFileAndSeparatesStderrPreview() {
+        val workspace = temporaryFolder.newFolder()
+        val controller = RootShellTerminalController(
+            NoopLogger,
+            executionContext = TerminalExecutionContext(TerminalEnvironment.ALPINE, null, workspace.path),
+            rootAvailable = { false },
+        )
+        try {
+            val result = JSONObject(controller.executeTool("terminal", JSONObject()
+                .put("command", "printf '%010000d' 0; printf '%04000d' 0 >&2")
+                .put("cwd", workspace.path)
+                .put("identity", "user")))
+            assertTrue(result.toString(), result.getBoolean("ok"))
+            assertEquals(14_000, result.getInt("total_chars"))
+            assertFalse(result.getBoolean("output_truncated"))
+            assertTrue(result.getString("stdout").startsWith("0".repeat(2_000)))
+            assertTrue(result.getString("stdout").contains("[stderr]"))
+            assertTrue(result.getString("stdout").endsWith("0".repeat(2_000)))
+            assertEquals(
+                "[stdout]\n${"0".repeat(10_000)}\n[stderr]\n${"0".repeat(4_000)}",
+                File(result.getString("output_file")).readText(),
+            )
+        } finally {
+            controller.closeAll()
+        }
     }
 
 
