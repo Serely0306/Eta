@@ -95,6 +95,7 @@
 | `fetch_url` 按问题提取（AG-39）：设置里选提取模型（默认不使用）后才有 `question` 参数和对应提示，整篇正文一次交给提取模型，用量记为“网页提取”，失败报 `WEB_EXTRACT_FAILED` 不退回全文 | 待回填 | V1–V5 | 未执行 |
 | 一次性终端命令的进程没起来、被取消或超时时，`stderr` 带上原因（AG-38） | 待回填 | E10、E13 | 未执行 |
 | 正在写入的文件读取目标只延长一次，读到就结束，不再追读到时间预算用完，目录里其他文件照常搜到（AG-31） | 待回填 | E12 | 未执行 |
+| 终端输出约定写回 `terminal`、`terminal_job` 的工具说明，系统提示终端段不再重复，经 MCP 的客户端也看得到（AG-35） | 待回填 | D4 | 未执行 |
 
 后续阶段的用例在实现时补充；虚拟屏执行实现时在 M 组追加。
 
@@ -239,7 +240,7 @@ E2E|run=<id>|lane=<lane>|event=<type>|tool=<name>|code=<error_code>
 | D1 `M` | 关闭 `observe_screen` 后发起 run | Mock 收到的工具列表不含界面工具；system 中含“请用户手动操作界面”的说明 |
 | D2 `M` | 剧本强行调用已关闭的工具 | 工具结果为 `TOOL_DISABLED`，run 继续 |
 | D3 `M` | 关闭被依赖工具 | 依赖它的工具一并从列表中消失 |
-| D4 `M` | 请求编辑已知文件、查找系统目录、读取通知/剪贴板等服务数据及 dumpsys 类信息；关闭 terminal 工具再问一次 | 文件与终端分工只在 terminal 专属提示出现；关闭 terminal 后该分工提示消失，结构化 Android 工具说明仍保留；终端 tool description 不重复过滤与 dumpsys 指引 |
+| D4 `M` | 请求编辑已知文件、查找系统目录、读取通知/剪贴板等服务数据及 dumpsys 类信息；关闭 terminal 工具再问一次 | 文件与终端分工只在 terminal 专属提示出现；关闭 terminal 后该分工提示消失，结构化 Android 工具说明仍保留。输出约定（先用 grep/head/tail 过滤、不要整份输出日志或 dumpsys、超过 8000 字符存全文文件并只回首尾预览和路径、`output_environment=android`、用 read_file 分页或 grep_files 查细节）只写在 `terminal` 的工具说明里，“stdout/stderr 自动记录、不必重定向”只写在 `terminal_job` 的说明里，系统提示终端段不再出现这些句子；电脑端 MCP `tools/list` 列出的这两个工具说明与 Mock 收到的一致 |
 
 ### E. 文件身份与终端参数
 

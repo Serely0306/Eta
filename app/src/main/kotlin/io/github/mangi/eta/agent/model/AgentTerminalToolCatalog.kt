@@ -1,5 +1,6 @@
 package io.github.mangi.eta.agent.model
 
+import io.github.mangi.eta.agent.terminal.TerminalOutputCapture
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -12,7 +13,13 @@ internal object AgentTerminalToolCatalog {
                 name = "terminal",
                 description = "执行 Shell 命令，直接提供 command 即可。默认环境、身份和工作目录见本次运行上下文。" +
                     "需要保留 cd、环境变量等 Shell 状态时，先 action=open，再通过 session_id 执行命令，最后 action=close。" +
-                    "耗时命令使用 terminal_job；跨运行的后台服务使用 terminal_daemon。",
+                    "耗时命令使用 terminal_job；跨运行的后台服务使用 terminal_daemon。" +
+                    "先用 grep、head、tail 过滤，不要一次输出整份日志或 dumpsys。" +
+                    "stdout 与 stderr 合计超过 ${TerminalOutputCapture.PREVIEW_CHARS} 字符时，全文保存到 output_file" +
+                    "（最多 ${TerminalOutputCapture.OUTPUT_FILE_MAX_MIB} MiB，路径属于 output_environment=android），只返回首尾预览：" +
+                    "无 stderr 时为 stdout 首 ${TerminalOutputCapture.PREVIEW_HEAD_CHARS}、尾 ${TerminalOutputCapture.PREVIEW_TAIL_CHARS} 字符；" +
+                    "有 stderr 时为 stdout 首 ${TerminalOutputCapture.PREVIEW_HEAD_CHARS}、尾 ${TerminalOutputCapture.STDOUT_TAIL_WITH_STDERR_CHARS} 字符" +
+                    "与 stderr 尾 ${TerminalOutputCapture.STDERR_PREVIEW_CHARS} 字符。需要细节时用 read_file 分页或 grep_files 搜索。",
                 parameters = parameters(
                     commandProperties()
                         .put("action", action("exec", "open", "close", "check_root")

@@ -2,6 +2,7 @@ package io.github.mangi.eta.agent.model
 
 import io.github.mangi.eta.agent.terminal.TerminalEnvironment
 import io.github.mangi.eta.agent.terminal.TerminalExecutionContext
+import io.github.mangi.eta.agent.terminal.TerminalOutputCapture
 import io.github.mangi.eta.agent.memory.AgentMemoryContext
 import io.github.mangi.eta.agent.skill.SkillContext
 import io.github.mangi.eta.agent.skill.SkillIndexEntry
@@ -78,15 +79,28 @@ class AgentPromptBuilderTest {
     }
 
     @Test
-    fun terminalDescriptionDoesNotRepeatItsSystemPromptGuidance() {
+    fun terminalOutputConventionsAreInToolDescriptionsOnly() {
+        // 经 MCP 连进来的客户端只看得到工具说明，输出约定写在说明里，系统提示不再重复。
         val tools = JSONArray().also(AgentTerminalToolCatalog::appendTo)
-        val description = (0 until tools.length()).map { tools.getJSONObject(it) }
-            .single { it.getJSONObject("function").getString("name") == "terminal" }
+        fun description(name: String) = (0 until tools.length()).map { tools.getJSONObject(it) }
+            .single { it.getJSONObject("function").getString("name") == name }
             .getJSONObject("function").getString("description")
+        val terminal = description("terminal")
+        assertTrue(terminal.contains("先用 grep、head、tail 过滤，不要一次输出整份日志或 dumpsys"))
+        assertTrue(terminal.contains("超过 ${TerminalOutputCapture.PREVIEW_CHARS} 字符"))
+        assertTrue(terminal.contains("output_environment=android"))
+        assertTrue(terminal.contains("read_file 分页或 grep_files 搜索"))
+        assertTrue(description("terminal_job").contains("不要再重定向到文件"))
 
-        assertFalse(description.contains("grep"))
-        assertFalse(description.contains("head"))
-        assertFalse(description.contains("dumpsys"))
+        val systemTerminal = AgentPromptBuilder.buildSystemMessages(
+            config = modelConfig("", terminalTools = true, browserTools = false),
+            skillContext = SkillContext.EMPTY,
+            memoryContext = AgentMemoryContext.DISABLED,
+            rootAvailable = false,
+        ).systemContents().single { it.contains("Eta 内置文件与终端工具") }
+        listOf("grep", "output_environment", "重定向", "read_file 分页").forEach {
+            assertFalse(it, systemTerminal.contains(it))
+        }
     }
 
     @Test
