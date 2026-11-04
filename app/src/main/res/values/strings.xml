@@ -405,6 +405,9 @@
   <string name="ui_context_length_tokens_227860">Context window (tokens)</string>
   <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">Bright screen evokes automatic voice input</string>
   <string name="ui_only_take_over_with_agent_prefix_d17556">Only take over with /agent prefix</string>
+  <string name="settings_agent_prefix_typed_only_summary">Applies to typed requests only; XiaoAi voice requests are controlled below</string>
+  <string name="settings_xiaoai_voice_takeover">Send XiaoAi voice requests to Eta</string>
+  <string name="settings_xiaoai_voice_takeover_summary">Wake word, long-pressing power to call XiaoAi, and lock screen. Needs custom models above; not limited by the /agent prefix. Takes effect after XiaoAi restarts</string>
   <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">Only pick levels the model or gateway supports.</string>
   <string name="ui_preferences_and_strategies_2abd3c">Preferences and Strategies</string>
   <string name="ui_stop_a17f70">stop</string>

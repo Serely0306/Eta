@@ -384,6 +384,9 @@
   <string name="ui_context_length_tokens_227860">內容長度上限（tokens）</string>
   <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">亮屏喚起自動語音輸入</string>
   <string name="ui_only_take_over_with_agent_prefix_d17556">僅以 /agent 前綴接管</string>
+  <string name="settings_agent_prefix_typed_only_summary">只作用於打字提問；小愛的語音提問由下一項控制</string>
+  <string name="settings_xiaoai_voice_takeover">小愛語音提問交給 Eta</string>
+  <string name="settings_xiaoai_voice_takeover_summary">喚醒詞、長按電源鍵喚起小愛、鎖定畫面喚起。需開啟上方的自訂模型，不受 /agent 前綴限制；小愛重新啟動後生效</string>
   <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">只選模型或閘道實際支援的檔位</string>
   <string name="ui_preferences_and_strategies_2abd3c">偏好與策略</string>
   <string name="ui_stop_a17f70">停止</string>

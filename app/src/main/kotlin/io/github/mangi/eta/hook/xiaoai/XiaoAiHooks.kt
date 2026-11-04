@@ -458,11 +458,10 @@ internal object XiaoAiHooks {
         finalAsr: XiaoAiFinalAsr,
     ): Boolean {
         if (claimedDialogIds.contains(finalAsr.dialogId)) return true
-        val decision = XiaoAiTakeoverPolicy.decide(
+        val decision = XiaoAiTakeoverPolicy.decideVoice(
             query = finalAsr.query,
-            hasImage = false,
             customModelEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_CUSTOM_MODEL),
-            requirePrefix = Prefs.isEnabled(Prefs.Keys.AGENT_REQUIRE_PREFIX),
+            voiceTakeoverEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_XIAOAI_VOICE_TAKEOVER),
         ) ?: return false
         val started = startRun(
             logger = logger,

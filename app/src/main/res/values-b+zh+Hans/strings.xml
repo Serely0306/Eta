@@ -397,6 +397,9 @@
   <string name="ui_context_length_tokens_227860">上下文窗口（tokens）</string>
   <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">亮屏唤起自动语音输入</string>
   <string name="ui_only_take_over_with_agent_prefix_d17556">仅以 /agent 前缀接管</string>
+  <string name="settings_agent_prefix_typed_only_summary">只作用于打字提问；小爱的语音提问由下一项控制</string>
+  <string name="settings_xiaoai_voice_takeover">小爱语音提问交给 Eta</string>
+  <string name="settings_xiaoai_voice_takeover_summary">唤醒词、长按电源键唤起小爱、锁屏唤起。需开启上面的自定义模型，不受 /agent 前缀限制；小爱重启后生效</string>
   <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">只选模型或网关实际支持的档位</string>
   <string name="ui_preferences_and_strategies_2abd3c">偏好与策略</string>
   <string name="ui_stop_a17f70">停止</string>

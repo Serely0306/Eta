@@ -50,6 +50,21 @@ internal object XiaoAiTakeoverPolicy {
         }
         return prompt.takeIf(String::isNotBlank)?.let(::Decision)
     }
+
+    /**
+     * 语音提问（唤醒词、长按电源键唤起小爱、锁屏）在总开关之外另有单独开关（DEV-7）；
+     * `/agent` 前缀说不出来，所以只约束打字提问，不约束语音。
+     */
+    fun decideVoice(
+        query: String,
+        customModelEnabled: Boolean,
+        voiceTakeoverEnabled: Boolean,
+    ): Decision? = decide(
+        query = query,
+        hasImage = false,
+        customModelEnabled = customModelEnabled && voiceTakeoverEnabled,
+        requirePrefix = false,
+    )
 }
 
 /** 超级小爱的混淆目标随版本变化；只收录逐项核对过签名的版本，未知版本不安装业务 Hook。 */

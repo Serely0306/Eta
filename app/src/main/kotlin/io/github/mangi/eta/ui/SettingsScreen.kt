@@ -741,8 +741,20 @@ private fun SettingsPageContent(
                             context = context,
                             prefs = prefs,
                             title = stringResource(R.string.ui_only_take_over_with_agent_prefix_d17556),
+                            summary = stringResource(R.string.settings_agent_prefix_typed_only_summary),
                             key = Prefs.Keys.AGENT_REQUIRE_PREFIX,
                             icon = Icons.Rounded.FilterAlt,
+                            iconTint = EtaPreferenceColors.Blue,
+                        )
+
+                        EtaPreferenceDivider()
+                        SwitchPref(
+                            context = context,
+                            prefs = prefs,
+                            title = stringResource(R.string.settings_xiaoai_voice_takeover),
+                            summary = stringResource(R.string.settings_xiaoai_voice_takeover_summary),
+                            key = Prefs.Keys.AGENT_XIAOAI_VOICE_TAKEOVER,
+                            icon = Icons.Rounded.Mic,
                             iconTint = EtaPreferenceColors.Blue,
                         )
                     }

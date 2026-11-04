@@ -37,6 +37,8 @@ internal object Prefs {
         const val SCREEN_ON_VOICE_COMMAND = "screen_on_voice_command"
         const val AGENT_CUSTOM_MODEL = "agent_custom_model"
         const val AGENT_REQUIRE_PREFIX = "agent_require_prefix"
+        /** 小爱的语音提问（唤醒词、电源键、锁屏）交给 Eta；只在 [AGENT_CUSTOM_MODEL] 开启时生效，不受前缀限制（DEV-7）。 */
+        const val AGENT_XIAOAI_VOICE_TAKEOVER = "agent_xiaoai_voice_takeover"
         const val AGENT_TERMINAL_TOOLS = "agent_terminal_tools"
         const val AGENT_BROWSER_TOOLS = "agent_browser_tools"
         const val AGENT_DEVICE_DIRECT_TOOLS = "agent_device_direct_tools"
@@ -69,6 +71,7 @@ internal object Prefs {
             SCREEN_ON_VOICE_COMMAND to false,
             AGENT_CUSTOM_MODEL to true,
             AGENT_REQUIRE_PREFIX to false,
+            AGENT_XIAOAI_VOICE_TAKEOVER to true,
             AGENT_TERMINAL_TOOLS to true,
             AGENT_BROWSER_TOOLS to true,
             AGENT_DEVICE_DIRECT_TOOLS to true,

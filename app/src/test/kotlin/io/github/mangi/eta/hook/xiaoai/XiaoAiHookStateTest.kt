@@ -83,6 +83,16 @@ class XiaoAiHookStateTest {
     }
 
     @Test
+    fun voiceTakeoverHasItsOwnSwitchUnderTheMasterSwitchAndIgnoresPrefix() {
+        assertEquals(
+            "打开蓝牙",
+            XiaoAiTakeoverPolicy.decideVoice("打开蓝牙", customModelEnabled = true, voiceTakeoverEnabled = true)?.prompt,
+        )
+        assertNull(XiaoAiTakeoverPolicy.decideVoice("打开蓝牙", customModelEnabled = true, voiceTakeoverEnabled = false))
+        assertNull(XiaoAiTakeoverPolicy.decideVoice("打开蓝牙", customModelEnabled = false, voiceTakeoverEnabled = true))
+    }
+
+    @Test
     fun imageOnlyRequestGetsDefaultPromptWhenPrefixIsNotRequired() {
         assertEquals(
             "请分析这张图片",
