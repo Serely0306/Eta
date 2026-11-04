@@ -61,6 +61,9 @@ class AgentMemoryStoreTest {
         }
         assertEquals("MEMORY_FULL", failure.code)
         assertEquals(full, store.snapshot())
+        assertThrows(AgentMemoryException::class.java) {
+            store.mutate(AgentMemoryMutation.Append(full.revision, ""))
+        }
         val larger = store.replaceAll("a".repeat(21_000))
         assertThrows(AgentMemoryException::class.java) {
             store.mutate(AgentMemoryMutation.ReplaceRange(larger.revision, 1, 1, "a".repeat(21_001)))

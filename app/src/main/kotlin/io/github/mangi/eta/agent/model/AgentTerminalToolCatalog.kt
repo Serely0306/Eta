@@ -13,7 +13,7 @@ internal object AgentTerminalToolCatalog {
                 description = "执行 Shell 命令，直接提供 command 即可。默认环境、身份和工作目录见本次运行上下文。" +
                     "需要保留 cd、环境变量等 Shell 状态时，先 action=open，再通过 session_id 执行命令，最后 action=close。" +
                     "耗时命令使用 terminal_job；跨运行的后台服务使用 terminal_daemon。" +
-                    "先用 grep、head、tail 过滤日志或 dumpsys。stdout 与 stderr 合计超过 8000 字符时全文存文件，只返回开头 2000 与末尾 6000 字符及 output_file；细节用 read_file 分页或 grep_files 搜索。" +
+                    "先用 grep、head、tail 过滤日志或 dumpsys。stdout 与 stderr 合计超过 8000 字符时全文存文件，只返回开头 2000 与末尾 6000 字符及 output_file，output_environment=android；细节用 read_file 分页或 grep_files 搜索。" +
                     "已知文件的读写、编辑和搜索优先使用对应文件工具。",
                 parameters = parameters(
                     commandProperties()
